@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useTransition, useCallback } from "react";
+import { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Clock,
@@ -322,11 +322,17 @@ function flagSeverityColor(severity: "warning" | "critical"): string {
 }
 
 function utilizationColor(pct: number): string {
-  if (pct >= 70)
-    return "bg-emerald-500";
-  if (pct >= 30)
-    return "bg-amber-500";
-  return "bg-red-500";
+  if (pct >= 70) return "bg-emerald-500";
+  if (pct >= 30) return "bg-amber-500";
+  if (pct > 0) return "bg-amber-400";
+  return "bg-muted-foreground/30"; // idle / no activity
+}
+
+function utilizationTextColor(pct: number, queryCount: number): string {
+  if (queryCount === 0) return "text-muted-foreground";
+  if (pct >= 70) return "text-emerald-600 dark:text-emerald-400";
+  if (pct >= 30) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
 }
 
 function tagToStatus(
@@ -390,22 +396,47 @@ function originLabel(origin: QueryOrigin): string {
 
 /* ── Sub-components ── */
 
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-3 pt-1">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+        {title}
+      </h2>
+      <div className="flex-1 h-px bg-border" />
+    </div>
+  );
+}
+
 function KpiCard({
   label,
   value,
   detail,
   icon: Icon,
+  iconBg = "bg-primary/10",
+  iconFg = "text-primary",
+  onClick,
 }: {
   label: string;
   value: string;
   detail?: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Tailwind bg class for icon container */
+  iconBg?: string;
+  /** Tailwind text class for icon */
+  iconFg?: string;
+  /** Optional click handler to make the card interactive */
+  onClick?: () => void;
 }) {
   return (
-    <Card className="py-4">
+    <Card
+      className={`py-4 transition-colors ${
+        onClick ? "cursor-pointer hover:border-primary/30" : ""
+      }`}
+      onClick={onClick}
+    >
       <CardContent className="flex items-start gap-3">
-        <div className="rounded-lg bg-primary/10 p-2">
-          <Icon className="h-4 w-4 text-primary" />
+        <div className={`rounded-lg p-2 ${iconBg}`}>
+          <Icon className={`h-4 w-4 ${iconFg}`} />
         </div>
         <div className="space-y-0.5">
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -1029,6 +1060,7 @@ export function Dashboard({
   );
   const [sheetOpen, setSheetOpen] = useState(false);
   const [flagFilter, setFlagFilter] = useState<string | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
   // Use enriched candidates when available (includes cost allocation)
   const candidates = enrichedCandidates ?? initialCandidates;
   const totalQueries = initialTotalQueries;
@@ -1165,6 +1197,8 @@ export function Dashboard({
       detail: string;
       color: string;
       priority: number;
+      /** Navigation target: "warehouse:id", "query:fingerprint", "scroll:table" */
+      href?: string;
     }[] = [];
 
     // Busiest user
@@ -1185,6 +1219,7 @@ export function Dashboard({
         detail: `${formatCount(topUserRuns)} query runs`,
         color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
         priority: 100,
+        href: `scroll:table`,
       });
     }
 
@@ -1204,14 +1239,15 @@ export function Dashboard({
         detail: truncateQuery(costliest.sampleQueryText, 35),
         color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
         priority: 98,
+        href: `query:${costliest.fingerprint}`,
       });
     }
 
     // Busiest warehouse
-    const whRunCounts = new Map<string, { name: string; runs: number }>();
+    const whRunCounts = new Map<string, { id: string; name: string; runs: number }>();
     for (const c of filtered) {
       const id = c.warehouseId;
-      const entry = whRunCounts.get(id) ?? { name: c.warehouseName, runs: 0 };
+      const entry = whRunCounts.get(id) ?? { id, name: c.warehouseName, runs: 0 };
       entry.runs += c.windowStats.count;
       whRunCounts.set(id, entry);
     }
@@ -1224,6 +1260,7 @@ export function Dashboard({
         detail: `${formatCount(topWh.runs)} query runs`,
         color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
         priority: 95,
+        href: `warehouse:${topWh.id}`,
       });
     }
 
@@ -1243,6 +1280,7 @@ export function Dashboard({
         detail: `Capacity score ${worst.scoreBreakdown.capacity}/100`,
         color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
         priority: worst.scoreBreakdown.capacity,
+        href: `query:${worst.fingerprint}`,
       });
     }
 
@@ -1262,6 +1300,7 @@ export function Dashboard({
         detail: `${truncateQuery(worst.sampleQueryText, 40)}`,
         color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
         priority: Math.min(worst.windowStats.totalSpilledBytes / 1e6, 90),
+        href: `query:${worst.fingerprint}`,
       });
     }
 
@@ -1279,6 +1318,7 @@ export function Dashboard({
           detail: `${whName} — ${formatDuration(worstUtil.idleTimeMs)} idle`,
           color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
           priority: 88,
+          href: `warehouse:${worstUtil.warehouseId}`,
         });
       }
     }
@@ -1304,6 +1344,20 @@ export function Dashboard({
     },
     []
   );
+
+  /** Navigate from a tile click: "query:fp", "warehouse:id", or "scroll:table" */
+  function handleTileClick(href?: string) {
+    if (!href) return;
+    if (href.startsWith("query:")) {
+      router.push(`/queries/${href.slice(6)}`);
+    } else if (href.startsWith("warehouse:")) {
+      setWarehouseFilter(href.slice(10));
+      // Smooth scroll to top so the warehouse detail section is visible
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else if (href === "scroll:table") {
+      tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
 
   // Unique warehouse list from candidates
   const warehouseOptions = useMemo(() => {
@@ -1365,20 +1419,27 @@ export function Dashboard({
               Refreshing\u2026
             </span>
           )}
-        </div>
 
-        {/* ── Data Window Notice ── */}
-        {!fetchError && (
-          <div className="flex items-center gap-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/30 px-4 py-2.5">
-            <Info className="h-4 w-4 text-blue-500 shrink-0" />
-            <p className="text-xs text-blue-700 dark:text-blue-300">
-              <span className="font-medium">Data window: {describeWindow(timePreset)}</span>
-              {" — "}
-              All views are shifted back {BILLING_LAG_HOURS}h to ensure billing &amp; cost data
-              is fully populated across all dimensions (queries, events, costs, audit).
-            </p>
-          </div>
-        )}
+          {/* Compact data window indicator */}
+          {!fetchError && (
+            <>
+              <div className="h-6 w-px bg-border hidden md:block" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-help">
+                    <Info className="h-3 w-3" />
+                    <span className="hidden sm:inline">{describeWindow(timePreset)}</span>
+                    <span className="sm:hidden">Shifted {BILLING_LAG_HOURS}h</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs">
+                  All views are shifted back {BILLING_LAG_HOURS}h to ensure billing &amp; cost data
+                  is fully populated across all dimensions (queries, events, costs, audit).
+                </TooltipContent>
+              </Tooltip>
+            </>
+          )}
+        </div>
 
         {/* ── Performance Flag Filters ── */}
         {allFlags.length > 0 && !fetchError && (
@@ -1445,57 +1506,82 @@ export function Dashboard({
           </Card>
         )}
 
-        {/* ── KPI row ── */}
+        {/* ── KPI cards — primary row (4) + secondary row (3) ── */}
         {!fetchError && (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-7">
-            <KpiCard
-              icon={Database}
-              label="Total Runs"
-              value={formatCount(
-                warehouseFilter === "all" ? totalQueries : kpis.totalRuns
-              )}
-              detail="Finished queries in window"
-            />
-            <KpiCard
-              icon={Search}
-              label="Unique Patterns"
-              value={filtered.length.toLocaleString()}
-              detail="Distinct fingerprints"
-            />
-            <KpiCard
-              icon={AlertTriangle}
-              label="High Impact"
-              value={kpis.highImpact.toLocaleString()}
-              detail="Score ≥ 60"
-            />
-            <KpiCard
-              icon={Zap}
-              label="Total Compute"
-              value={formatDuration(kpis.totalDuration)}
-              detail="Aggregate wall time"
-            />
-            <KpiCard
-              icon={Users}
-              label="Unique Users"
-              value={kpis.uniqueUsers.toLocaleString()}
-              detail="Distinct query authors"
-            />
-            <KpiCard
-              icon={Coins}
-              label="SQL DBUs"
-              value={`${formatDBUs(costData.totalDBUs)}`}
-              detail={
-                warehouseFilter === "all"
-                  ? `Across ${costData.perWarehouse.size} warehouses`
-                  : "Selected warehouse"
-              }
-            />
-            <KpiCard
-              icon={DollarSign}
-              label="Est. Cost"
-              value={formatDollars(totalDollarCost)}
-              detail="Based on list prices at time of use"
-            />
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <KpiCard
+                icon={Database}
+                label="Total Runs"
+                value={formatCount(
+                  warehouseFilter === "all" ? totalQueries : kpis.totalRuns
+                )}
+                detail="Finished queries in window"
+                iconBg="bg-blue-100 dark:bg-blue-900/30"
+                iconFg="text-blue-600 dark:text-blue-400"
+                onClick={() => handleTileClick("scroll:table")}
+              />
+              <KpiCard
+                icon={AlertTriangle}
+                label="High Impact"
+                value={kpis.highImpact.toLocaleString()}
+                detail="Score ≥ 60"
+                iconBg="bg-red-100 dark:bg-red-900/30"
+                iconFg="text-red-600 dark:text-red-400"
+                onClick={() => handleTileClick("scroll:table")}
+              />
+              <KpiCard
+                icon={Zap}
+                label="Total Compute"
+                value={formatDuration(kpis.totalDuration)}
+                detail="Aggregate wall time"
+                iconBg="bg-amber-100 dark:bg-amber-900/30"
+                iconFg="text-amber-600 dark:text-amber-400"
+                onClick={() => handleTileClick("scroll:table")}
+              />
+              <KpiCard
+                icon={DollarSign}
+                label="Est. Cost"
+                value={formatDollars(totalDollarCost)}
+                detail="Based on list prices at time of use"
+                iconBg="bg-emerald-100 dark:bg-emerald-900/30"
+                iconFg="text-emerald-600 dark:text-emerald-400"
+                onClick={() => handleTileClick("scroll:table")}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <KpiCard
+                icon={Search}
+                label="Unique Patterns"
+                value={filtered.length.toLocaleString()}
+                detail="Distinct fingerprints"
+                iconBg="bg-violet-100 dark:bg-violet-900/30"
+                iconFg="text-violet-600 dark:text-violet-400"
+                onClick={() => handleTileClick("scroll:table")}
+              />
+              <KpiCard
+                icon={Users}
+                label="Unique Users"
+                value={kpis.uniqueUsers.toLocaleString()}
+                detail="Distinct query authors"
+                iconBg="bg-teal-100 dark:bg-teal-900/30"
+                iconFg="text-teal-600 dark:text-teal-400"
+                onClick={() => handleTileClick("scroll:table")}
+              />
+              <KpiCard
+                icon={Coins}
+                label="SQL DBUs"
+                value={`${formatDBUs(costData.totalDBUs)}`}
+                detail={
+                  warehouseFilter === "all"
+                    ? `Across ${costData.perWarehouse.size} warehouses`
+                    : "Selected warehouse"
+                }
+                iconBg="bg-emerald-100 dark:bg-emerald-900/30"
+                iconFg="text-emerald-600 dark:text-emerald-400"
+                onClick={() => handleTileClick("scroll:table")}
+              />
+            </div>
           </div>
         )}
 
@@ -1506,8 +1592,8 @@ export function Dashboard({
             <Card className="py-4">
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Settings2 className="h-4 w-4 text-primary" />
+                  <div className="rounded-lg bg-blue-100 dark:bg-blue-900/30 p-2">
+                    <Settings2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                   </div>
                   <h3 className="text-sm font-semibold flex-1">Configuration</h3>
                   <DeepLinkIcon
@@ -1548,8 +1634,8 @@ export function Dashboard({
             <Card className="py-4">
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Activity className="h-4 w-4 text-primary" />
+                  <div className="rounded-lg bg-teal-100 dark:bg-teal-900/30 p-2">
+                    <Activity className="h-4 w-4 text-teal-600 dark:text-teal-400" />
                   </div>
                   <h3 className="text-sm font-semibold">Utilization</h3>
                 </div>
@@ -1561,16 +1647,19 @@ export function Dashboard({
                       const whName =
                         warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
                         u.warehouseId.slice(0, 8);
+                      const isIdle = u.queryCount === 0;
                       return (
                         <div key={u.warehouseId} className="space-y-1">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-medium truncate max-w-[120px]">{whName}</span>
-                            <span className="tabular-nums font-semibold">{u.utilizationPercent}%</span>
+                            <span className={`tabular-nums font-semibold ${utilizationTextColor(u.utilizationPercent, u.queryCount)}`}>
+                              {isIdle ? "Idle" : `${u.utilizationPercent}%`}
+                            </span>
                           </div>
-                          <div className="h-2 rounded-full bg-muted overflow-hidden">
+                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all ${utilizationColor(u.utilizationPercent)}`}
-                              style={{ width: `${u.utilizationPercent}%` }}
+                              style={{ width: `${isIdle ? 100 : u.utilizationPercent}%` }}
                             />
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-muted-foreground">
@@ -1590,8 +1679,8 @@ export function Dashboard({
             <Card className="py-4">
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Zap className="h-4 w-4 text-primary" />
+                  <div className="rounded-lg bg-amber-100 dark:bg-amber-900/30 p-2">
+                    <Zap className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                   </div>
                   <h3 className="text-sm font-semibold">
                     Recent Events
@@ -1626,8 +1715,8 @@ export function Dashboard({
             <Card className="py-4">
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="rounded-lg bg-primary/10 p-2">
-                    <Coins className="h-4 w-4 text-primary" />
+                  <div className="rounded-lg bg-emerald-100 dark:bg-emerald-900/30 p-2">
+                    <Coins className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <h3 className="text-sm font-semibold">Cost</h3>
                 </div>
@@ -1671,8 +1760,8 @@ export function Dashboard({
           <Card className="py-4">
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2 mb-1">
-                <div className="rounded-lg bg-primary/10 p-2">
-                  <History className="h-4 w-4 text-primary" />
+                <div className="rounded-lg bg-violet-100 dark:bg-violet-900/30 p-2">
+                  <History className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                 </div>
                 <h3 className="text-sm font-semibold">
                   Warehouse Config Audit Trail
@@ -1733,103 +1822,141 @@ export function Dashboard({
           </Card>
         )}
 
+        {/* ── Insights row (promoted above utilization/cost) ── */}
+        {!fetchError && insights.length > 0 && (
+          <div className="space-y-3">
+            <SectionHeader title="Key Insights" />
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {insights.map((insight) => {
+                const Icon = insight.icon;
+                return (
+                  <Card
+                    key={insight.label}
+                    className={`py-3 transition-colors ${
+                      insight.href
+                        ? "cursor-pointer hover:border-primary/30"
+                        : ""
+                    }`}
+                    onClick={() => handleTileClick(insight.href)}
+                  >
+                    <CardContent className="flex items-start gap-3">
+                      <div className={`rounded-lg p-2 ${insight.color}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 space-y-0.5 flex-1">
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          {insight.label}
+                        </p>
+                        <p className="text-sm font-bold truncate">
+                          {insight.value}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {insight.detail}
+                        </p>
+                      </div>
+                      {insight.href && (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── Top Cost Warehouses (when "All" selected) ── */}
         {!fetchError && warehouseFilter === "all" && topCostWarehouses.length > 0 && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            {topCostWarehouses.map((wh) => (
-              <Card key={wh.id} className="py-3 cursor-pointer hover:border-primary/30 transition-colors"
-                onClick={() => setWarehouseFilter(wh.id)}>
-                <CardContent className="flex items-start gap-3">
-                  <div className="rounded-lg p-2 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                    <Coins className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 space-y-0.5 flex-1">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Top SQL Spend
-                    </p>
-                    <p className="text-sm font-bold truncate">{wh.name}</p>
-                    <p className="text-xs text-muted-foreground tabular-nums">
-                      {formatDBUs(wh.dbus)} DBUs in window
-                    </p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-                </CardContent>
-              </Card>
-            ))}
+          <div className="space-y-3">
+            <SectionHeader title="Top SQL Spend by Warehouse" />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {topCostWarehouses.map((wh, idx) => {
+                const whDollars = warehouseCosts
+                  .filter((c) => c.warehouseId === wh.id)
+                  .reduce((s, c) => s + c.totalDollars, 0);
+                return (
+                  <Card key={wh.id} className="py-3 cursor-pointer hover:border-primary/30 transition-colors"
+                    onClick={() => setWarehouseFilter(wh.id)}>
+                    <CardContent className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-xs font-bold">
+                        #{idx + 1}
+                      </div>
+                      <div className="min-w-0 space-y-0.5 flex-1">
+                        <p className="text-sm font-bold truncate">{wh.name}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+                          <span>{formatDBUs(wh.dbus)} DBUs</span>
+                          {whDollars > 0 && (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                              {formatDollars(whDollars)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         )}
 
         {/* ── Utilization Overview (when "All" selected) ── */}
         {!fetchError && warehouseFilter === "all" && warehouseUtilization.length > 0 && (
-          <Card className="py-4">
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="rounded-lg bg-primary/10 p-2">
-                  <Gauge className="h-4 w-4 text-primary" />
-                </div>
-                <h3 className="text-sm font-semibold">Warehouse Utilization</h3>
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-                {warehouseUtilization.slice(0, 6).map((u) => {
-                  const whName =
-                    warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
-                    u.warehouseId.slice(0, 12);
-                  return (
-                    <div
-                      key={u.warehouseId}
-                      className="rounded-lg border border-border p-3 space-y-1.5 cursor-pointer hover:border-primary/30 transition-colors"
-                      onClick={() => setWarehouseFilter(u.warehouseId)}
-                    >
+          <div className="space-y-3">
+            <SectionHeader title="Warehouse Utilization" />
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {warehouseUtilization.slice(0, 6).map((u) => {
+                const whName =
+                  warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
+                  u.warehouseId.slice(0, 12);
+                const whDollars = warehouseCosts
+                  .filter((c) => c.warehouseId === u.warehouseId)
+                  .reduce((s, c) => s + c.totalDollars, 0);
+                const isIdle = u.queryCount === 0;
+                return (
+                  <Card
+                    key={u.warehouseId}
+                    className="py-3 cursor-pointer hover:border-primary/30 transition-colors"
+                    onClick={() => setWarehouseFilter(u.warehouseId)}
+                  >
+                    <CardContent className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium truncate max-w-[140px]">{whName}</span>
-                        <span className={`text-sm font-bold tabular-nums ${u.utilizationPercent >= 70 ? "text-emerald-600" : u.utilizationPercent >= 30 ? "text-amber-600" : "text-red-600"}`}>
-                          {u.utilizationPercent}%
+                        <span className="text-xs font-medium truncate max-w-[160px]">{whName}</span>
+                        <span className={`text-sm font-bold tabular-nums ${
+                          isIdle
+                            ? "text-muted-foreground"
+                            : u.utilizationPercent >= 70
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : u.utilizationPercent >= 30
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-red-600 dark:text-red-400"
+                        }`}>
+                          {isIdle ? "Idle" : `${u.utilizationPercent}%`}
                         </span>
                       </div>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all ${utilizationColor(u.utilizationPercent)}`}
-                          style={{ width: `${u.utilizationPercent}%` }}
+                          className={`h-full rounded-full transition-all ${
+                            isIdle ? "bg-muted-foreground/30" : utilizationColor(u.utilizationPercent)
+                          }`}
+                          style={{ width: `${isIdle ? 100 : u.utilizationPercent}%` }}
                         />
                       </div>
                       <div className="flex justify-between text-[10px] text-muted-foreground">
                         <span>{u.queryCount} queries</span>
+                        {whDollars > 0 && (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                            {formatDollars(whDollars)}
+                          </span>
+                        )}
                         <span>Idle: {formatDuration(u.idleTimeMs)}</span>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Insights row ── */}
-        {!fetchError && insights.length > 0 && (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {insights.map((insight) => {
-              const Icon = insight.icon;
-              return (
-                <Card key={insight.label} className="py-3">
-                  <CardContent className="flex items-start gap-3">
-                    <div className={`rounded-lg p-2 ${insight.color}`}>
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 space-y-0.5">
-                      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                        {insight.label}
-                      </p>
-                      <p className="text-sm font-bold truncate">
-                        {insight.value}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {insight.detail}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -1837,8 +1964,9 @@ export function Dashboard({
         {!fetchError && filtered.length === 0 && <EmptyState />}
 
         {!fetchError && filtered.length > 0 && (
-          <>
-            <div className="flex items-center justify-between">
+          <div ref={tableRef}>
+            <div className="space-y-3">
+              <SectionHeader title="Query Candidates" />
               <div className="flex items-center gap-3">
                 <Badge variant="outline" className="border-border">
                   {filtered.length} candidates
@@ -2139,7 +2267,7 @@ export function Dashboard({
                 </Table>
               </div>
             </Card>
-          </>
+          </div>
         )}
 
         {/* ── Slide-out detail panel ── */}

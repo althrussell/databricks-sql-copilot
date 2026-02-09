@@ -10,6 +10,7 @@
  */
 
 import type { Candidate } from "@/lib/domain/types";
+import type { TableMetadata } from "@/lib/queries/table-metadata";
 import { normalizeSql } from "@/lib/domain/sql-fingerprint";
 
 export type AiMode = "diagnose" | "rewrite";
@@ -25,6 +26,8 @@ export interface PromptContext {
     maxClusters: number;
     autoStopMins: number;
   };
+  /** Unity Catalog table metadata fetched on-demand for AI enrichment */
+  tableMetadata?: TableMetadata[];
 }
 
 export interface AiPrompt {
@@ -98,6 +101,14 @@ const DATABRICKS_KNOWLEDGE = `
 - **Unnecessary ORDER BY**: Sorting in subqueries or CTEs that don't need ordering.
 - **Missing predicate pushdown**: Filters applied after joins instead of before. Push filters into subqueries.
 - **Window functions without PARTITION BY**: Operates on entire dataset, no parallelism.
+
+### Using the Table Metadata section (when provided)
+- If a "Table Metadata" section is included, it contains REAL information about the tables in the query
+- ALWAYS check partitionColumns and clusteringColumns before recommending Z-ORDER or Liquid Clustering — the table may already be clustered
+- If a table is a Metric View, the measure definitions show the actual aggregation SQL — use this to recommend specific optimisations on the SOURCE table
+- Use numFiles and sizeInBytes to judge whether OPTIMIZE is needed (many small files = yes)
+- Use column types and comments to understand the data model
+- If a MEASURE() function is used, the metric view definition reveals the underlying expressions — recommend indexing/clustering on columns used in FILTER clauses within measures
 
 ### Databricks-specific SQL features to leverage
 - **QUALIFY**: Filter window function results without wrapping in subquery. \`QUALIFY ROW_NUMBER() OVER (...) = 1\`.
@@ -257,6 +268,9 @@ export function buildPrompt(
   warehouseBlock += `\nClient App: ${candidate.clientApplication}`;
   warehouseBlock += `\nStatement Type: ${candidate.statementType}`;
 
+  // ── Table metadata (Unity Catalog enrichment) ──
+  const tableMetaBlock = renderTableMetadata(context.tableMetadata);
+
   // ── Assemble user prompt ──
   const sections = [
     `## SQL Query\n\`\`\`sql\n${sql}\n\`\`\``,
@@ -265,10 +279,11 @@ export function buildPrompt(
     `## Volume & Frequency\n${volumeBlock}`,
     costLine ? `## Cost\n${costLine}` : "",
     flagsBlock ? `## Performance Flags (auto-detected)\n${flagsBlock}` : "",
+    tableMetaBlock ? `## Table Metadata (from Unity Catalog)\n${tableMetaBlock}` : "",
     `## Warehouse & Context\n${warehouseBlock}`,
     mode === "diagnose"
-      ? "## Instruction\nAnalyse this query and explain why it is performing poorly. Cite specific metrics as evidence. Focus on actionable Databricks-specific insights."
-      : "## Instruction\nAnalyse this query and propose an optimised rewrite. The rewrite must be semantically equivalent. Include risks and a concrete validation plan.",
+      ? "## Instruction\nAnalyse this query and explain why it is performing poorly. Cite specific metrics as evidence. Focus on actionable Databricks-specific insights. Use the Table Metadata section to make targeted recommendations about partitioning, clustering, and storage layout."
+      : "## Instruction\nAnalyse this query and propose an optimised rewrite. The rewrite must be semantically equivalent. Include risks and a concrete validation plan. Use the Table Metadata section to inform your recommendations about table structure and storage optimisation.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -282,6 +297,77 @@ export function buildPrompt(
   );
 
   return { systemPrompt, userPrompt: sections, estimatedTokens };
+}
+
+/* ── Table metadata renderer ── */
+
+function renderTableMetadata(
+  tables: TableMetadata[] | undefined
+): string | null {
+  if (!tables || tables.length === 0) return null;
+
+  const blocks: string[] = [];
+
+  for (const t of tables) {
+    const lines: string[] = [`### ${t.tableName}`];
+
+    // Detail (DESCRIBE DETAIL)
+    if (t.detail) {
+      const d = t.detail;
+      lines.push(`Format: ${d.format ?? "unknown"}`);
+      if (d.sizeInBytes != null) {
+        lines.push(`Size: ${fmtBytes(d.sizeInBytes)} (${d.numFiles ?? "?"} files)`);
+      }
+      if (d.partitionColumns.length > 0) {
+        lines.push(`Partition Columns: ${d.partitionColumns.join(", ")}`);
+      } else {
+        lines.push("Partition Columns: NONE");
+      }
+      if (d.clusteringColumns.length > 0) {
+        lines.push(`Liquid Clustering: ${d.clusteringColumns.join(", ")}`);
+      } else {
+        lines.push("Liquid Clustering: NONE");
+      }
+      if (d.tableFeatures.length > 0) {
+        lines.push(`Table Features: ${d.tableFeatures.join(", ")}`);
+      }
+      // Surface Z-ORDER info from properties
+      const zorder = Object.entries(d.properties)
+        .filter(([k]) => k.toLowerCase().includes("zorder"))
+        .map(([k, v]) => `${k}=${v}`);
+      if (zorder.length > 0) {
+        lines.push(`Z-ORDER: ${zorder.join(", ")}`);
+      }
+    }
+
+    // Columns (INFORMATION_SCHEMA)
+    if (t.columns && t.columns.length > 0) {
+      const colSummary = t.columns
+        .map((c) => {
+          let entry = `${c.name} ${c.dataType}`;
+          if (c.isPartitionColumn) entry += " [PARTITION]";
+          if (c.comment) entry += ` -- ${c.comment}`;
+          return entry;
+        })
+        .join("\n  ");
+      lines.push(`Columns:\n  ${colSummary}`);
+    }
+
+    // Metric view definition
+    if (t.isMetricView && t.extendedDescription) {
+      lines.push("Type: METRIC VIEW");
+      // Truncate to avoid token explosion — keep first 2000 chars of definition
+      const defn =
+        t.extendedDescription.length > 2000
+          ? t.extendedDescription.slice(0, 2000) + "\n  ... (truncated)"
+          : t.extendedDescription;
+      lines.push(`Metric View Definition:\n${defn}`);
+    }
+
+    blocks.push(lines.join("\n"));
+  }
+
+  return blocks.join("\n\n");
 }
 
 /* ── Formatting helpers ── */
