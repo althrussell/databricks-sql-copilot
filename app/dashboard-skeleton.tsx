@@ -7,7 +7,6 @@ import {
   Database,
   Warehouse,
   Coins,
-  Activity,
   Loader2,
   CheckCircle2,
 } from "lucide-react";
@@ -17,7 +16,6 @@ const LOAD_STEPS = [
   { label: "Fetching query history", icon: Database, delayMs: 800 },
   { label: "Loading warehouse metadata", icon: Warehouse, delayMs: 1600 },
   { label: "Computing cost allocation", icon: Coins, delayMs: 2500 },
-  { label: "Analyzing utilization", icon: Activity, delayMs: 3500 },
 ];
 
 export function DashboardSkeleton() {
@@ -100,8 +98,8 @@ export function DashboardSkeleton() {
       </div>
 
       {/* KPI cards skeleton */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-7">
-        {Array.from({ length: 7 }).map((_, i) => (
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
           <Card key={i} className="py-4">
             <CardContent className="flex items-start gap-3">
               <Skeleton className="h-8 w-8 rounded-lg" />

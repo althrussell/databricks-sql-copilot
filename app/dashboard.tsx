@@ -32,18 +32,11 @@ import {
   Layers,
   MonitorSmartphone,
   Coins,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  Power,
-  Play,
-  Square,
   Settings2,
-  Hash,
-  Pause,
+  Globe,
   ExternalLink,
   DollarSign,
   ShieldAlert,
-  Activity,
   Package,
   Tag,
   Flag,
@@ -61,6 +54,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   CalendarDays,
+  Lightbulb,
+  Crown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -118,9 +113,7 @@ import { explainScore } from "@/lib/domain/scoring";
 import type {
   Candidate,
   QueryOrigin,
-  WarehouseEvent,
   WarehouseCost,
-  WarehouseUtilization,
 } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 
@@ -394,42 +387,6 @@ function timeAgo(isoTime: string): string {
   return `${days}d ago`;
 }
 
-function eventIcon(eventType: string) {
-  switch (eventType) {
-    case "SCALED_UP":
-      return ArrowUpCircle;
-    case "SCALED_DOWN":
-      return ArrowDownCircle;
-    case "STARTING":
-      return Play;
-    case "RUNNING":
-      return Power;
-    case "STOPPING":
-      return Pause;
-    case "STOPPED":
-      return Square;
-    default:
-      return HelpCircle;
-  }
-}
-
-function eventColor(eventType: string): string {
-  switch (eventType) {
-    case "SCALED_UP":
-      return "text-emerald-600 dark:text-emerald-400";
-    case "SCALED_DOWN":
-      return "text-amber-600 dark:text-amber-400";
-    case "STARTING":
-    case "RUNNING":
-      return "text-blue-600 dark:text-blue-400";
-    case "STOPPING":
-    case "STOPPED":
-      return "text-muted-foreground";
-    default:
-      return "text-muted-foreground";
-  }
-}
-
 function scoreColor(score: number): string {
   if (score >= 70) return "bg-red-500";
   if (score >= 40) return "bg-amber-500";
@@ -448,19 +405,6 @@ function flagSeverityColor(severity: "warning" | "critical"): string {
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800";
 }
 
-function utilizationColor(pct: number): string {
-  if (pct >= 70) return "bg-emerald-500";
-  if (pct >= 30) return "bg-amber-500";
-  if (pct > 0) return "bg-amber-400";
-  return "bg-muted-foreground/30"; // idle / no activity
-}
-
-function utilizationTextColor(pct: number, queryCount: number): string {
-  if (queryCount === 0) return "text-muted-foreground";
-  if (pct >= 70) return "text-emerald-600 dark:text-emerald-400";
-  if (pct >= 30) return "text-amber-600 dark:text-amber-400";
-  return "text-red-600 dark:text-red-400";
-}
 
 function tagToStatus(
   tag: string
@@ -704,30 +648,33 @@ function DetailPanel({
     1
   );
 
+  // Use per-candidate workspace URL if available, fallback to global
+  const effectiveWsUrl = candidate.workspaceUrl || workspaceUrl;
+
   // Build source deep link
   const src = candidate.querySource;
   const sourceLink = src.dashboardId
-    ? buildLink(workspaceUrl, "dashboard", src.dashboardId)
+    ? buildLink(effectiveWsUrl, "dashboard", src.dashboardId)
     : src.legacyDashboardId
-      ? buildLink(workspaceUrl, "legacy-dashboard", src.legacyDashboardId)
+      ? buildLink(effectiveWsUrl, "legacy-dashboard", src.legacyDashboardId)
       : src.jobId
-        ? buildLink(workspaceUrl, "job", src.jobId)
+        ? buildLink(effectiveWsUrl, "job", src.jobId)
         : src.notebookId
-          ? buildLink(workspaceUrl, "notebook", src.notebookId)
+          ? buildLink(effectiveWsUrl, "notebook", src.notebookId)
           : src.alertId
-            ? buildLink(workspaceUrl, "alert", src.alertId)
+            ? buildLink(effectiveWsUrl, "alert", src.alertId)
             : src.sqlQueryId
-              ? buildLink(workspaceUrl, "sql-query", src.sqlQueryId)
+              ? buildLink(effectiveWsUrl, "sql-query", src.sqlQueryId)
               : null;
 
   const queryProfileLink = buildLink(
-    workspaceUrl,
+    effectiveWsUrl,
     "query-profile",
     candidate.sampleStatementId,
     { queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime() }
   );
   const warehouseLink = buildLink(
-    workspaceUrl,
+    effectiveWsUrl,
     "warehouse",
     candidate.warehouseId
   );
@@ -751,6 +698,9 @@ function DetailPanel({
               <SheetDescription>
                 {candidate.statementType} &middot;{" "}
                 {candidate.warehouseName}
+                {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
+                  <> &middot; {candidate.workspaceName}</>
+                )}
                 {candidate.allocatedCostDollars > 0 ? (
                   <> &middot; {formatDollars(candidate.allocatedCostDollars)}</>
                 ) : candidate.allocatedDBUs > 0 ? (
@@ -975,6 +925,20 @@ function DetailPanel({
                 </div>
                 <DeepLinkIcon href={warehouseLink} label="Open Warehouse in Databricks" />
               </div>
+              {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
+                <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
+                  <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-muted-foreground">Workspace</p>
+                    <p className="text-sm font-medium truncate">{candidate.workspaceName}</p>
+                  </div>
+                  {candidate.workspaceUrl && (
+                    <a href={candidate.workspaceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 shrink-0">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1031,9 +995,7 @@ interface DashboardProps {
   initialTimePreset: string;
   /** Absolute custom range (from/to ISO strings). Null = use preset. */
   initialCustomRange?: { from: string; to: string } | null;
-  warehouseEvents: WarehouseEvent[];
   warehouseCosts: WarehouseCost[];
-  warehouseUtilization: WarehouseUtilization[];
   workspaceUrl: string;
   fetchError: string | null;
   dataSourceHealth?: DataSourceHealth[];
@@ -1046,9 +1008,7 @@ export function Dashboard({
   initialTotalQueries,
   initialTimePreset,
   initialCustomRange = null,
-  warehouseEvents: initialEvents,
   warehouseCosts: initialCosts,
-  warehouseUtilization: initialUtilization,
   workspaceUrl,
   fetchError,
   dataSourceHealth: initialHealth = [],
@@ -1057,8 +1017,6 @@ export function Dashboard({
   // ── Enrichment data (streamed in from Phase 2) ──
   const [enrichedCandidates, setEnrichedCandidates] = useState<Candidate[] | null>(null);
   const [enrichedCosts, setEnrichedCosts] = useState<WarehouseCost[] | null>(null);
-  const [enrichedEvents, setEnrichedEvents] = useState<WarehouseEvent[] | null>(null);
-  const [enrichedUtilization, setEnrichedUtilization] = useState<WarehouseUtilization[] | null>(null);
   const [enrichmentLoaded, setEnrichmentLoaded] = useState(false);
   const [enrichmentHealth, setEnrichmentHealth] = useState<DataSourceHealth[]>([]);
 
@@ -1071,8 +1029,6 @@ export function Dashboard({
           const data = JSON.parse(el.textContent ?? "{}");
           if (data.candidates) setEnrichedCandidates(data.candidates);
           if (data.warehouseCosts) setEnrichedCosts(data.warehouseCosts);
-          if (data.warehouseEvents) setEnrichedEvents(data.warehouseEvents);
-          if (data.warehouseUtilization) setEnrichedUtilization(data.warehouseUtilization);
           if (data.dataSourceHealth) setEnrichmentHealth(data.dataSourceHealth);
           setEnrichmentLoaded(true);
         } catch {
@@ -1091,13 +1047,18 @@ export function Dashboard({
     return () => clearInterval(interval);
   }, []);
 
-  // Combine health info
-  const allHealth: DataSourceHealth[] = [...initialHealth, ...enrichmentHealth];
+  // Combine health info — enrichment entries override initial ones (dedup by name)
+  const allHealth: DataSourceHealth[] = useMemo(() => {
+    const map = new Map<string, DataSourceHealth>();
+    for (const h of initialHealth) map.set(h.name, h);
+    for (const h of enrichmentHealth) map.set(h.name, h);
+    // Remove warehouse_events — no longer tracked
+    map.delete("warehouse_events");
+    return [...map.values()];
+  }, [initialHealth, enrichmentHealth]);
 
   // Use enriched data when available, fall back to initial props
-  const warehouseEvents = enrichedEvents ?? initialEvents;
   const warehouseCosts = enrichedCosts ?? initialCosts;
-  const warehouseUtilization = enrichedUtilization ?? initialUtilization;
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -1105,6 +1066,7 @@ export function Dashboard({
   const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(initialCustomRange);
   const isCustomMode = customRange !== null;
   const [warehouseFilter, setWarehouseFilter] = useState("all");
+  const [workspaceFilter, setWorkspaceFilter] = useState("all");
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(
     null
   );
@@ -1112,8 +1074,9 @@ export function Dashboard({
   const [flagFilter, setFlagFilter] = useState<string | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
-  // Table: search, sort, pagination
+  // Table: search, sort, pagination, min duration filter
   const [tableSearch, setTableSearch] = useState("");
+  const [minDurationSec, setMinDurationSec] = useState(30);
   type SortKey = "impact" | "runs" | "p95" | "cost" | "flags";
   type SortDir = "asc" | "desc";
   const [sortKey, setSortKey] = useState<SortKey>("impact");
@@ -1134,11 +1097,19 @@ export function Dashboard({
     return relevantCosts.reduce((s, c) => s + c.totalDollars, 0);
   }, [warehouseCosts, warehouseFilter]);
 
-  // Client-side filter by warehouse, flags, and search text
+  // Client-side filter by warehouse, flags, search text, and min duration
   const filtered = useMemo(() => {
     let result = candidates;
+    // Min p95 duration filter
+    if (minDurationSec > 0) {
+      const minMs = minDurationSec * 1000;
+      result = result.filter((c) => c.windowStats.p95Ms >= minMs);
+    }
     if (warehouseFilter !== "all") {
       result = result.filter((c) => c.warehouseId === warehouseFilter);
+    }
+    if (workspaceFilter !== "all") {
+      result = result.filter((c) => c.workspaceId === workspaceFilter);
     }
     if (flagFilter) {
       result = result.filter((c) =>
@@ -1151,11 +1122,12 @@ export function Dashboard({
         (c) =>
           c.sampleQueryText.toLowerCase().includes(q) ||
           c.topUsers.some((u) => u.toLowerCase().includes(q)) ||
-          c.warehouseName.toLowerCase().includes(q)
+          c.warehouseName.toLowerCase().includes(q) ||
+          (c.workspaceName && c.workspaceName.toLowerCase().includes(q))
       );
     }
     return result;
-  }, [candidates, warehouseFilter, flagFilter, tableSearch]);
+  }, [candidates, warehouseFilter, workspaceFilter, flagFilter, tableSearch, minDurationSec]);
 
   // Sorted view
   const sorted = useMemo(() => {
@@ -1188,7 +1160,7 @@ export function Dashboard({
   );
 
   // Reset page when filters change
-  useEffect(() => { setPage(0); }, [warehouseFilter, flagFilter, tableSearch, sortKey, sortDir, pageSize]);
+  useEffect(() => { setPage(0); }, [warehouseFilter, flagFilter, tableSearch, minDurationSec, sortKey, sortDir, pageSize]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -1262,27 +1234,49 @@ export function Dashboard({
     return { totalDBUs, relevantCosts, perWarehouse };
   }, [warehouseCosts, warehouseFilter]);
 
-  // Events filtered by selected warehouse
-  const filteredEvents = useMemo(() => {
-    if (warehouseFilter === "all") return warehouseEvents.slice(0, 50);
-    return warehouseEvents
-      .filter((e) => e.warehouseId === warehouseFilter)
-      .slice(0, 20);
-  }, [warehouseEvents, warehouseFilter]);
+  // Top insight: pick the single most notable finding from the data
+  const topInsight = useMemo<{
+    icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    value: string;
+    color: string;
+  } | null>(() => {
+    if (filtered.length === 0) return null;
+
+    // Busiest user
+    const userRunCounts = new Map<string, number>();
+    for (const c of filtered) {
+      for (const u of c.topUsers) {
+        userRunCounts.set(u, (userRunCounts.get(u) ?? 0) + c.windowStats.count);
+      }
+    }
+    let best: { label: string; value: string; icon: React.ComponentType<{ className?: string }>; color: string; score: number } | null = null;
+
+    if (userRunCounts.size > 0) {
+      const [topUser, topUserRuns] = [...userRunCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+      best = { icon: Crown, label: "Busiest User", value: `${topUser.split("@")[0]} (${formatCount(topUserRuns)})`, color: "border-l-blue-500", score: topUserRuns };
+    }
+
+    // Biggest spill
+    const worstSpill = [...filtered].sort((a, b) => b.windowStats.totalSpilledBytes - a.windowStats.totalSpilledBytes)[0];
+    if (worstSpill && worstSpill.windowStats.totalSpilledBytes > 1e9 && (!best || worstSpill.windowStats.totalSpilledBytes > 10e9)) {
+      best = { icon: Flame, label: "Biggest Spill", value: formatBytes(worstSpill.windowStats.totalSpilledBytes), color: "border-l-red-500", score: 0 };
+    }
+
+    // Highest queue wait
+    const worstQueue = [...filtered].sort((a, b) => b.scoreBreakdown.capacity - a.scoreBreakdown.capacity)[0];
+    if (worstQueue && worstQueue.scoreBreakdown.capacity > 60 && (!best || best.label === "Busiest User")) {
+      best = { icon: Hourglass, label: "Worst Queue", value: `${worstQueue.warehouseName}`, color: "border-l-amber-500", score: 0 };
+    }
+
+    return best;
+  }, [filtered]);
 
   // Selected warehouse config (when a specific warehouse is picked)
   const selectedWarehouse = useMemo(() => {
     if (warehouseFilter === "all") return null;
     return warehouses.find((w) => w.warehouseId === warehouseFilter) ?? null;
   }, [warehouses, warehouseFilter]);
-
-  // Utilization for the selected warehouse (or all)
-  const filteredUtilization = useMemo(() => {
-    if (warehouseFilter === "all") return warehouseUtilization;
-    return warehouseUtilization.filter(
-      (u) => u.warehouseId === warehouseFilter
-    );
-  }, [warehouseUtilization, warehouseFilter]);
 
   function handleTimeChange(preset: string) {
     setTimePreset(preset);
@@ -1341,6 +1335,20 @@ export function Dashboard({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [candidates, warehouses]);
 
+  // Unique workspace list from candidates
+  const workspaceOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of candidates) {
+      const id = c.workspaceId ?? "unknown";
+      if (id && id !== "unknown" && !map.has(id)) {
+        map.set(id, c.workspaceName || id);
+      }
+    }
+    return [...map.entries()]
+      .map(([id, name]) => ({ id, name: name || id || "Unknown" }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [candidates]);
+
   return (
     <TooltipProvider>
       <div className="space-y-3">
@@ -1382,6 +1390,25 @@ export function Dashboard({
               ))}
             </SelectContent>
           </Select>
+
+          {workspaceOptions.length > 1 && (
+            <Select value={workspaceFilter} onValueChange={setWorkspaceFilter}>
+              <SelectTrigger className="w-52 h-9">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                  <SelectValue placeholder="All workspaces" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All workspaces</SelectItem>
+                {workspaceOptions.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           {isPending && (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-primary ml-2" />
@@ -1456,49 +1483,86 @@ export function Dashboard({
           </Card>
         )}
 
-        {/* ── KPI strip — compact inline stats ── */}
+        {/* ── KPI tiles ── */}
         {!fetchError && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
-            <span className="tabular-nums">
-              <span className="font-bold text-blue-600 dark:text-blue-400">{formatCount(warehouseFilter === "all" ? totalQueries : kpis.totalRuns)}</span>
-              <span className="text-muted-foreground ml-1">runs</span>
-            </span>
-            {kpis.highImpact > 0 && (
-              <span className="tabular-nums">
-                <span className="font-bold text-red-600 dark:text-red-400">{kpis.highImpact}</span>
-                <span className="text-muted-foreground ml-1">critical</span>
-              </span>
-            )}
-            <span className="tabular-nums">
-              <span className="font-bold text-amber-600 dark:text-amber-400">{formatDuration(kpis.totalDuration)}</span>
-              <span className="text-muted-foreground ml-1">compute</span>
-            </span>
-            <span className="tabular-nums">
-              <span className="font-bold text-violet-600 dark:text-violet-400">{filtered.length}</span>
-              <span className="text-muted-foreground ml-1">patterns</span>
-            </span>
-            <span className="tabular-nums">
-              <span className="font-bold text-teal-600 dark:text-teal-400">{kpis.uniqueUsers}</span>
-              <span className="text-muted-foreground ml-1">users</span>
-            </span>
-            {totalDollarCost > 0 && (
-              <span className="tabular-nums">
-                <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatDollars(totalDollarCost)}</span>
-                <span className="text-muted-foreground ml-1">est. cost</span>
-              </span>
-            )}
-            {costData.totalDBUs > 0 && (
-              <span className="tabular-nums">
-                <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatDBUs(costData.totalDBUs)}</span>
-                <span className="text-muted-foreground ml-1">DBUs</span>
-              </span>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            {/* Runs */}
+            <Card className="border-l-2 border-l-blue-500 py-3 px-4">
+              <div className="flex items-center gap-1.5 mb-1">
+                <BarChart3 className="h-3.5 w-3.5 text-blue-500" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Runs</span>
+              </div>
+              <p className="text-xl font-bold tabular-nums text-foreground leading-tight">
+                {formatCount(warehouseFilter === "all" ? totalQueries : kpis.totalRuns)}
+              </p>
+            </Card>
+
+            {/* Critical */}
+            <Card className={`border-l-2 py-3 px-4 ${kpis.highImpact > 0 ? "border-l-red-500" : "border-l-muted"}`}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <AlertTriangle className={`h-3.5 w-3.5 ${kpis.highImpact > 0 ? "text-red-500" : "text-muted-foreground"}`} />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Critical</span>
+              </div>
+              <p className={`text-xl font-bold tabular-nums leading-tight ${kpis.highImpact > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+                {kpis.highImpact}
+              </p>
+            </Card>
+
+            {/* Compute */}
+            <Card className="border-l-2 border-l-amber-500 py-3 px-4">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Cpu className="h-3.5 w-3.5 text-amber-500" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Compute</span>
+              </div>
+              <p className="text-xl font-bold tabular-nums text-foreground leading-tight">
+                {formatDuration(kpis.totalDuration)}
+              </p>
+            </Card>
+
+            {/* Est. Cost */}
+            <Card className="border-l-2 border-l-emerald-500 py-3 px-4">
+              <div className="flex items-center gap-1.5 mb-1">
+                <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Est. Cost</span>
+              </div>
+              <p className="text-xl font-bold tabular-nums text-foreground leading-tight">
+                {totalDollarCost > 0
+                  ? formatDollars(totalDollarCost)
+                  : costData.totalDBUs > 0
+                    ? `${formatDBUs(costData.totalDBUs)} DBUs`
+                    : "\u2014"}
+              </p>
+            </Card>
+
+            {/* Top Insight */}
+            {topInsight ? (() => {
+              const InsightIcon = topInsight.icon;
+              return (
+                <Card className={`border-l-2 ${topInsight.color} py-3 px-4`}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <InsightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{topInsight.label}</span>
+                  </div>
+                  <p className="text-sm font-bold text-foreground leading-tight truncate">
+                    {topInsight.value}
+                  </p>
+                </Card>
+              );
+            })() : (
+              <Card className="border-l-2 border-l-muted py-3 px-4">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Lightbulb className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Insight</span>
+                </div>
+                <p className="text-sm font-bold text-muted-foreground leading-tight">{"\u2014"}</p>
+              </Card>
             )}
           </div>
         )}
 
         {/* ── Warehouse Detail Section ── */}
         {!fetchError && selectedWarehouse && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {/* Config card */}
             <Card className="py-4">
               <CardContent className="space-y-3">
@@ -1538,87 +1602,6 @@ export function Dashboard({
                     <p className="text-sm font-semibold truncate">{selectedWarehouse.createdBy.split("@")[0]}</p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Utilization card */}
-            <Card className="py-4">
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="rounded-lg bg-teal-100 dark:bg-teal-900/30 p-2">
-                    <Activity className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-                  </div>
-                  <h3 className="text-sm font-semibold">Utilization</h3>
-                </div>
-                {filteredUtilization.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-4 text-center">No utilization data</p>
-                ) : (
-                  <div className="space-y-3">
-                    {filteredUtilization.slice(0, 5).map((u) => {
-                      const whName =
-                        warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
-                        u.warehouseId.slice(0, 8);
-                      const isIdle = u.queryCount === 0;
-                      return (
-                        <div key={u.warehouseId} className="space-y-1">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-medium truncate max-w-[120px]">{whName}</span>
-                            <span className={`tabular-nums font-semibold ${utilizationTextColor(u.utilizationPercent, u.queryCount)}`}>
-                              {isIdle ? "Idle" : `${u.utilizationPercent}%`}
-                            </span>
-                          </div>
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${utilizationColor(u.utilizationPercent)}`}
-                              style={{ width: `${isIdle ? 100 : u.utilizationPercent}%` }}
-                            />
-                          </div>
-                          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                            <span>Active: {formatDuration(u.activeTimeMs)}</span>
-                            <span>Idle: {formatDuration(u.idleTimeMs)}</span>
-                            <span>{u.queryCount} queries</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Events timeline card */}
-            <Card className="py-4">
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="rounded-lg bg-amber-100 dark:bg-amber-900/30 p-2">
-                    <Zap className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  </div>
-                  <h3 className="text-sm font-semibold">
-                    Recent Events
-                    {filteredEvents.length > 0 && (
-                      <span className="text-muted-foreground font-normal ml-1">({filteredEvents.length})</span>
-                    )}
-                  </h3>
-                </div>
-                {filteredEvents.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-4 text-center">No events in this time window</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {filteredEvents.slice(0, 15).map((ev, i) => {
-                      const EvIcon = eventIcon(ev.eventType);
-                      return (
-                        <div key={i} className="flex items-center gap-2 text-xs">
-                          <EvIcon className={`h-3.5 w-3.5 shrink-0 ${eventColor(ev.eventType)}`} />
-                          <span className="font-medium w-24 shrink-0">{ev.eventType.replace("_", " ")}</span>
-                          <span className="text-muted-foreground flex items-center gap-1">
-                            <Hash className="h-3 w-3" />{ev.clusterCount}
-                          </span>
-                          <span className="text-muted-foreground ml-auto tabular-nums">{timeAgo(ev.eventTime)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </CardContent>
             </Card>
 
@@ -1668,9 +1651,9 @@ export function Dashboard({
 
 
         {/* ── Table ── */}
-        {!fetchError && filtered.length === 0 && <EmptyState />}
+        {!fetchError && candidates.length === 0 && <EmptyState />}
 
-        {!fetchError && filtered.length > 0 && (
+        {!fetchError && candidates.length > 0 && (
           <div ref={tableRef}>
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <div className="relative flex-1 max-w-xs min-w-[180px]">
@@ -1681,6 +1664,19 @@ export function Dashboard({
                   onChange={(e) => setTableSearch(e.target.value)}
                   className="h-8 pl-8 text-xs"
                 />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground whitespace-nowrap">p95 &ge;</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step={5}
+                  value={minDurationSec}
+                  onChange={(e) => setMinDurationSec(Math.max(0, Number(e.target.value)))}
+                  className="h-8 w-16 text-xs text-center tabular-nums"
+                />
+                <span className="text-xs text-muted-foreground">s</span>
               </div>
               {allFlags.length > 0 && (
                 <Select value={flagFilter ?? "all"} onValueChange={(v) => setFlagFilter(v === "all" ? null : v)}>
@@ -1703,7 +1699,25 @@ export function Dashboard({
               </span>
             </div>
 
-            <Card>
+            {filtered.length === 0 && (
+              <Card className="py-8">
+                <CardContent className="text-center">
+                  <p className="text-sm text-muted-foreground">
+                    No queries match the current filters.
+                    {minDurationSec > 0 && (
+                      <button
+                        className="text-primary hover:underline ml-1"
+                        onClick={() => setMinDurationSec(0)}
+                      >
+                        Clear duration filter
+                      </button>
+                    )}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {filtered.length > 0 && (<Card>
               <div className="rounded-xl overflow-hidden">
                 <Table>
                   <TableHeader>
@@ -1744,26 +1758,27 @@ export function Dashboard({
                   <TableBody>
                     {paged.map((c, idx) => {
                       const OriginIcon = originIcon(c.queryOrigin);
+                      const rowWsUrl = c.workspaceUrl || workspaceUrl;
                       const profileLink = buildLink(
-                        workspaceUrl,
+                        rowWsUrl,
                         "query-profile",
                         c.sampleStatementId,
                         { queryStartTimeMs: new Date(c.sampleStartedAt).getTime() }
                       );
                       const whLink = buildLink(
-                        workspaceUrl,
+                        rowWsUrl,
                         "warehouse",
                         c.warehouseId
                       );
                       const src = c.querySource;
                       const srcLink = src.dashboardId
-                        ? buildLink(workspaceUrl, "dashboard", src.dashboardId)
+                        ? buildLink(rowWsUrl, "dashboard", src.dashboardId)
                         : src.legacyDashboardId
-                          ? buildLink(workspaceUrl, "legacy-dashboard", src.legacyDashboardId)
+                          ? buildLink(rowWsUrl, "legacy-dashboard", src.legacyDashboardId)
                           : src.jobId
-                            ? buildLink(workspaceUrl, "job", src.jobId)
+                            ? buildLink(rowWsUrl, "job", src.jobId)
                             : src.notebookId
-                              ? buildLink(workspaceUrl, "notebook", src.notebookId)
+                              ? buildLink(rowWsUrl, "notebook", src.notebookId)
                               : null;
 
                       return (
@@ -1831,9 +1846,16 @@ export function Dashboard({
                                 </Tooltip>
                               </TableCell>
                               <TableCell>
-                                <span className="text-sm truncate block max-w-[120px]">
-                                  {c.warehouseName}
-                                </span>
+                                <div className="min-w-0 max-w-[140px]">
+                                  <span className="text-sm truncate block">
+                                    {c.warehouseName}
+                                  </span>
+                                  {c.workspaceName && c.workspaceName !== "Unknown" && (
+                                    <span className="text-[10px] text-muted-foreground truncate block">
+                                      {c.workspaceName}
+                                    </span>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell>
                                 <Tooltip>
@@ -2037,6 +2059,7 @@ export function Dashboard({
                 </div>
               </div>
             </Card>
+            )}
           </div>
         )}
 

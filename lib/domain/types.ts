@@ -28,6 +28,10 @@ export interface QueryRun {
   statementId: string;
   warehouseId: string;
   warehouseName: string;
+  /** Workspace where this query ran */
+  workspaceId: string;
+  workspaceName: string;
+  workspaceUrl: string;
   startedAt: string; // ISO timestamp
   endedAt: string | null;
   status: string;
@@ -76,6 +80,10 @@ export interface Candidate {
   /** Warehouse that ran the most executions of this query pattern */
   warehouseId: string;
   warehouseName: string;
+  /** Workspace where the sample query ran */
+  workspaceId: string;
+  workspaceName: string;
+  workspaceUrl: string;
   /** Primary origin (most common across runs) */
   queryOrigin: QueryOrigin;
   /** Primary query source (from slowest run) */

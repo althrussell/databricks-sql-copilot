@@ -3,17 +3,13 @@ import { Dashboard } from "./dashboard";
 import { DashboardSkeleton } from "./dashboard-skeleton";
 import { listRecentQueries } from "@/lib/queries/query-history";
 import { listWarehouses } from "@/lib/queries/warehouses";
-import { listWarehouseEvents } from "@/lib/queries/warehouse-events";
 import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
-import { computeUtilization } from "@/lib/domain/warehouse-utilization";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import type {
   Candidate,
-  WarehouseEvent,
   WarehouseCost,
-  WarehouseUtilization,
   QueryRun,
 } from "@/lib/domain/types";
 
@@ -134,8 +130,12 @@ async function CoreDashboardLoader({
   }
 
   const workspaceUrl = getWorkspaceBaseUrl();
-  // Merge with any failed sources tracked by catchAndLogTracked
-  const allCoreHealth = [...coreHealth, ...failedSources.splice(0)];
+  // Merge with any failed sources tracked by catchAndLogTracked (dedup by name)
+  const coreFailedEntries = failedSources.splice(0);
+  const coreHealthMap = new Map<string, DataSourceHealth>();
+  for (const h of coreFailedEntries) coreHealthMap.set(h.name, h);
+  for (const h of coreHealth) coreHealthMap.set(h.name, h); // ok overrides error
+  const allCoreHealth = [...coreHealthMap.values()];
 
   return (
     <Dashboard
@@ -144,9 +144,7 @@ async function CoreDashboardLoader({
       initialTotalQueries={totalQueryCount}
       initialTimePreset={preset}
       initialCustomRange={customRange}
-      warehouseEvents={[]}
       warehouseCosts={[]}
-      warehouseUtilization={[]}
       workspaceUrl={workspaceUrl}
       fetchError={fetchError}
       dataSourceHealth={allCoreHealth}
@@ -188,7 +186,7 @@ function withTimeout<T>(
 }
 
 /**
- * Phase 2: Enrichment — costs, events, utilization.
+ * Phase 2: Enrichment — costs only (events/utilization removed for speed).
  * Runs in parallel, streamed to client after core dashboard.
  * Re-uses the queryRuns from Phase 1 (passed as prop) to avoid re-fetching.
  * Each query has a 60s timeout to prevent indefinite hanging.
@@ -205,62 +203,40 @@ async function EnrichmentLoader({
   const enrichHealth: DataSourceHealth[] = [];
   const TIMEOUT_MS = 600_000; // 10 minutes per enrichment query
 
-  // All data sources now share the same shifted window (already offset by
-  // BILLING_LAG_HOURS) so costs, events, queries, and audit all align.
-  const [costResult, eventsResult] = await Promise.all([
-    withTimeout(
-      getWarehouseCosts({ startTime: start, endTime: end }).catch(
-        catchAndLogTracked("billing_costs", [] as WarehouseCost[])
-      ),
-      TIMEOUT_MS,
-      "billing_costs",
-      [] as WarehouseCost[]
+  // Enrichment: only costs now — events/utilization removed for speed
+  const costResult = await withTimeout(
+    getWarehouseCosts({ startTime: start, endTime: end }).catch(
+      catchAndLogTracked("billing_costs", [] as WarehouseCost[])
     ),
-    withTimeout(
-      listWarehouseEvents({ startTime: start, endTime: end }).catch(
-        catchAndLogTracked("warehouse_events", [] as WarehouseEvent[])
-      ),
-      TIMEOUT_MS,
-      "warehouse_events",
-      [] as WarehouseEvent[]
-    ),
-  ]);
-
-  enrichHealth.push(
-    { name: "billing_costs", status: "ok", rowCount: costResult.length },
-    { name: "warehouse_events", status: "ok", rowCount: eventsResult.length }
+    TIMEOUT_MS,
+    "billing_costs",
+    [] as WarehouseCost[]
   );
 
-  // Merge with any failed sources
-  const allEnrichHealth = [...enrichHealth, ...failedSources.splice(0)];
-  // Deduplicate: failed ones override ok ones
+  enrichHealth.push(
+    { name: "billing_costs", status: "ok", rowCount: costResult.length }
+  );
+
+  // Merge with any failed sources — ok entries take priority over error entries
+  // (if we got data, the source is ok even if the timeout race also fired)
+  const failedEntries = failedSources.splice(0);
   const enrichHealthMap = new Map<string, DataSourceHealth>();
-  for (const h of allEnrichHealth) enrichHealthMap.set(h.name, h);
+  for (const h of failedEntries) enrichHealthMap.set(h.name, h);
+  // ok entries overwrite error entries (last-write-wins, ok comes second)
+  for (const h of enrichHealth) enrichHealthMap.set(h.name, h);
+  // Remove warehouse_events — no longer tracked
+  enrichHealthMap.delete("warehouse_events");
   const finalEnrichHealth = [...enrichHealthMap.values()];
 
   // Re-build candidates with cost allocation
   const candidates = buildCandidates(queryRuns, costResult);
 
-  // Compute utilization
-  const windowStartMs = new Date(start).getTime();
-  const windowEndMs = new Date(end).getTime();
-  const utilization = computeUtilization(
-    eventsResult,
-    queryRuns,
-    windowStartMs,
-    windowEndMs
-  );
-
-  console.log(
-    `[phase2] costs=${costResult.length} events=${eventsResult.length}`
-  );
+  console.log(`[phase2] costs=${costResult.length}`);
 
   // Inject enrichment data as a hidden JSON script for the client to pick up
   const enrichmentPayload = {
     candidates,
     warehouseCosts: costResult,
-    warehouseEvents: eventsResult,
-    warehouseUtilization: utilization,
     dataSourceHealth: finalEnrichHealth,
   };
 

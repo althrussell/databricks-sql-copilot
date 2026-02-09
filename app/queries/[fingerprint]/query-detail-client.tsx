@@ -38,6 +38,9 @@ import {
   Loader2,
   AlertTriangle,
   ShieldAlert,
+  Globe,
+  TerminalSquare,
+  ChevronDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -430,33 +433,39 @@ export function QueryDetailClient({
     1
   );
 
-  // Deep links
+  // Use per-candidate workspace URL if available, fallback to global
+  const effectiveWsUrl = candidate.workspaceUrl || workspaceUrl;
+
+  // Deep links (use workspace-specific URL for multi-workspace support)
   const src = candidate.querySource;
   const sourceLink = src.dashboardId
-    ? buildLink(workspaceUrl, "dashboard", src.dashboardId)
+    ? buildLink(effectiveWsUrl, "dashboard", src.dashboardId)
     : src.legacyDashboardId
-      ? buildLink(workspaceUrl, "legacy-dashboard", src.legacyDashboardId)
+      ? buildLink(effectiveWsUrl, "legacy-dashboard", src.legacyDashboardId)
       : src.jobId
-        ? buildLink(workspaceUrl, "job", src.jobId)
+        ? buildLink(effectiveWsUrl, "job", src.jobId)
         : src.notebookId
-          ? buildLink(workspaceUrl, "notebook", src.notebookId)
+          ? buildLink(effectiveWsUrl, "notebook", src.notebookId)
           : src.alertId
-            ? buildLink(workspaceUrl, "alert", src.alertId)
+            ? buildLink(effectiveWsUrl, "alert", src.alertId)
             : src.sqlQueryId
-              ? buildLink(workspaceUrl, "sql-query", src.sqlQueryId)
+              ? buildLink(effectiveWsUrl, "sql-query", src.sqlQueryId)
               : null;
 
   const queryProfileLink = buildLink(
-    workspaceUrl,
+    effectiveWsUrl,
     "query-profile",
     candidate.sampleStatementId,
     { queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime() }
   );
   const warehouseLink = buildLink(
-    workspaceUrl,
+    effectiveWsUrl,
     "warehouse",
     candidate.warehouseId
   );
+
+  // SQL Editor link for testing rewrites
+  const sqlEditorLink = effectiveWsUrl ? `${effectiveWsUrl}/sql/editor` : null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(candidate.sampleQueryText);
@@ -519,7 +528,11 @@ export function QueryDetailClient({
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
-                    {candidate.statementType} &middot; {candidate.warehouseName} &middot; {ws.count} runs &middot; p95 {formatDuration(ws.p95Ms)}
+                    {candidate.statementType} &middot; {candidate.warehouseName}
+                    {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
+                      <> &middot; {candidate.workspaceName}</>
+                    )}
+                    {" "}&middot; {ws.count} runs &middot; p95 {formatDuration(ws.p95Ms)}
                   </p>
                 </div>
               </div>
@@ -600,6 +613,8 @@ export function QueryDetailClient({
             activeTab={activeAiTab}
             onTabChange={setActiveAiTab}
             fingerprint={candidate.fingerprint}
+            originalSql={candidate.sampleQueryText}
+            sqlEditorLink={sqlEditorLink}
           />
         )}
 
@@ -719,6 +734,9 @@ export function QueryDetailClient({
                     <ContextRow icon={OriginIcon} label="Source" value={originLabel(candidate.queryOrigin)} href={sourceLink} />
                     <ContextRow icon={MonitorSmartphone} label="Client App" value={candidate.clientApplication} />
                     <ContextRow icon={Warehouse} label="Warehouse" value={candidate.warehouseName} sub={candidate.warehouseId} href={warehouseLink} />
+                    {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
+                      <ContextRow icon={Globe} label="Workspace" value={candidate.workspaceName} href={candidate.workspaceUrl || null} />
+                    )}
                   </div>
                 </div>
 
@@ -775,12 +793,24 @@ function AiResultsPanel({
   activeTab,
   onTabChange,
   fingerprint,
+  originalSql,
+  sqlEditorLink,
 }: {
   result: AiResult;
   activeTab: string;
   onTabChange: (tab: string) => void;
   fingerprint: string;
+  originalSql: string;
+  sqlEditorLink: string | null;
 }) {
+  const [rewriteCopied, setRewriteCopied] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  const handleCopyRewrite = (sql: string) => {
+    navigator.clipboard.writeText(sql);
+    setRewriteCopied(true);
+    setTimeout(() => setRewriteCopied(false), 2000);
+  };
   if (result.status === "error") {
     return (
       <Card className="border-red-200 dark:border-red-800">
@@ -888,11 +918,61 @@ function AiResultsPanel({
           {isRewrite && rewriteData && (
             <>
               <TabsContent value="rewrite" className="mt-4 space-y-3">
-                <div className="rounded-lg bg-muted/50 border border-border p-4 max-h-72 overflow-y-auto">
-                  <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed text-foreground/80">
-                    {rewriteData.rewrittenSql}
-                  </pre>
+                {/* Rewritten SQL with copy + test actions */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <SectionLabel>Rewritten SQL</SectionLabel>
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopyRewrite(rewriteData.rewrittenSql)}
+                        className="h-6 px-2 text-[10px] gap-1"
+                      >
+                        {rewriteCopied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                        {rewriteCopied ? "Copied" : "Copy SQL"}
+                      </Button>
+                      {sqlEditorLink && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          asChild
+                          className="h-6 px-2 text-[10px] gap-1"
+                        >
+                          <a href={sqlEditorLink} target="_blank" rel="noopener noreferrer">
+                            <TerminalSquare className="h-3 w-3" />
+                            Test in SQL Editor
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 border border-border p-4 max-h-72 overflow-y-auto">
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed text-foreground/80">
+                      {rewriteData.rewrittenSql}
+                    </pre>
+                  </div>
                 </div>
+
+                {/* Collapsible original SQL for comparison */}
+                <div>
+                  <button
+                    onClick={() => setShowOriginal(!showOriginal)}
+                    className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ChevronDown className={`h-3 w-3 transition-transform ${showOriginal ? "" : "-rotate-90"}`} />
+                    Original SQL (compare)
+                  </button>
+                  {showOriginal && (
+                    <div className="rounded-lg bg-muted/30 border border-border p-4 max-h-48 overflow-y-auto mt-1.5">
+                      <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed text-muted-foreground">
+                        {originalSql}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+
+                {/* Rationale */}
                 <div>
                   <SectionLabel>Rationale</SectionLabel>
                   <RationaleBlock text={rewriteData.rationale} />

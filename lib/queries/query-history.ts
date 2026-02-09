@@ -17,6 +17,9 @@ interface QueryHistoryRow {
   statement_id: string;
   warehouse_id: string;
   warehouse_name: string | null;
+  workspace_id: string | null;
+  workspace_name: string | null;
+  workspace_url: string | null;
   executed_by: string;
   start_time: string;
   end_time: string | null;
@@ -57,7 +60,8 @@ function escapeString(value: string): string {
 
 /**
  * Fetch recent queries from system.query.history, optionally filtered by warehouse.
- * Joins to system.compute.warehouses to resolve human-readable warehouse names.
+ * Joins to system.compute.warehouses for warehouse names and
+ * system.access.workspaces_latest for workspace names + URLs (multi-workspace).
  *
  * Schema notes (see docs/schemas/):
  *   - warehouse_id lives inside compute struct: compute.warehouse_id
@@ -79,6 +83,9 @@ export async function listRecentQueries(
       h.statement_id,
       h.compute.warehouse_id AS warehouse_id,
       w.warehouse_name AS warehouse_name,
+      h.workspace_id,
+      wk.workspace_name AS workspace_name,
+      wk.workspace_url AS workspace_url,
       h.executed_by,
       h.start_time,
       h.end_time,
@@ -114,6 +121,8 @@ export async function listRecentQueries(
     FROM system.query.history h
     LEFT JOIN system.compute.warehouses w
       ON h.compute.warehouse_id = w.warehouse_id
+    LEFT JOIN system.access.workspaces_latest wk
+      ON h.workspace_id = wk.workspace_id
     WHERE h.start_time >= '${escapeString(startTime)}'
       AND h.start_time <= '${escapeString(endTime)}'
       AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
@@ -157,6 +166,9 @@ function mapRow(row: QueryHistoryRow): QueryRun {
     statementId: row.statement_id,
     warehouseId: row.warehouse_id,
     warehouseName: row.warehouse_name ?? row.warehouse_id ?? "Unknown",
+    workspaceId: row.workspace_id ?? "unknown",
+    workspaceName: row.workspace_name ?? "Unknown",
+    workspaceUrl: row.workspace_url ? row.workspace_url.replace(/\/$/, "") : "",
     startedAt: row.start_time,
     endedAt: row.end_time,
     status: row.status,
