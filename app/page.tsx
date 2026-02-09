@@ -1,120 +1,75 @@
-"use client";
+import { Suspense } from "react";
+import { Dashboard } from "./dashboard";
+import { DashboardSkeleton } from "./dashboard-skeleton";
+import { listRecentQueries } from "@/lib/queries/query-history";
+import { listWarehouses } from "@/lib/queries/warehouses";
+import { listWarehouseEvents } from "@/lib/queries/warehouse-events";
+import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
+import { buildCandidates } from "@/lib/domain/candidate-builder";
+import type { WarehouseOption } from "@/lib/queries/warehouses";
+import type { Candidate, WarehouseEvent, WarehouseCost } from "@/lib/domain/types";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { FilterChip } from "@/components/ui/filter-chip";
+export const dynamic = "force-dynamic";
 
-const TIME_PRESETS = [
-  { label: "1 hour", value: "1h" },
-  { label: "6 hours", value: "6h" },
-  { label: "24 hours", value: "24h" },
-  { label: "7 days", value: "7d" },
-] as const;
-
-function getTimeRange(preset: string): { start: string; end: string } {
+/** Default time window: last 1 hour */
+function defaultTimeRange(): { start: string; end: string } {
   const now = new Date();
   const end = now.toISOString();
-
-  const hours: Record<string, number> = {
-    "1h": 1,
-    "6h": 6,
-    "24h": 24,
-    "7d": 168,
-  };
-
-  const offsetMs = (hours[preset] ?? 24) * 60 * 60 * 1000;
-  const start = new Date(now.getTime() - offsetMs).toISOString();
-
+  const start = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
   return { start, end };
 }
 
-export default function ScopePage() {
-  const router = useRouter();
-  const [warehouseId, setWarehouseId] = useState(
-    process.env.NEXT_PUBLIC_DEFAULT_WAREHOUSE_ID ?? ""
-  );
-  const [timePreset, setTimePreset] = useState("24h");
+async function DashboardLoader() {
+  const { start, end } = defaultTimeRange();
 
-  function handleAnalyze() {
-    if (!warehouseId.trim()) return;
-    const { start, end } = getTimeRange(timePreset);
-    const params = new URLSearchParams({
-      warehouseId: warehouseId.trim(),
-      start,
-      end,
-    });
-    router.push(`/backlog?${params.toString()}`);
+  let warehouses: WarehouseOption[] = [];
+  let candidates: Candidate[] = [];
+  let totalQueryCount = 0;
+  let warehouseEvents: WarehouseEvent[] = [];
+  let warehouseCosts: WarehouseCost[] = [];
+  let fetchError: string | null = null;
+
+  try {
+    // Fetch all data sources in parallel
+    const [warehouseResult, queryResult, eventsResult, costResult] =
+      await Promise.all([
+        listWarehouses().catch(() => [] as WarehouseOption[]),
+        listRecentQueries({ startTime: start, endTime: end, limit: 1000 }),
+        listWarehouseEvents({ startTime: start, endTime: end }).catch(
+          () => [] as WarehouseEvent[]
+        ),
+        getWarehouseCosts({ startTime: start, endTime: end }).catch(
+          () => [] as WarehouseCost[]
+        ),
+      ]);
+
+    warehouses = warehouseResult;
+    totalQueryCount = queryResult.length;
+    candidates = buildCandidates(queryResult);
+    warehouseEvents = eventsResult;
+    warehouseCosts = costResult;
+  } catch (err: unknown) {
+    fetchError =
+      err instanceof Error ? err.message : "Failed to load query data";
   }
 
   return (
-    /* L0 canvas is the page background; content is centered */
-    <div className="flex items-start justify-center pt-12 md:pt-20">
-      {/* L1 — Card surface: elevated above L0 with shadow + border */}
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <CardTitle className="text-2xl tracking-tight">
-            Analyze Warehouse
-          </CardTitle>
-          <CardDescription>
-            Choose a SQL warehouse and time window to discover slow queries.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* L2 — Interactive: Input field with visible border */}
-          <div className="space-y-2">
-            <Label htmlFor="warehouse-id" className="text-sm font-medium">
-              Warehouse ID
-            </Label>
-            <Input
-              id="warehouse-id"
-              placeholder="e.g. a1b2c3d4e5f67890"
-              value={warehouseId}
-              onChange={(e) => setWarehouseId(e.target.value)}
-              className="h-10"
-            />
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              SQL Warehouses &rarr; Connection details &rarr; HTTP Path (last
-              segment).
-            </p>
-          </div>
+    <Dashboard
+      warehouses={warehouses}
+      initialCandidates={candidates}
+      initialTotalQueries={totalQueryCount}
+      initialTimePreset="1h"
+      warehouseEvents={warehouseEvents}
+      warehouseCosts={warehouseCosts}
+      fetchError={fetchError}
+    />
+  );
+}
 
-          {/* L2 — Interactive: Filter chips for time window */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Time Window</Label>
-            <div className="flex flex-wrap gap-2">
-              {TIME_PRESETS.map((p) => (
-                <FilterChip
-                  key={p.value}
-                  selected={timePreset === p.value}
-                  onClick={() => setTimePreset(p.value)}
-                >
-                  {p.label}
-                </FilterChip>
-              ))}
-            </div>
-          </div>
-
-          {/* L4 — Primary CTA: dominant, full width, only primary action on page */}
-          <Button
-            className="w-full h-11 text-sm font-semibold shadow-sm"
-            size="lg"
-            onClick={handleAnalyze}
-            disabled={!warehouseId.trim()}
-          >
-            Start Analysis
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+export default function HomePage() {
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardLoader />
+    </Suspense>
   );
 }

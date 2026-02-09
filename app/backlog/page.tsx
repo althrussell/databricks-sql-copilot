@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { listRecentQueries } from "@/lib/queries/query-history";
+import { buildCandidates } from "@/lib/domain/candidate-builder";
+import { explainScore } from "@/lib/domain/scoring";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -20,7 +22,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { QueryRun } from "@/lib/domain/types";
+import type { Candidate } from "@/lib/domain/types";
+import { CandidateActions } from "./candidate-actions";
 
 interface BacklogSearchParams {
   warehouseId?: string;
@@ -36,16 +39,11 @@ function formatDuration(ms: number): string {
   return `${(ms / 60_000).toFixed(1)}m`;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-}
-
-function truncateQuery(text: string, maxLen = 80): string {
+function truncateQuery(text: string, maxLen = 70): string {
   const cleaned = text.replace(/\s+/g, " ").trim();
-  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + "\u2026" : cleaned;
+  return cleaned.length > maxLen
+    ? cleaned.slice(0, maxLen) + "\u2026"
+    : cleaned;
 }
 
 function formatTimestamp(iso: string): string {
@@ -61,7 +59,13 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-/* ── KPI Card (L1 surface) ── */
+function scoreColor(score: number): string {
+  if (score >= 70) return "bg-red-500";
+  if (score >= 40) return "bg-amber-500";
+  return "bg-emerald-500";
+}
+
+/* ── KPI Card ── */
 
 function KpiCard({
   label,
@@ -87,12 +91,11 @@ function KpiCard({
   );
 }
 
-/* ── Loading skeleton (L1 surface) ── */
+/* ── Loading skeleton ── */
 
 function BacklogSkeleton() {
   return (
     <div className="space-y-6">
-      {/* KPI skeleton row */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} className="py-4">
@@ -103,11 +106,10 @@ function BacklogSkeleton() {
           </Card>
         ))}
       </div>
-      {/* Table skeleton */}
       <Card>
         <CardContent className="space-y-3 py-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-11 w-full rounded-md" />
+            <Skeleton key={i} className="h-14 w-full rounded-md" />
           ))}
         </CardContent>
       </Card>
@@ -115,7 +117,7 @@ function BacklogSkeleton() {
   );
 }
 
-/* ── Empty state (L1 surface) ── */
+/* ── Empty state ── */
 
 function EmptyState() {
   return (
@@ -138,18 +140,17 @@ function EmptyState() {
         </div>
         <p className="text-base font-semibold">No queries found</p>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          No finished queries matched this warehouse and time window. Try a
-          wider range or check the warehouse ID.
+          No finished queries matched this time window.
         </p>
         <Button variant="outline" className="mt-6" asChild>
-          <Link href="/">Change scope</Link>
+          <Link href="/">Back to dashboard</Link>
         </Button>
       </CardContent>
     </Card>
   );
 }
 
-/* ── Error state (L1 surface, destructive border) ── */
+/* ── Error state ── */
 
 function ErrorState({ message }: { message: string }) {
   return (
@@ -177,55 +178,117 @@ function ErrorState({ message }: { message: string }) {
           {message}
         </p>
         <Button variant="outline" className="mt-6" asChild>
-          <Link href="/">Go back</Link>
+          <Link href="/">Back to dashboard</Link>
         </Button>
       </CardContent>
     </Card>
   );
 }
 
-/* ── Results table (L1 card → L2 interactive rows) ── */
+/* ── Score bar ── */
 
-function QueryTable({ queries }: { queries: QueryRun[] }) {
+function ScoreBar({ score }: { score: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm font-semibold tabular-nums w-7 text-right">
+        {score}
+      </span>
+      <div className="h-2 w-16 rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${scoreColor(score)}`}
+          style={{ width: `${score}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ── Why Ranked ── */
+
+function WhyRanked({ candidate }: { candidate: Candidate }) {
+  const reasons = explainScore(candidate.scoreBreakdown);
+  if (reasons.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      {reasons.map((r, i) => (
+        <p key={i} className="text-xs text-muted-foreground">
+          &bull; {r}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/* ── Candidate table ── */
+
+function CandidateTable({ candidates }: { candidates: Candidate[] }) {
   return (
     <Card>
       <div className="rounded-xl overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[40%]">Query</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead className="text-right">Duration</TableHead>
-              <TableHead className="text-right">Reads</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Started</TableHead>
+              <TableHead className="w-8">#</TableHead>
+              <TableHead>Impact</TableHead>
+              <TableHead className="w-[30%]">Query Fingerprint</TableHead>
+              <TableHead>Warehouse</TableHead>
+              <TableHead className="text-right">Runs</TableHead>
+              <TableHead className="text-right">p95</TableHead>
+              <TableHead className="text-right">Total Time</TableHead>
+              <TableHead>Why Ranked</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {queries.map((q) => (
-              <TableRow key={q.statementId} className="cursor-pointer">
-                <TableCell
-                  className="font-mono text-xs max-w-[400px] truncate"
-                  title={q.queryText}
-                >
-                  {truncateQuery(q.queryText)}
-                </TableCell>
-                <TableCell className="text-sm">{q.executedBy}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">
-                  {formatDuration(q.durationMs)}
-                </TableCell>
-                <TableCell className="text-right text-sm tabular-nums">
-                  {formatBytes(q.readBytes)}
+            {candidates.map((c, idx) => (
+              <TableRow key={c.fingerprint} className="cursor-pointer group">
+                <TableCell className="text-xs text-muted-foreground tabular-nums">
+                  {idx + 1}
                 </TableCell>
                 <TableCell>
-                  {q.fromResultCache ? (
-                    <StatusBadge status="cached">Cached</StatusBadge>
-                  ) : (
-                    <StatusBadge status="default">Executed</StatusBadge>
-                  )}
+                  <ScoreBar score={c.impactScore} />
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {formatTimestamp(q.startedAt)}
+                <TableCell>
+                  <div className="space-y-1">
+                    <p
+                      className="font-mono text-xs max-w-[350px] truncate"
+                      title={c.sampleQueryText}
+                    >
+                      {truncateQuery(c.sampleQueryText)}
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      {c.tags.map((tag) => (
+                        <StatusBadge
+                          key={tag}
+                          status={tagToStatus(tag)}
+                          className="text-[10px] px-1.5 py-0"
+                        >
+                          {tag}
+                        </StatusBadge>
+                      ))}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <span className="text-sm">{c.warehouseName}</span>
+                </TableCell>
+                <TableCell className="text-right tabular-nums font-medium">
+                  {c.windowStats.count}
+                </TableCell>
+                <TableCell className="text-right tabular-nums font-semibold">
+                  {formatDuration(c.windowStats.p95Ms)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-sm">
+                  {formatDuration(c.windowStats.totalDurationMs)}
+                </TableCell>
+                <TableCell>
+                  <WhyRanked candidate={c} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <CandidateActions
+                    fingerprint={c.fingerprint}
+                    status={c.status}
+                  />
                 </TableCell>
               </TableRow>
             ))}
@@ -236,6 +299,27 @@ function QueryTable({ queries }: { queries: QueryRun[] }) {
   );
 }
 
+function tagToStatus(
+  tag: string
+): "default" | "warning" | "error" | "info" | "cached" {
+  switch (tag) {
+    case "slow":
+      return "error";
+    case "high-spill":
+      return "warning";
+    case "capacity-bound":
+      return "warning";
+    case "frequent":
+      return "info";
+    case "mostly-cached":
+      return "cached";
+    case "quick-win":
+      return "info";
+    default:
+      return "default";
+  }
+}
+
 /* ── Data-fetching server component ── */
 
 async function BacklogResults({
@@ -243,7 +327,7 @@ async function BacklogResults({
   start,
   end,
 }: {
-  warehouseId: string;
+  warehouseId?: string;
   start: string;
   end: string;
 }) {
@@ -252,64 +336,62 @@ async function BacklogResults({
       warehouseId,
       startTime: start,
       endTime: end,
-      limit: 200,
+      limit: 500,
     });
 
     if (queries.length === 0) {
       return <EmptyState />;
     }
 
-    /* Compute KPIs */
-    const totalQueries = queries.length;
+    const candidates = buildCandidates(queries);
+
+    const totalRuns = queries.length;
+    const uniqueFingerprints = candidates.length;
+    const highImpact = candidates.filter((c) => c.impactScore >= 60).length;
     const totalDuration = queries.reduce((s, q) => s + q.durationMs, 0);
-    const p95Index = Math.floor(totalQueries * 0.95);
-    const sorted = [...queries].sort((a, b) => a.durationMs - b.durationMs);
-    const p95Duration = sorted[p95Index]?.durationMs ?? 0;
-    const cachedCount = queries.filter((q) => q.fromResultCache).length;
 
     return (
       <div className="space-y-6">
-        {/* KPI row (L1 surfaces) */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <KpiCard
-            label="Queries"
-            value={totalQueries.toLocaleString()}
-            detail="Finished in window"
+            label="Total Runs"
+            value={totalRuns.toLocaleString()}
+            detail="Finished queries in window"
+          />
+          <KpiCard
+            label="Unique Queries"
+            value={uniqueFingerprints.toLocaleString()}
+            detail="Distinct fingerprints"
+          />
+          <KpiCard
+            label="High Impact"
+            value={highImpact.toLocaleString()}
+            detail="Score \u2265 60"
           />
           <KpiCard
             label="Total Time"
             value={formatDuration(totalDuration)}
             detail="Aggregate wall time"
           />
-          <KpiCard
-            label="p95 Duration"
-            value={formatDuration(p95Duration)}
-            detail="95th percentile"
-          />
-          <KpiCard
-            label="Cache Hit"
-            value={`${totalQueries > 0 ? Math.round((cachedCount / totalQueries) * 100) : 0}%`}
-            detail={`${cachedCount} of ${totalQueries}`}
-          />
         </div>
 
-        {/* Results count */}
         <div className="flex items-center gap-3">
           <Badge variant="outline" className="border-border">
-            {totalQueries} queries
+            {candidates.length} candidates
           </Badge>
           <span className="text-sm text-muted-foreground">
-            Sorted by total duration (slowest first)
+            Ranked by impact score (highest first)
           </span>
         </div>
 
-        {/* Table (L1 card with L2 interactive rows) */}
-        <QueryTable queries={queries} />
+        <CandidateTable candidates={candidates} />
       </div>
     );
   } catch (error: unknown) {
     const message =
-      error instanceof Error ? error.message : "An unexpected error occurred.";
+      error instanceof Error
+        ? error.message
+        : "An unexpected error occurred.";
     return <ErrorState message={message} />;
   }
 }
@@ -322,17 +404,16 @@ export default async function BacklogPage(props: {
   const searchParams = await props.searchParams;
   const { warehouseId, start, end } = searchParams;
 
-  if (!warehouseId || !start || !end) {
+  if (!start || !end) {
     return (
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-20 text-center">
-          <p className="text-base font-semibold">Missing scope parameters</p>
+          <p className="text-base font-semibold">Missing time parameters</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Please select a warehouse and time window first.
+            Please use the dashboard to start an analysis.
           </p>
-          {/* L4 — Primary CTA (only action on this view) */}
           <Button className="mt-6" asChild>
-            <Link href="/">Set scope</Link>
+            <Link href="/">Go to dashboard</Link>
           </Button>
         </CardContent>
       </Card>
@@ -341,25 +422,30 @@ export default async function BacklogPage(props: {
 
   return (
     <div className="space-y-6">
-      {/* Page header (L1 card) with primary CTA in top-right */}
       <Card>
         <CardHeader>
           <div>
             <CardTitle className="text-xl tracking-tight">
-              Query Backlog
+              Candidate Backlog
             </CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Warehouse{" "}
-              <code className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-mono font-medium">
-                {warehouseId}
-              </code>{" "}
-              &middot; {formatTimestamp(start)} &rarr; {formatTimestamp(end)}
+              {warehouseId ? (
+                <>
+                  Warehouse{" "}
+                  <code className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-mono font-medium">
+                    {warehouseId}
+                  </code>{" "}
+                  &middot;{" "}
+                </>
+              ) : (
+                <>All warehouses &middot; </>
+              )}
+              {formatTimestamp(start)} &rarr; {formatTimestamp(end)}
             </p>
           </div>
-          {/* L4 — Primary CTA: top-right of header (spec position) */}
           <CardAction>
             <Button variant="outline" size="sm" asChild>
-              <Link href="/">Change scope</Link>
+              <Link href="/">Back to dashboard</Link>
             </Button>
           </CardAction>
         </CardHeader>

@@ -1,0 +1,7 @@
+col_name,data_type,comment
+account_id,string,The ID of the Databricks account.
+workspace_id,string,The ID of the workspace where the warehouse is deployed.
+warehouse_id,string,The ID of SQL warehouse the event is related to.
+event_type,string,"The type of warehouse event. Possible values are SCALED_UP, SCALED_DOWN, STOPPING, RUNNING, STARTING, and STOPPED."
+cluster_count,int,The number of clusters that are actively running.
+event_time,timestamp,Timestamp of when the event took place in UTC.
