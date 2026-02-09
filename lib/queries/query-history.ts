@@ -131,6 +131,7 @@ export async function listRecentQueries(
       AND h.statement_text NOT LIKE '%information_schema.%'
       AND UPPER(h.statement_text) NOT LIKE 'REFRESH STREAMING TABLE%'
       AND UPPER(h.statement_text) NOT LIKE 'REFRESH MATERIALIZED VIEW%'
+      AND h.statement_text NOT LIKE '-- This is a system generated query %'
       ${warehouseFilter}
     ORDER BY h.total_duration_ms DESC
     LIMIT ${Math.min(Math.max(1, limit), 1000)}

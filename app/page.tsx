@@ -6,6 +6,7 @@ import { listWarehouses } from "@/lib/queries/warehouses";
 import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
+import { triageCandidates } from "@/lib/ai/triage";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import type {
   Candidate,
@@ -157,6 +158,10 @@ async function CoreDashboardLoader({
           queryRuns={queryRuns}
         />
       </Suspense>
+      {/* Phase 3: AI triage insights (fast model, streams in last) */}
+      <Suspense fallback={null}>
+        <AiTriageLoader candidates={candidates} />
+      </Suspense>
     </Dashboard>
   );
 }
@@ -247,6 +252,46 @@ async function EnrichmentLoader({
       suppressHydrationWarning
       dangerouslySetInnerHTML={{
         __html: JSON.stringify(enrichmentPayload),
+      }}
+    />
+  );
+}
+
+/**
+ * Phase 3: AI Triage — fast model insights for top candidates.
+ * Streams in after the main dashboard is interactive.
+ */
+async function AiTriageLoader({
+  candidates,
+}: {
+  candidates: Candidate[];
+}) {
+  const TRIAGE_TIMEOUT_MS = 120_000; // 2 minutes max
+
+  let triageMap: Record<string, { insight: string; action: string }> = {};
+  try {
+    triageMap = await withTimeout(
+      triageCandidates(candidates),
+      TRIAGE_TIMEOUT_MS,
+      "ai_triage",
+      {} as Record<string, { insight: string; action: string }>
+    );
+  } catch (err) {
+    console.error("[ai-triage] loader failed:", err);
+  }
+
+  const entryCount = Object.keys(triageMap).length;
+  if (entryCount === 0) return null;
+
+  console.log(`[phase3] ai triage insights: ${entryCount}`);
+
+  return (
+    <script
+      id="ai-triage-data"
+      type="application/json"
+      suppressHydrationWarning
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify(triageMap),
       }}
     />
   );

@@ -8,27 +8,21 @@ export interface GetWarehouseCostsParams {
   warehouseId?: string;
 }
 
-interface WarehouseCostRow {
-  warehouse_id: string;
-  sku_name: string;
-  total_dbus: number;
-  total_dollars: number;
-}
-
 function escapeString(value: string): string {
   return value.replace(/'/g, "''");
 }
 
 /**
- * Fetch SQL warehouse DBU costs from system.billing.usage joined
- * temporally to system.billing.list_prices to get the price that was
- * valid at the time each DBU was consumed.
+ * Fetch SQL warehouse DBU costs.
  *
- * Key performance optimisation:
- *   - CAST(usage_start_time AS DATE) filter enables partition pruning
- *     on system.billing.usage — this was the missing ingredient that
- *     caused the previous 5+ minute runtime.
- *   - list_prices is a small table so the join is fast once usage is pruned.
+ * Performance strategy: avoids the expensive temporal range JOIN between
+ * system.billing.usage and system.billing.list_prices that was causing
+ * multi-minute query times. Instead we run two lightweight queries in
+ * parallel and multiply client-side:
+ *
+ *   1. DBU aggregate — partition-pruned, no join, very fast
+ *   2. Price lookup — gets effective price per SKU valid at the midpoint
+ *      of the window (prices rarely change within a short time window)
  */
 export async function getWarehouseCosts(
   params: GetWarehouseCostsParams
@@ -39,25 +33,22 @@ export async function getWarehouseCosts(
     ? `AND u.usage_metadata.warehouse_id = '${escapeString(warehouseId)}'`
     : "";
 
-  // Derive date bounds for partition pruning on system tables
+  // Derive date bounds for partition pruning
   const startDate = startTime.slice(0, 10); // YYYY-MM-DD
   const endDate = endTime.slice(0, 10);
 
-  const sql = `
+  // Midpoint of the time window — used to pick the effective price
+  const midpointMs =
+    (new Date(startTime).getTime() + new Date(endTime).getTime()) / 2;
+  const midpoint = new Date(midpointMs).toISOString();
+
+  // ── Query 1: DBU totals per warehouse + SKU (fast, no join) ──
+  const dbuSql = `
     SELECT
       u.usage_metadata.warehouse_id AS warehouse_id,
       u.sku_name,
-      SUM(u.usage_quantity) AS total_dbus,
-      SUM(
-        u.usage_quantity *
-        COALESCE(CAST(p.pricing.effective_list.\`default\` AS DOUBLE), 0)
-      ) AS total_dollars
+      SUM(u.usage_quantity) AS total_dbus
     FROM system.billing.usage u
-    LEFT JOIN system.billing.list_prices p
-      ON u.cloud = p.cloud
-      AND u.sku_name = p.sku_name
-      AND u.usage_start_time >= p.price_start_time
-      AND (p.price_end_time IS NULL OR u.usage_start_time < p.price_end_time)
     WHERE CAST(u.usage_start_time AS DATE) >= '${startDate}'
       AND CAST(u.usage_start_time AS DATE) <= '${endDate}'
       AND u.usage_unit = 'DBU'
@@ -72,13 +63,40 @@ export async function getWarehouseCosts(
     ORDER BY total_dbus DESC
   `;
 
-  const result = await executeQuery<WarehouseCostRow>(sql);
+  // ── Query 2: effective price per SKU at the window midpoint (tiny) ──
+  const priceSql = `
+    SELECT
+      sku_name,
+      CAST(pricing.effective_list.\`default\` AS DOUBLE) AS unit_price
+    FROM system.billing.list_prices
+    WHERE sku_name LIKE '%SQL_COMPUTE%'
+      AND pricing.effective_list.\`default\` IS NOT NULL
+      AND price_start_time <= '${escapeString(midpoint)}'
+      AND (price_end_time IS NULL OR price_end_time > '${escapeString(midpoint)}')
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY sku_name ORDER BY price_start_time DESC) = 1
+  `;
 
-  return result.rows.map((row) => ({
-    warehouseId: row.warehouse_id ?? "unknown",
-    skuName: row.sku_name ?? "Unknown",
-    isServerless: (row.sku_name ?? "").toLowerCase().includes("serverless"),
-    totalDBUs: Number(row.total_dbus) || 0,
-    totalDollars: Number(row.total_dollars) || 0,
-  }));
+  // Run both in parallel
+  const [dbuResult, priceResult] = await Promise.all([
+    executeQuery<{ warehouse_id: string; sku_name: string; total_dbus: number }>(dbuSql),
+    executeQuery<{ sku_name: string; unit_price: number }>(priceSql),
+  ]);
+
+  // Build price lookup map: sku_name -> unit_price
+  const priceMap = new Map<string, number>();
+  for (const row of priceResult.rows) {
+    priceMap.set(row.sku_name, Number(row.unit_price) || 0);
+  }
+
+  return dbuResult.rows.map((row) => {
+    const dbus = Number(row.total_dbus) || 0;
+    const unitPrice = priceMap.get(row.sku_name) ?? 0;
+    return {
+      warehouseId: row.warehouse_id ?? "unknown",
+      skuName: row.sku_name ?? "Unknown",
+      isServerless: (row.sku_name ?? "").toLowerCase().includes("serverless"),
+      totalDBUs: dbus,
+      totalDollars: dbus * unitPrice,
+    };
+  });
 }

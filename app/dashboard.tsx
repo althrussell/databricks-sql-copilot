@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Clock,
@@ -56,6 +56,9 @@ import {
   CalendarDays,
   Lightbulb,
   Crown,
+  PanelRightOpen,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -387,6 +390,54 @@ function timeAgo(isoTime: string): string {
   return `${days}d ago`;
 }
 
+/* ── AI Triage cell ── */
+
+const TRIAGE_ACTION_STYLE: Record<string, string> = {
+  rewrite: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+  cluster: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200 dark:border-teal-800",
+  optimize: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800",
+  resize: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800",
+  investigate: "bg-muted text-muted-foreground border-border",
+};
+
+function TriageCell({
+  insight,
+  loading,
+}: {
+  insight: { insight: string; action: string } | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-1 max-w-[200px]">
+        <div className="h-3 w-24 rounded bg-muted animate-pulse" />
+        <div className="h-3 w-36 rounded bg-muted/60 animate-pulse" />
+      </div>
+    );
+  }
+  if (!insight) {
+    return <span className="text-muted-foreground text-xs">{"\u2014"}</span>;
+  }
+  const style = TRIAGE_ACTION_STYLE[insight.action] ?? TRIAGE_ACTION_STYLE.investigate;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="max-w-[200px] space-y-1 cursor-help">
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${style}`}>
+            {insight.action}
+          </span>
+          <p className="text-[11px] text-muted-foreground leading-tight line-clamp-2">
+            {insight.insight}
+          </p>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm">
+        <p className="text-xs leading-relaxed">{insight.insight}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function scoreColor(score: number): string {
   if (score >= 70) return "bg-red-500";
   if (score >= 40) return "bg-amber-500";
@@ -405,6 +456,170 @@ function flagSeverityColor(severity: "warning" | "critical"): string {
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800";
 }
 
+/* ── Expanded row inline content ── */
+
+const TIME_SEGMENT_COLORS = [
+  { key: "compilation", color: "bg-blue-400 dark:bg-blue-600", label: "Compile" },
+  { key: "queue", color: "bg-amber-400 dark:bg-amber-600", label: "Queue" },
+  { key: "compute", color: "bg-purple-400 dark:bg-purple-600", label: "Compute Wait" },
+  { key: "execution", color: "bg-emerald-400 dark:bg-emerald-600", label: "Execute" },
+  { key: "fetch", color: "bg-rose-400 dark:bg-rose-600", label: "Fetch" },
+];
+
+function ExpandedRowContent({
+  candidate,
+  triageInsight,
+  reasons,
+}: {
+  candidate: Candidate;
+  triageInsight: { insight: string; action: string } | null;
+  reasons: string[];
+}) {
+  const ws = candidate.windowStats;
+  const [sqlCopied, setSqlCopied] = useState(false);
+
+  const timeSegments = [
+    ws.avgCompilationMs,
+    ws.avgQueueWaitMs,
+    ws.avgComputeWaitMs,
+    ws.avgExecutionMs,
+    ws.avgFetchMs,
+  ];
+  const totalTime = timeSegments.reduce((a, b) => a + b, 0);
+
+  const handleCopySql = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(candidate.sampleQueryText);
+    setSqlCopied(true);
+    setTimeout(() => setSqlCopied(false), 2000);
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* ── Left column ── */}
+      <div className="space-y-3">
+        {/* AI Insight */}
+        {triageInsight && (
+          <div className="space-y-1">
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">AI Insight</h4>
+            <div className="flex items-start gap-2">
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 mt-0.5 ${TRIAGE_ACTION_STYLE[triageInsight.action] ?? TRIAGE_ACTION_STYLE.investigate}`}>
+                {triageInsight.action}
+              </span>
+              <p className="text-xs leading-relaxed">{triageInsight.insight}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Performance Flags */}
+        {candidate.performanceFlags.length > 0 && (
+          <div className="space-y-1">
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Performance Flags</h4>
+            <div className="flex flex-wrap gap-1.5">
+              {candidate.performanceFlags.map((f) => (
+                <Tooltip key={f.flag}>
+                  <TooltipTrigger asChild>
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-help ${flagSeverityColor(f.severity)}`}>
+                      {f.label}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p className="text-xs">{f.detail}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Sample SQL */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Sample SQL</h4>
+            <Button variant="ghost" size="icon-xs" onClick={handleCopySql}>
+              {sqlCopied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+            </Button>
+          </div>
+          <pre className="text-[11px] font-mono bg-muted/50 rounded-md p-2 max-h-32 overflow-auto whitespace-pre-wrap break-words border border-border/50">
+            {candidate.sampleQueryText.slice(0, 500)}
+            {candidate.sampleQueryText.length > 500 ? "\u2026" : ""}
+          </pre>
+        </div>
+      </div>
+
+      {/* ── Right column ── */}
+      <div className="space-y-3">
+        {/* Time Breakdown */}
+        <div className="space-y-1.5">
+          <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Avg Time Breakdown</h4>
+          {totalTime > 0 && (
+            <div className="flex h-2.5 rounded-full overflow-hidden bg-muted">
+              {TIME_SEGMENT_COLORS.map((seg, i) => {
+                const pct = (timeSegments[i] / totalTime) * 100;
+                if (pct < 0.5) return null;
+                return (
+                  <Tooltip key={seg.key}>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={`${seg.color} transition-all cursor-help`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">{seg.label}: {formatDuration(timeSegments[i])} ({pct.toFixed(0)}%)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+            {TIME_SEGMENT_COLORS.map((seg, i) => (
+              <span key={seg.key} className="inline-flex items-center gap-1">
+                <span className={`inline-block h-2 w-2 rounded-full ${seg.color}`} />
+                {seg.label}: {formatDuration(timeSegments[i])}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* I/O Stats */}
+        <div className="space-y-1">
+          <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">I/O Stats</h4>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+            <span className="text-muted-foreground">Read</span>
+            <span className="font-medium tabular-nums">{formatBytes(ws.totalReadBytes)}</span>
+            <span className="text-muted-foreground">Written</span>
+            <span className="font-medium tabular-nums">{formatBytes(ws.totalWrittenBytes)}</span>
+            <span className="text-muted-foreground">Spill</span>
+            <span className="font-medium tabular-nums">{formatBytes(ws.totalSpilledBytes)}</span>
+            <span className="text-muted-foreground">Shuffle</span>
+            <span className="font-medium tabular-nums">{formatBytes(ws.totalShuffleBytes)}</span>
+            <span className="text-muted-foreground">Pruning Eff.</span>
+            <span className="font-medium tabular-nums">{Math.round(ws.avgPruningEfficiency * 100)}%</span>
+            <span className="text-muted-foreground">IO Cache</span>
+            <span className="font-medium tabular-nums">{Math.round(ws.avgIoCachePercent)}%</span>
+          </div>
+        </div>
+
+        {/* Score Breakdown */}
+        {reasons.length > 0 && (
+          <div className="space-y-1">
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Why Ranked</h4>
+            <ul className="space-y-0.5">
+              {reasons.map((r, i) => (
+                <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                  <ArrowRight className="h-3 w-3 shrink-0 mt-0.5 text-primary" />
+                  {r}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function tagToStatus(
   tag: string
@@ -1047,6 +1262,33 @@ export function Dashboard({
     return () => clearInterval(interval);
   }, []);
 
+  // ── AI Triage insights (streamed in from Phase 3) ──
+  const [triageInsights, setTriageInsights] = useState<Record<string, { insight: string; action: string }>>({});
+  const [triageLoaded, setTriageLoaded] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      const el = document.getElementById("ai-triage-data");
+      if (el) {
+        try {
+          const data = JSON.parse(el.textContent ?? "{}");
+          setTriageInsights(data);
+          setTriageLoaded(true);
+        } catch {
+          // ignore parse errors
+        }
+        return true;
+      }
+      return false;
+    };
+
+    if (check()) return;
+    const interval = setInterval(() => {
+      if (check()) clearInterval(interval);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
   // Combine health info — enrichment entries override initial ones (dedup by name)
   const allHealth: DataSourceHealth[] = useMemo(() => {
     const map = new Map<string, DataSourceHealth>();
@@ -1073,6 +1315,17 @@ export function Dashboard({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [flagFilter, setFlagFilter] = useState<string | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
+
+  // ── Expandable rows ──
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  function toggleExpand(fingerprint: string) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(fingerprint)) next.delete(fingerprint);
+      else next.add(fingerprint);
+      return next;
+    });
+  }
 
   // Table: search, sort, pagination, min duration filter
   const [tableSearch, setTableSearch] = useState("");
@@ -1729,6 +1982,7 @@ export function Dashboard({
                         </button>
                       </TableHead>
                       <TableHead>Query</TableHead>
+                      <TableHead className="min-w-[180px]">AI Insight</TableHead>
                       <TableHead className="w-14 text-center">Source</TableHead>
                       <TableHead>Warehouse</TableHead>
                       <TableHead>User / Source</TableHead>
@@ -1781,15 +2035,24 @@ export function Dashboard({
                               ? buildLink(rowWsUrl, "notebook", src.notebookId)
                               : null;
 
+                      const isExpanded = expandedRows.has(c.fingerprint);
+                      const rowReasons = explainScore(c.scoreBreakdown);
+
                       return (
-                        <ContextMenu key={c.fingerprint}>
+                        <React.Fragment key={c.fingerprint}>
+                        <ContextMenu>
                           <ContextMenuTrigger asChild>
                             <TableRow
-                              className="cursor-pointer group"
-                              onClick={() => handleRowClick(c)}
+                              className={`cursor-pointer group ${isExpanded ? "bg-muted/20" : ""}`}
+                              onClick={() => toggleExpand(c.fingerprint)}
                             >
                               <TableCell className="text-xs text-muted-foreground tabular-nums">
-                                {page * pageSize + idx + 1}
+                                <div className="flex items-center gap-1">
+                                  <ChevronRight
+                                    className={`h-3.5 w-3.5 transition-transform duration-200 ${expandedRows.has(c.fingerprint) ? "rotate-90" : ""}`}
+                                  />
+                                  {page * pageSize + idx + 1}
+                                </div>
                               </TableCell>
                               <TableCell>
                                 <ScoreBar score={c.impactScore} />
@@ -1832,6 +2095,12 @@ export function Dashboard({
                                     )}
                                   </div>
                                 </div>
+                              </TableCell>
+                              <TableCell>
+                                <TriageCell
+                                  insight={triageInsights[c.fingerprint] ?? null}
+                                  loading={!triageLoaded}
+                                />
                               </TableCell>
                               <TableCell className="text-center">
                                 <Tooltip>
@@ -1953,6 +2222,21 @@ export function Dashboard({
                                         size="icon-xs"
                                         onClick={(e) => {
                                           e.stopPropagation();
+                                          handleRowClick(c);
+                                        }}
+                                      >
+                                        <PanelRightOpen className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Quick View Panel</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
                                           router.push(`/queries/${c.fingerprint}?action=analyse`);
                                         }}
                                       >
@@ -2019,6 +2303,18 @@ export function Dashboard({
                             </ContextMenuItem>
                           </ContextMenuContent>
                         </ContextMenu>
+                        {isExpanded && (
+                          <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border/50">
+                            <TableCell colSpan={12} className="px-6 py-4">
+                              <ExpandedRowContent
+                                candidate={c}
+                                triageInsight={triageInsights[c.fingerprint] ?? null}
+                                reasons={rowReasons}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        </React.Fragment>
                       );
                     })}
                   </TableBody>
