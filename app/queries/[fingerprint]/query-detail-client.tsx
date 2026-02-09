@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Clock,
@@ -36,7 +36,6 @@ import {
   Copy,
   Check,
   Sparkles,
-  Stethoscope,
   Loader2,
   AlertTriangle,
   ShieldAlert,
@@ -59,7 +58,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { explainScore } from "@/lib/domain/scoring";
-import { diagnoseQuery, rewriteQuery } from "@/lib/ai/actions";
+import { rewriteQuery } from "@/lib/ai/actions";
 import type { Candidate, QueryOrigin } from "@/lib/domain/types";
 import type { DiagnoseResponse, RewriteResponse } from "@/lib/ai/promptBuilder";
 import type { AiResult } from "@/lib/ai/aiClient";
@@ -67,7 +66,7 @@ import type { AiResult } from "@/lib/ai/aiClient";
 /* ── Helpers ── */
 
 function formatDuration(ms: number): string {
-  if (ms < 1_000) return `${ms}ms`;
+  if (ms < 1_000) return `${Math.round(ms)}ms`;
   if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
   if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`;
   return `${(ms / 3_600_000).toFixed(1)}h`;
@@ -325,22 +324,101 @@ function ContextRow({
   );
 }
 
+/** Renders rationale text with numbered items and inline **bold** markers */
+function RationaleBlock({ text }: { text: string }) {
+  // Split on numbered items like "1. ", "2. " etc. at start of line or after newline
+  const items = text
+    .split(/(?:^|\n)\s*\d+\.\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // If the AI didn't return numbered items, just render as paragraphs split on newlines
+  if (items.length <= 1) {
+    const paragraphs = text.split(/\n+/).filter(Boolean);
+    return (
+      <div className="space-y-2 mt-1">
+        {paragraphs.map((p, i) => (
+          <p key={i} className="text-sm text-muted-foreground leading-relaxed">
+            <BoldInline text={p} />
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 mt-1">
+      {items.map((item, i) => {
+        // Extract bold title like **Title**: rest
+        const titleMatch = item.match(/^\*\*(.+?)\*\*[:\s]*([\s\S]*)$/);
+        const title = titleMatch ? titleMatch[1] : null;
+        const body = titleMatch ? titleMatch[2] : item;
+
+        return (
+          <div
+            key={i}
+            className="rounded-lg border border-border bg-muted/30 p-3 space-y-1"
+          >
+            <div className="flex items-start gap-2">
+              <span className="text-xs font-bold tabular-nums text-primary mt-0.5 w-5 text-right shrink-0">
+                {i + 1}.
+              </span>
+              <div className="min-w-0">
+                {title && (
+                  <p className="text-sm font-semibold text-foreground">{title}</p>
+                )}
+                {body && (
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    <BoldInline text={body} />
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Renders inline **bold** markers within text */
+function BoldInline({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith("**") && part.endsWith("**")) {
+          return (
+            <strong key={i} className="font-semibold text-foreground">
+              {part.slice(2, -2)}
+            </strong>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
 /* ── Main Component ── */
 
 interface QueryDetailClientProps {
   candidate: Candidate;
   workspaceUrl: string;
+  /** When true, auto-trigger AI analysis on mount */
+  autoAnalyse?: boolean;
 }
 
 export function QueryDetailClient({
   candidate,
   workspaceUrl,
+  autoAnalyse = false,
 }: QueryDetailClientProps) {
   const [copied, setCopied] = useState(false);
-  const [diagnosing, startDiagnose] = useTransition();
-  const [rewriting, startRewrite] = useTransition();
+  const [analysing, startAnalyse] = useTransition();
   const [aiResult, setAiResult] = useState<AiResult | null>(null);
   const [activeAiTab, setActiveAiTab] = useState("summary");
+  const autoTriggered = useRef(false);
   const ws = candidate.windowStats;
   const reasons = explainScore(candidate.scoreBreakdown);
   const OriginIcon = originIcon(candidate.queryOrigin);
@@ -394,6 +472,24 @@ export function QueryDetailClient({
       ? `${formatDBUs(candidate.allocatedDBUs)} DBUs`
       : null;
 
+  /** Run a full AI analysis (rewrite mode gives diagnosis + rewrite in one shot) */
+  function runAnalysis() {
+    startAnalyse(async () => {
+      const result = await rewriteQuery(candidate);
+      setAiResult(result);
+      setActiveAiTab("summary");
+    });
+  }
+
+  // Auto-trigger when navigated with ?action=analyse
+  useEffect(() => {
+    if (autoAnalyse && !autoTriggered.current && !aiResult) {
+      autoTriggered.current = true;
+      runAnalysis();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAnalyse]);
+
   return (
     <TooltipProvider>
       <div className="space-y-4">
@@ -432,60 +528,24 @@ export function QueryDetailClient({
 
               {/* Right: CTA */}
               <div className="flex items-center gap-2 shrink-0">
-                <div className="flex items-center rounded-lg border border-border overflow-hidden">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1.5 rounded-none border-r border-border"
-                        disabled={diagnosing || rewriting}
-                        onClick={() => {
-                          startDiagnose(async () => {
-                            const result = await diagnoseQuery(candidate);
-                            setAiResult(result);
-                            setActiveAiTab("summary");
-                          });
-                        }}
-                      >
-                        {diagnosing ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Stethoscope className="h-3.5 w-3.5" />
-                        )}
-                        {diagnosing ? "Diagnosing\u2026" : "1. Diagnose"}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>AI analyses execution metrics and explains root causes</TooltipContent>
-                  </Tooltip>
-                  <div className="px-1 text-muted-foreground">
-                    <ArrowRight className="h-3 w-3" />
-                  </div>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="sm"
-                        className="gap-1.5 rounded-none"
-                        disabled={diagnosing || rewriting}
-                        onClick={() => {
-                          startRewrite(async () => {
-                            const result = await rewriteQuery(candidate);
-                            setAiResult(result);
-                            setActiveAiTab("summary");
-                          });
-                        }}
-                      >
-                        {rewriting ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5" />
-                        )}
-                        {rewriting ? "Generating\u2026" : "2. Rewrite"}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>AI proposes an optimised SQL rewrite</TooltipContent>
-                  </Tooltip>
-                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={analysing}
+                      onClick={runAnalysis}
+                    >
+                      {analysing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      {analysing ? "Analysing\u2026" : aiResult ? "Re-analyse" : "AI Analyse"}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>AI diagnoses root causes and generates an optimised rewrite</TooltipContent>
+                </Tooltip>
                 {queryProfileLink && (
                   <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1" asChild>
                     <a href={queryProfileLink} target="_blank" rel="noopener noreferrer">
@@ -523,6 +583,19 @@ export function QueryDetailClient({
         </Card>
 
         {/* ── AI Results ── */}
+        {analysing && !aiResult && (
+          <Card className="border-primary/30">
+            <CardContent className="flex items-center gap-3 py-5">
+              <Loader2 className="h-5 w-5 animate-spin text-primary shrink-0" />
+              <div>
+                <p className="text-sm font-medium">AI is analysing this query&hellip;</p>
+                <p className="text-xs text-muted-foreground">
+                  Diagnosing root causes, fetching table metadata, and generating an optimised rewrite. This may take 30-60 seconds.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         {aiResult && (
           <AiResultsPanel
             result={aiResult}
@@ -761,7 +834,7 @@ function AiResultsPanel({
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" />
-            AI {isRewrite ? "Rewrite" : "Diagnosis"}
+            AI Analysis
           </CardTitle>
           {isRewrite && (
             <Link href={`/rewrite/${fingerprint}`}>
@@ -832,7 +905,7 @@ function AiResultsPanel({
                 </div>
                 <div>
                   <SectionLabel>Rationale</SectionLabel>
-                  <p className="text-sm text-muted-foreground">{rewriteData.rationale}</p>
+                  <RationaleBlock text={rewriteData.rationale} />
                 </div>
               </TabsContent>
 

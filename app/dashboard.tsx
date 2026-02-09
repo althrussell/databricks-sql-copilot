@@ -60,7 +60,6 @@ import {
   XCircle,
   Info,
   Sparkles,
-  Stethoscope,
   ArrowRight,
   ArrowUpDown,
   ArrowUp,
@@ -74,12 +73,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { format, subDays, startOfDay, endOfDay, setHours, setMinutes } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import {
   Select,
   SelectContent,
@@ -167,6 +168,148 @@ function describeWindow(preset: string): string {
   return `~${startDays}d ago → ${endAgo}h ago`;
 }
 
+/* ── Custom range label formatter ── */
+
+function formatCustomRangeLabel(range: { from: string; to: string }): string {
+  const from = new Date(range.from);
+  const to = new Date(range.to);
+  const sameDay =
+    from.getFullYear() === to.getFullYear() &&
+    from.getMonth() === to.getMonth() &&
+    from.getDate() === to.getDate();
+  if (sameDay) {
+    return `${format(from, "MMM d")} ${format(from, "HH:mm")} \u2013 ${format(to, "HH:mm")}`;
+  }
+  return `${format(from, "MMM d, HH:mm")} \u2013 ${format(to, "MMM d, HH:mm")}`;
+}
+
+/* ── Custom Range Picker ── */
+
+function CustomRangePicker({
+  isActive,
+  customRange,
+  onApply,
+}: {
+  isActive: boolean;
+  customRange: { from: string; to: string } | null;
+  onApply: (from: Date, to: Date) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const today = new Date();
+
+  // Local state for the picker
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    if (customRange) {
+      return { from: new Date(customRange.from), to: new Date(customRange.to) };
+    }
+    // Default: yesterday
+    const yesterday = subDays(today, 1);
+    return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
+  });
+  const [startTime, setStartTime] = useState(() => {
+    if (customRange) return format(new Date(customRange.from), "HH:mm");
+    return "09:00";
+  });
+  const [endTime, setEndTime] = useState(() => {
+    if (customRange) return format(new Date(customRange.to), "HH:mm");
+    return "17:00";
+  });
+
+  function handleApply() {
+    if (!dateRange?.from) return;
+    const endDate = dateRange.to ?? dateRange.from;
+    const [sh, sm] = startTime.split(":").map(Number);
+    const [eh, em] = endTime.split(":").map(Number);
+    const from = setMinutes(setHours(dateRange.from, sh), sm);
+    const to = setMinutes(setHours(endDate, eh), em);
+    if (from >= to) return; // invalid range
+    onApply(from, to);
+    setOpen(false);
+  }
+
+  const triggerLabel = isActive && customRange
+    ? formatCustomRangeLabel(customRange)
+    : "Custom range";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant={isActive ? "default" : "outline"}
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+        >
+          <CalendarDays className="h-3 w-3" />
+          {triggerLabel}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <div className="p-4 space-y-4">
+          <div>
+            <p className="text-xs font-medium">Select date range</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              Pick start and end dates, then set the time window.
+            </p>
+          </div>
+
+          <Calendar
+            mode="range"
+            defaultMonth={dateRange?.from}
+            selected={dateRange}
+            onSelect={setDateRange}
+            numberOfMonths={2}
+            disabled={{ after: today, before: subDays(today, 30) }}
+            initialFocus
+          />
+
+          {/* Time inputs */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 space-y-1">
+              <label className="text-[10px] font-medium text-muted-foreground">Start time</label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <span className="text-muted-foreground mt-4">{"\u2013"}</span>
+            <div className="flex-1 space-y-1">
+              <label className="text-[10px] font-medium text-muted-foreground">End time</label>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
+
+          {/* Warning */}
+          <p className="text-[10px] text-amber-600 dark:text-amber-400">
+            Billing data may be incomplete for the last ~6 hours.
+          </p>
+
+          {/* Apply */}
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" className="text-xs" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="text-xs"
+              disabled={!dateRange?.from}
+              onClick={handleApply}
+            >
+              Apply range
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /* ── Deep link helpers (client-side, using workspaceUrl prop) ── */
 
 function buildLink(
@@ -208,7 +351,7 @@ function buildLink(
 /* ── Helpers ── */
 
 function formatDuration(ms: number): string {
-  if (ms < 1_000) return `${ms}ms`;
+  if (ms < 1_000) return `${Math.round(ms)}ms`;
   if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
   if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`;
   return `${(ms / 3_600_000).toFixed(1)}h`;
@@ -712,27 +855,13 @@ function DetailPanel({
             <Button
               onClick={() => {
                 onOpenChange(false);
-                window.location.href = `/queries/${candidate.fingerprint}`;
-              }}
-              className="flex-1 gap-1.5"
-              size="sm"
-            >
-              <Stethoscope className="h-3.5 w-3.5" />
-              AI Diagnose
-            </Button>
-            <div className="text-muted-foreground">
-              <ArrowRight className="h-3 w-3" />
-            </div>
-            <Button
-              onClick={() => {
-                onOpenChange(false);
-                window.location.href = `/rewrite/${candidate.fingerprint}`;
+                window.location.href = `/queries/${candidate.fingerprint}?action=analyse`;
               }}
               className="flex-1 gap-1.5"
               size="sm"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              AI Rewrite
+              AI Analyse
             </Button>
             <Button
               variant="secondary"
@@ -979,6 +1108,8 @@ interface DashboardProps {
   initialCandidates: Candidate[];
   initialTotalQueries: number;
   initialTimePreset: string;
+  /** Absolute custom range (from/to ISO strings). Null = use preset. */
+  initialCustomRange?: { from: string; to: string } | null;
   warehouseEvents: WarehouseEvent[];
   warehouseCosts: WarehouseCost[];
   warehouseUtilization: WarehouseUtilization[];
@@ -994,6 +1125,7 @@ export function Dashboard({
   initialCandidates,
   initialTotalQueries,
   initialTimePreset,
+  initialCustomRange = null,
   warehouseEvents: initialEvents,
   warehouseCosts: initialCosts,
   warehouseUtilization: initialUtilization,
@@ -1054,6 +1186,8 @@ export function Dashboard({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [timePreset, setTimePreset] = useState(initialTimePreset);
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(initialCustomRange);
+  const isCustomMode = customRange !== null;
   const [warehouseFilter, setWarehouseFilter] = useState("all");
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(
     null
@@ -1396,8 +1530,24 @@ export function Dashboard({
 
   function handleTimeChange(preset: string) {
     setTimePreset(preset);
+    setCustomRange(null);
     const params = new URLSearchParams(searchParams.toString());
     params.set("time", preset);
+    params.delete("from");
+    params.delete("to");
+    startTransition(() => {
+      router.push(`/?${params.toString()}`);
+    });
+  }
+
+  function handleCustomRange(from: Date, to: Date) {
+    const fromIso = from.toISOString();
+    const toIso = to.toISOString();
+    setCustomRange({ from: fromIso, to: toIso });
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("time");
+    params.set("from", fromIso);
+    params.set("to", toIso);
     startTransition(() => {
       router.push(`/?${params.toString()}`);
     });
@@ -1453,64 +1603,22 @@ export function Dashboard({
       <div className="space-y-4">
         {/* ── Toolbar ── */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Time range: quick presets + custom picker */}
+          {/* Time range: quick presets + custom range picker */}
           <div className="flex items-center gap-1.5">
             {TIME_PRESETS.map((p) => (
               <FilterChip
                 key={p.value}
-                selected={timePreset === p.value}
+                selected={!isCustomMode && timePreset === p.value}
                 onClick={() => handleTimeChange(p.value)}
               >
                 {p.label}
               </FilterChip>
             ))}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant={!["1h","6h","24h","7d"].includes(timePreset) ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 gap-1.5 text-xs"
-                >
-                  <CalendarDays className="h-3 w-3" />
-                  {!["1h","6h","24h","7d"].includes(timePreset) ? `${timePreset.replace("h","")}h` : "Custom"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-72 p-4" align="start">
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs font-medium mb-1">Custom time window</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      Drag the slider to set a custom lookback window (1–168 hours).
-                      Data is shifted {BILLING_LAG_HOURS}h for billing accuracy.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <Slider
-                      defaultValue={[(() => {
-                        const h = parseInt(timePreset);
-                        return isNaN(h) ? ({"1h":1,"6h":6,"24h":24,"7d":168}[timePreset] ?? 1) : h;
-                      })()]}
-                      min={1}
-                      max={168}
-                      step={1}
-                      onValueCommit={([v]) => {
-                        // Map to preset if exact, else use custom
-                        const presetMap: Record<number, string> = { 1: "1h", 6: "6h", 24: "24h", 168: "7d" };
-                        handleTimeChange(presetMap[v] ?? `${v}h`);
-                      }}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-[10px] text-muted-foreground">
-                      <span>1h</span>
-                      <span>12h</span>
-                      <span>24h</span>
-                      <span>72h</span>
-                      <span>7d</span>
-                    </div>
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <CustomRangePicker
+              isActive={isCustomMode}
+              customRange={customRange}
+              onApply={handleCustomRange}
+            />
           </div>
 
           <div className="h-6 w-px bg-border hidden md:block" />
@@ -1544,13 +1652,20 @@ export function Dashboard({
                 <TooltipTrigger asChild>
                   <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-help">
                     <CalendarDays className="h-3 w-3" />
-                    <span className="hidden sm:inline">{describeWindow(timePreset)}</span>
-                    <span className="sm:hidden">Shifted {BILLING_LAG_HOURS}h</span>
+                    <span className="hidden sm:inline">
+                      {isCustomMode
+                        ? formatCustomRangeLabel(customRange!)
+                        : describeWindow(timePreset)}
+                    </span>
+                    <span className="sm:hidden">
+                      {isCustomMode ? "Custom" : `Shifted ${BILLING_LAG_HOURS}h`}
+                    </span>
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-xs text-xs">
-                  All views are shifted back {BILLING_LAG_HOURS}h to ensure billing &amp; cost data
-                  is fully populated across all dimensions (queries, events, costs, audit).
+                  {isCustomMode
+                    ? "Showing data for the exact custom time window you selected."
+                    : `All views are shifted back ${BILLING_LAG_HOURS}h to ensure billing & cost data is fully populated across all dimensions (queries, events, costs, audit).`}
                 </TooltipContent>
               </Tooltip>
             </>
@@ -2291,7 +2406,7 @@ export function Dashboard({
                                     </TooltipContent>
                                   </Tooltip>
                                 ) : (
-                                  <span className="text-muted-foreground text-xs">\u2014</span>
+                                  <span className="text-muted-foreground text-xs">{"\u2014"}</span>
                                 )}
                               </TableCell>
                               <TableCell className="text-right">
@@ -2303,28 +2418,13 @@ export function Dashboard({
                                         size="icon-xs"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          router.push(`/queries/${c.fingerprint}`);
-                                        }}
-                                      >
-                                        <Stethoscope className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>AI Diagnose</TooltipContent>
-                                  </Tooltip>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          router.push(`/rewrite/${c.fingerprint}`);
+                                          router.push(`/queries/${c.fingerprint}?action=analyse`);
                                         }}
                                       >
                                         <Sparkles className="h-3.5 w-3.5" />
                                       </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent>AI Rewrite</TooltipContent>
+                                    <TooltipContent>AI Analyse &amp; Optimise</TooltipContent>
                                   </Tooltip>
                                 </div>
                               </TableCell>
@@ -2338,6 +2438,10 @@ export function Dashboard({
                             <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}`)}>
                               <Maximize2 className="mr-2 h-4 w-4" />
                               Full Details
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?action=analyse`)}>
+                              <Sparkles className="mr-2 h-4 w-4" />
+                              AI Analyse &amp; Optimise
                             </ContextMenuItem>
                             {profileLink && (
                               <ContextMenuItem onClick={() => openInNewTab(profileLink)}>

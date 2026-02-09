@@ -87,8 +87,17 @@ function catchAndLogTracked<T>(
  * Renders the main dashboard immediately with query patterns (no cost yet).
  * Phase 2 enrichment data streams in after.
  */
-async function CoreDashboardLoader({ preset }: { preset: string }) {
-  const { start, end } = timeRangeForPreset(preset);
+async function CoreDashboardLoader({
+  preset,
+  customRange,
+}: {
+  preset: string;
+  customRange: { from: string; to: string } | null;
+}) {
+  // Custom absolute range takes priority over preset
+  const { start, end } = customRange
+    ? { start: customRange.from, end: customRange.to }
+    : timeRangeForPreset(preset);
 
   let warehouses: WarehouseOption[] = [];
   let candidates: Candidate[] = [];
@@ -136,6 +145,7 @@ async function CoreDashboardLoader({ preset }: { preset: string }) {
       initialCandidates={candidates}
       initialTotalQueries={totalQueryCount}
       initialTimePreset={preset}
+      initialCustomRange={customRange}
       warehouseEvents={[]}
       warehouseCosts={[]}
       warehouseUtilization={[]}
@@ -282,13 +292,28 @@ async function EnrichmentLoader({
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ time?: string }>;
+  searchParams: Promise<{ time?: string; from?: string; to?: string }>;
 }) {
   const params = await searchParams;
   const preset = params.time ?? "1h";
+
+  // Custom absolute range: ?from=ISO&to=ISO
+  let customRange: { from: string; to: string } | null = null;
+  if (params.from && params.to) {
+    // Validate that both are parseable dates
+    const fromMs = Date.parse(params.from);
+    const toMs = Date.parse(params.to);
+    if (!isNaN(fromMs) && !isNaN(toMs) && fromMs < toMs) {
+      customRange = {
+        from: new Date(fromMs).toISOString(),
+        to: new Date(toMs).toISOString(),
+      };
+    }
+  }
+
   return (
     <Suspense fallback={<DashboardSkeleton />}>
-      <CoreDashboardLoader preset={preset} />
+      <CoreDashboardLoader preset={preset} customRange={customRange} />
     </Suspense>
   );
 }

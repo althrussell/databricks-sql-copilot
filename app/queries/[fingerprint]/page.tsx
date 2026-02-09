@@ -19,7 +19,7 @@ export const revalidate = 300; // cache for 5 minutes
 
 interface QueryDetailPageProps {
   params: Promise<{ fingerprint: string }>;
-  searchParams: Promise<{ start?: string; end?: string }>;
+  searchParams: Promise<{ start?: string; end?: string; action?: string }>;
 }
 
 function DetailSkeleton() {
@@ -69,10 +69,12 @@ async function QueryDetailLoader({
   fingerprint,
   start,
   end,
+  autoAnalyse,
 }: {
   fingerprint: string;
   start: string;
   end: string;
+  autoAnalyse: boolean;
 }) {
   const catchAndLog =
     <T,>(label: string, fallback: T) =>
@@ -104,6 +106,7 @@ async function QueryDetailLoader({
     <QueryDetailClient
       candidate={candidate}
       workspaceUrl={workspaceUrl}
+      autoAnalyse={autoAnalyse}
     />
   );
 }
@@ -119,6 +122,7 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
   const lagStart = new Date(lagEnd.getTime() - 60 * 60 * 1000); // 1h window
   const start = searchParams.start ?? lagStart.toISOString();
   const end = searchParams.end ?? lagEnd.toISOString();
+  const autoAnalyse = searchParams.action === "analyse";
 
   return (
     <div className="space-y-6">
@@ -136,6 +140,7 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
           fingerprint={fingerprint}
           start={start}
           end={end}
+          autoAnalyse={autoAnalyse}
         />
       </Suspense>
     </div>
