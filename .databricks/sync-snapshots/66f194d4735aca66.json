@@ -5,6 +5,7 @@
   "last_modified_times": {
     ".env.local.example": "2026-02-09T16:27:54.371999949+10:00",
     ".gitignore": "2026-02-09T20:21:59.561561339+10:00",
+    "README.md": "2026-02-09T20:22:32.139100012+10:00",
     "app.yaml": "2026-02-09T16:25:48.682156952+10:00",
     "app/backlog/page.tsx": "2026-02-09T18:49:46.625786253+10:00",
     "app/dashboard-skeleton.tsx": "2026-02-09T18:39:14.540233458+10:00",
@@ -82,6 +83,7 @@
   "local_to_remote_names": {
     ".env.local.example": ".env.local.example",
     ".gitignore": ".gitignore",
+    "README.md": "README.md",
     "app.yaml": "app.yaml",
     "app/backlog/page.tsx": "app/backlog/page.tsx",
     "app/dashboard-skeleton.tsx": "app/dashboard-skeleton.tsx",
@@ -159,6 +161,7 @@
   "remote_to_local_names": {
     ".env.local.example": ".env.local.example",
     ".gitignore": ".gitignore",
+    "README.md": "README.md",
     "app.yaml": "app.yaml",
     "app/backlog/page.tsx": "app/backlog/page.tsx",
     "app/dashboard-skeleton.tsx": "app/dashboard-skeleton.tsx",
