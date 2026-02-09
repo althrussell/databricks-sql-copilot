@@ -1,0 +1,1044 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import Link from "next/link";
+import {
+  Clock,
+  Database,
+  Zap,
+  Warehouse,
+  Users,
+  LayoutDashboard,
+  FileCode2,
+  BriefcaseBusiness,
+  Bell,
+  Terminal,
+  Bot,
+  HelpCircle,
+  ChevronRight,
+  Timer,
+  HardDrive,
+  Cpu,
+  BarChart3,
+  User,
+  Hourglass,
+  Flame,
+  Network,
+  FilterX,
+  Rows3,
+  ArrowDownToLine,
+  Layers,
+  MonitorSmartphone,
+  ExternalLink,
+  DollarSign,
+  Package,
+  Tag,
+  Flag,
+  Copy,
+  Check,
+  Sparkles,
+  Stethoscope,
+  Loader2,
+  AlertTriangle,
+  ShieldAlert,
+  ArrowRight,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { explainScore } from "@/lib/domain/scoring";
+import { diagnoseQuery, rewriteQuery } from "@/lib/ai/actions";
+import type { Candidate, QueryOrigin } from "@/lib/domain/types";
+import type { DiagnoseResponse, RewriteResponse } from "@/lib/ai/promptBuilder";
+import type { AiResult } from "@/lib/ai/aiClient";
+
+/* ── Helpers (shared with dashboard) ── */
+
+function formatDuration(ms: number): string {
+  if (ms < 1_000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
+  if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`;
+  return `${(ms / 3_600_000).toFixed(1)}h`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`;
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
+  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)} KB`;
+  return `${bytes} B`;
+}
+
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return n.toString();
+}
+
+function formatDBUs(dbus: number): string {
+  if (dbus >= 1_000) return `${(dbus / 1_000).toFixed(1)}k`;
+  if (dbus >= 1) return dbus.toFixed(1);
+  return dbus.toFixed(2);
+}
+
+function formatDollars(dollars: number): string {
+  if (dollars >= 1_000) return `$${(dollars / 1_000).toFixed(1)}k`;
+  if (dollars >= 1) return `$${dollars.toFixed(2)}`;
+  if (dollars > 0) return `$${dollars.toFixed(3)}`;
+  return "$0";
+}
+
+function scoreColor(score: number): string {
+  if (score >= 70) return "bg-red-500";
+  if (score >= 40) return "bg-amber-500";
+  return "bg-emerald-500";
+}
+
+function scoreTextColor(score: number): string {
+  if (score >= 70) return "text-red-600 dark:text-red-400";
+  if (score >= 40) return "text-amber-600 dark:text-amber-400";
+  return "text-emerald-600 dark:text-emerald-400";
+}
+
+function flagSeverityColor(severity: "warning" | "critical"): string {
+  if (severity === "critical")
+    return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800";
+  return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800";
+}
+
+function tagToStatus(
+  tag: string
+): "default" | "warning" | "error" | "info" | "cached" {
+  switch (tag) {
+    case "slow":
+      return "error";
+    case "high-spill":
+    case "capacity-bound":
+      return "warning";
+    case "frequent":
+    case "quick-win":
+      return "info";
+    case "mostly-cached":
+      return "cached";
+    default:
+      return "default";
+  }
+}
+
+function originIcon(origin: QueryOrigin) {
+  switch (origin) {
+    case "dashboard":
+      return LayoutDashboard;
+    case "notebook":
+      return FileCode2;
+    case "job":
+      return BriefcaseBusiness;
+    case "alert":
+      return Bell;
+    case "sql-editor":
+      return Terminal;
+    case "genie":
+      return Bot;
+    default:
+      return HelpCircle;
+  }
+}
+
+function originLabel(origin: QueryOrigin): string {
+  switch (origin) {
+    case "dashboard":
+      return "Dashboard";
+    case "notebook":
+      return "Notebook";
+    case "job":
+      return "Job";
+    case "alert":
+      return "Alert";
+    case "sql-editor":
+      return "SQL Editor";
+    case "genie":
+      return "Genie";
+    default:
+      return "Unknown";
+  }
+}
+
+function buildLink(
+  base: string,
+  type: string,
+  id: string | null | undefined,
+  extras?: { queryStartTimeMs?: number }
+): string | null {
+  if (!id || !base) return null;
+  switch (type) {
+    case "query-profile": {
+      const params = new URLSearchParams({ queryId: id });
+      if (extras?.queryStartTimeMs) {
+        params.set("queryStartTimeMs", String(extras.queryStartTimeMs));
+      }
+      return `${base}/sql/history?${params.toString()}`;
+    }
+    case "warehouse":
+      return `${base}/sql/warehouses/${id}`;
+    case "dashboard":
+      return `${base}/sql/dashboardsv3/${id}`;
+    case "legacy-dashboard":
+      return `${base}/sql/dashboards/${id}`;
+    case "notebook":
+      return `${base}/editor/notebooks/${id}`;
+    case "job":
+      return `${base}/jobs/${id}`;
+    case "alert":
+      return `${base}/sql/alerts/${id}`;
+    case "sql-query":
+      return `${base}/sql/queries/${id}`;
+    case "genie":
+      return `${base}/genie/rooms/${id}`;
+    default:
+      return null;
+  }
+}
+
+/* ── Sub-components ── */
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+      {children}
+    </h4>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  subtext,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  subtext?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-muted/30 border border-border p-3">
+      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] text-muted-foreground">{label}</p>
+        <p className="text-sm font-semibold tabular-nums truncate">{value}</p>
+        {subtext && (
+          <p className="text-[10px] text-muted-foreground">{subtext}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TimeBar({
+  label,
+  ms,
+  maxMs,
+  icon: Icon,
+}: {
+  label: string;
+  ms: number;
+  maxMs: number;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  const pct = maxMs > 0 ? Math.max(1, (ms / maxMs) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <span className="text-xs text-muted-foreground w-28 shrink-0">
+        {label}
+      </span>
+      <div className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden">
+        <div
+          className="h-full rounded-full bg-primary/60 transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-xs font-medium tabular-nums w-16 text-right">
+        {formatDuration(ms)}
+      </span>
+    </div>
+  );
+}
+
+/* ── Main Component ── */
+
+interface QueryDetailClientProps {
+  candidate: Candidate;
+  workspaceUrl: string;
+}
+
+export function QueryDetailClient({
+  candidate,
+  workspaceUrl,
+}: QueryDetailClientProps) {
+  const [copied, setCopied] = useState(false);
+  const [diagnosing, startDiagnose] = useTransition();
+  const [rewriting, startRewrite] = useTransition();
+  const [aiResult, setAiResult] = useState<AiResult | null>(null);
+  const [activeAiTab, setActiveAiTab] = useState("summary");
+  const ws = candidate.windowStats;
+  const reasons = explainScore(candidate.scoreBreakdown);
+  const OriginIcon = originIcon(candidate.queryOrigin);
+
+  const maxTimeSegment = Math.max(
+    ws.avgCompilationMs,
+    ws.avgQueueWaitMs,
+    ws.avgComputeWaitMs,
+    ws.avgExecutionMs,
+    ws.avgFetchMs,
+    1
+  );
+
+  // Deep links
+  const src = candidate.querySource;
+  const sourceLink = src.dashboardId
+    ? buildLink(workspaceUrl, "dashboard", src.dashboardId)
+    : src.legacyDashboardId
+      ? buildLink(workspaceUrl, "legacy-dashboard", src.legacyDashboardId)
+      : src.jobId
+        ? buildLink(workspaceUrl, "job", src.jobId)
+        : src.notebookId
+          ? buildLink(workspaceUrl, "notebook", src.notebookId)
+          : src.alertId
+            ? buildLink(workspaceUrl, "alert", src.alertId)
+            : src.sqlQueryId
+              ? buildLink(workspaceUrl, "sql-query", src.sqlQueryId)
+              : null;
+
+  const queryProfileLink = buildLink(
+    workspaceUrl,
+    "query-profile",
+    candidate.sampleStatementId,
+    { queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime() }
+  );
+  const warehouseLink = buildLink(
+    workspaceUrl,
+    "warehouse",
+    candidate.warehouseId
+  );
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(candidate.sampleQueryText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <TooltipProvider>
+      <div className="space-y-6">
+        {/* ── Header card ── */}
+        <Card>
+          <CardContent className="py-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`rounded-lg p-2.5 ${candidate.impactScore >= 60 ? "bg-red-100 dark:bg-red-900/30" : "bg-amber-100 dark:bg-amber-900/30"}`}
+                  >
+                    <Zap
+                      className={`h-5 w-5 ${candidate.impactScore >= 60 ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}
+                    />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-bold tracking-tight">
+                      Impact Score:{" "}
+                      <span className={scoreTextColor(candidate.impactScore)}>
+                        {candidate.impactScore}
+                      </span>
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                      {candidate.statementType} &middot;{" "}
+                      {candidate.warehouseName}
+                      {candidate.allocatedCostDollars > 0 && (
+                        <> &middot; {formatDollars(candidate.allocatedCostDollars)}</>
+                      )}
+                      {candidate.allocatedCostDollars <= 0 &&
+                        candidate.allocatedDBUs > 0 && (
+                          <>
+                            {" "}
+                            &middot; {formatDBUs(candidate.allocatedDBUs)} DBUs
+                          </>
+                        )}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Tags */}
+                <div className="flex flex-wrap gap-1.5">
+                  {candidate.tags.map((tag) => (
+                    <StatusBadge key={tag} status={tagToStatus(tag)}>
+                      {tag}
+                    </StatusBadge>
+                  ))}
+                  {candidate.dbtMeta.isDbt && (
+                    <Badge
+                      variant="outline"
+                      className="border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-400"
+                    >
+                      <Package className="h-3 w-3 mr-1" />
+                      dbt
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Performance Flags */}
+                {candidate.performanceFlags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {candidate.performanceFlags.map((pf) => (
+                      <Tooltip key={pf.flag}>
+                        <TooltipTrigger asChild>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium cursor-help ${flagSeverityColor(pf.severity)}`}
+                          >
+                            <Flag className="h-3 w-3" />
+                            {pf.label}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          {pf.detail}
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* CTAs */}
+              <div className="flex items-center gap-2 shrink-0">
+                {queryProfileLink && (
+                  <Button variant="outline" size="sm" asChild>
+                    <a
+                      href={queryProfileLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                      Query Profile
+                    </a>
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={diagnosing || rewriting}
+                  onClick={() => {
+                    startDiagnose(async () => {
+                      const result = await diagnoseQuery(candidate);
+                      setAiResult(result);
+                      setActiveAiTab("summary");
+                    });
+                  }}
+                >
+                  {diagnosing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Stethoscope className="h-3.5 w-3.5" />
+                  )}
+                  {diagnosing ? "Diagnosing\u2026" : "Diagnose"}
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={diagnosing || rewriting}
+                  onClick={() => {
+                    startRewrite(async () => {
+                      const result = await rewriteQuery(candidate);
+                      setAiResult(result);
+                      setActiveAiTab("summary");
+                    });
+                  }}
+                >
+                  {rewriting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {rewriting ? "Generating\u2026" : "Generate Rewrite"}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── AI Results Panel ── */}
+        {aiResult && (
+          <AiResultsPanel
+            result={aiResult}
+            activeTab={activeAiTab}
+            onTabChange={setActiveAiTab}
+            fingerprint={candidate.fingerprint}
+          />
+        )}
+
+        {/* ── Two-column layout ── */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Left column: SQL + Time + I/O */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* SQL Preview */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">Sample SQL</CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopy}
+                    className="h-7 px-2 text-xs gap-1.5"
+                  >
+                    {copied ? (
+                      <Check className="h-3 w-3 text-emerald-500" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-lg bg-muted/50 border border-border p-4 max-h-72 overflow-y-auto">
+                  <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed text-foreground/80">
+                    {candidate.sampleQueryText}
+                  </pre>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Time Breakdown */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">
+                  Time Breakdown (avg per execution)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <TimeBar
+                  label="Compilation"
+                  ms={ws.avgCompilationMs}
+                  maxMs={maxTimeSegment}
+                  icon={Layers}
+                />
+                <TimeBar
+                  label="Queue Wait"
+                  ms={ws.avgQueueWaitMs}
+                  maxMs={maxTimeSegment}
+                  icon={Hourglass}
+                />
+                <TimeBar
+                  label="Compute Wait"
+                  ms={ws.avgComputeWaitMs}
+                  maxMs={maxTimeSegment}
+                  icon={Clock}
+                />
+                <TimeBar
+                  label="Execution"
+                  ms={ws.avgExecutionMs}
+                  maxMs={maxTimeSegment}
+                  icon={Cpu}
+                />
+                <TimeBar
+                  label="Result Fetch"
+                  ms={ws.avgFetchMs}
+                  maxMs={maxTimeSegment}
+                  icon={ArrowDownToLine}
+                />
+              </CardContent>
+            </Card>
+
+            {/* I/O Stats */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">I/O &amp; Resources</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  <StatCard
+                    icon={HardDrive}
+                    label="Data Read"
+                    value={formatBytes(ws.totalReadBytes)}
+                  />
+                  <StatCard
+                    icon={ArrowDownToLine}
+                    label="Data Written"
+                    value={formatBytes(ws.totalWrittenBytes)}
+                  />
+                  <StatCard
+                    icon={Rows3}
+                    label="Rows Read"
+                    value={formatCount(ws.totalReadRows)}
+                  />
+                  <StatCard
+                    icon={Rows3}
+                    label="Rows Produced"
+                    value={formatCount(ws.totalProducedRows)}
+                  />
+                  <StatCard
+                    icon={Flame}
+                    label="Spill to Disk"
+                    value={formatBytes(ws.totalSpilledBytes)}
+                  />
+                  <StatCard
+                    icon={Network}
+                    label="Shuffle"
+                    value={formatBytes(ws.totalShuffleBytes)}
+                  />
+                  <StatCard
+                    icon={Database}
+                    label="IO Cache Hit"
+                    value={`${Math.round(ws.avgIoCachePercent)}%`}
+                  />
+                  <StatCard
+                    icon={FilterX}
+                    label="Pruning Eff."
+                    value={`${Math.round(ws.avgPruningEfficiency * 100)}%`}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* dbt Metadata */}
+            {candidate.dbtMeta.isDbt && (
+              <Card className="border-blue-200 dark:border-blue-800">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    dbt Metadata
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {candidate.dbtMeta.nodeId && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          Node:
+                        </span>
+                        <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                          {candidate.dbtMeta.nodeId}
+                        </code>
+                      </div>
+                    )}
+                    {candidate.dbtMeta.queryTag && (
+                      <div className="flex items-center gap-2">
+                        <Tag className="h-3 w-3 text-blue-500" />
+                        <span className="text-xs text-blue-600 dark:text-blue-400">
+                          {candidate.dbtMeta.queryTag}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Right column: Execution stats, Cost, Context, Why Ranked */}
+          <div className="space-y-6">
+            {/* Execution Summary */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Execution Summary</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <StatCard
+                  icon={BarChart3}
+                  label="Executions"
+                  value={ws.count.toString()}
+                  subtext="in time window"
+                />
+                <StatCard
+                  icon={Timer}
+                  label="p95 Latency"
+                  value={formatDuration(ws.p95Ms)}
+                  subtext={`p50: ${formatDuration(ws.p50Ms)}`}
+                />
+                <StatCard
+                  icon={Cpu}
+                  label="Total Compute Time"
+                  value={formatDuration(ws.totalDurationMs)}
+                />
+                <StatCard
+                  icon={Zap}
+                  label="Parallelism"
+                  value={`${ws.avgTaskParallelism.toFixed(1)}x`}
+                  subtext="avg task parallelism"
+                />
+              </CardContent>
+            </Card>
+
+            {/* Cost */}
+            {(candidate.allocatedCostDollars > 0 ||
+              candidate.allocatedDBUs > 0) && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">
+                    Estimated Cost (Window)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4">
+                    <DollarSign className="h-6 w-6 text-emerald-600 shrink-0" />
+                    <div>
+                      <p className="text-3xl font-bold tabular-nums">
+                        {candidate.allocatedCostDollars > 0
+                          ? formatDollars(candidate.allocatedCostDollars)
+                          : `${formatDBUs(candidate.allocatedDBUs)} DBUs`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Proportional to compute time on{" "}
+                        {candidate.warehouseName}
+                        {candidate.allocatedCostDollars <= 0 &&
+                          candidate.allocatedDBUs > 0 &&
+                          " ($ prices unavailable)"}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Context */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Context</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center gap-3 rounded-lg bg-muted/30 border border-border p-3">
+                  <OriginIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-muted-foreground">Source</p>
+                    <p className="text-sm font-medium truncate">
+                      {originLabel(candidate.queryOrigin)}
+                    </p>
+                  </div>
+                  {sourceLink && (
+                    <a
+                      href={sourceLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:text-primary/80"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 rounded-lg bg-muted/30 border border-border p-3">
+                  <MonitorSmartphone className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-muted-foreground">
+                      Client App
+                    </p>
+                    <p className="text-sm font-medium truncate">
+                      {candidate.clientApplication}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 rounded-lg bg-muted/30 border border-border p-3">
+                  <Warehouse className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] text-muted-foreground">
+                      Warehouse
+                    </p>
+                    <p className="text-sm font-medium truncate">
+                      {candidate.warehouseName}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground font-mono">
+                      {candidate.warehouseId}
+                    </p>
+                  </div>
+                  {warehouseLink && (
+                    <a
+                      href={warehouseLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:text-primary/80"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Why Ranked */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Why Ranked</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {reasons.map((r, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 text-sm text-muted-foreground"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />
+                      <span>{r}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* Score breakdown */}
+                <div className="mt-4 space-y-1.5">
+                  {Object.entries(candidate.scoreBreakdown).map(
+                    ([key, value]) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground w-16 capitalize">
+                          {key}
+                        </span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${scoreColor(value)}`}
+                            style={{ width: `${value}%` }}
+                          />
+                        </div>
+                        <span className="text-[11px] font-medium tabular-nums w-6 text-right">
+                          {value}
+                        </span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Top Users */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">
+                  Top Users ({candidate.uniqueUserCount} total)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1.5">
+                  {candidate.topUsers.map((user) => (
+                    <div
+                      key={user}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="truncate">{user}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+/* ── AI Results Panel ── */
+
+function AiResultsPanel({
+  result,
+  activeTab,
+  onTabChange,
+  fingerprint,
+}: {
+  result: AiResult;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  fingerprint: string;
+}) {
+  if (result.status === "error") {
+    return (
+      <Card className="border-red-200 dark:border-red-800">
+        <CardContent className="flex items-start gap-3 py-4">
+          <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+              AI Analysis Failed
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {result.message}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (result.status === "guardrail") {
+    return (
+      <Card className="border-amber-200 dark:border-amber-800">
+        <CardContent className="flex items-start gap-3 py-4">
+          <ShieldAlert className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+              Guardrail Triggered
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {result.message}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const data = result.data;
+  const isRewrite = result.mode === "rewrite";
+  const rewriteData = isRewrite ? (data as RewriteResponse) : null;
+  const diagnoseData = !isRewrite ? (data as DiagnoseResponse) : null;
+
+  const tabItems = [
+    { value: "summary", label: "Summary" },
+    { value: "root-causes", label: "Root Causes" },
+    ...(isRewrite
+      ? [
+          { value: "rewrite", label: "Rewrite" },
+          { value: "risks", label: "Risks" },
+          { value: "validation", label: "Validation Plan" },
+        ]
+      : [{ value: "recommendations", label: "Recommendations" }]),
+  ];
+
+  return (
+    <Card className="border-primary/30">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            AI {isRewrite ? "Rewrite" : "Diagnosis"}
+          </CardTitle>
+          {isRewrite && (
+            <Link href={`/rewrite/${fingerprint}`}>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                Open Workbench
+                <ArrowRight className="h-3 w-3" />
+              </Button>
+            </Link>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Tabs value={activeTab} onValueChange={onTabChange}>
+          <TabsList className="w-full justify-start">
+            {tabItems.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          <TabsContent value="summary" className="mt-4 space-y-2">
+            {data.summary.map((bullet, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm">
+                <ChevronRight className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />
+                <span>{bullet}</span>
+              </div>
+            ))}
+          </TabsContent>
+
+          <TabsContent value="root-causes" className="mt-4 space-y-3">
+            {data.rootCauses.map((rc, i) => (
+              <div
+                key={i}
+                className={`rounded-lg border p-3 space-y-1 ${
+                  rc.severity === "high"
+                    ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/10"
+                    : rc.severity === "medium"
+                      ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/10"
+                      : "border-border bg-muted/30"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${
+                      rc.severity === "high"
+                        ? "border-red-300 text-red-700 dark:text-red-400"
+                        : rc.severity === "medium"
+                          ? "border-amber-300 text-amber-700 dark:text-amber-400"
+                          : ""
+                    }`}
+                  >
+                    {rc.severity}
+                  </Badge>
+                  <span className="text-sm font-medium">{rc.cause}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">{rc.evidence}</p>
+              </div>
+            ))}
+          </TabsContent>
+
+          {isRewrite && rewriteData && (
+            <>
+              <TabsContent value="rewrite" className="mt-4 space-y-3">
+                <div className="rounded-lg bg-muted/50 border border-border p-4 max-h-72 overflow-y-auto">
+                  <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed text-foreground/80">
+                    {rewriteData.rewrittenSql}
+                  </pre>
+                </div>
+                <div>
+                  <SectionLabel>Rationale</SectionLabel>
+                  <p className="text-sm text-muted-foreground">
+                    {rewriteData.rationale}
+                  </p>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="risks" className="mt-4 space-y-3">
+                {rewriteData.risks.map((r, i) => (
+                  <div
+                    key={i}
+                    className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-3 space-y-1"
+                  >
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
+                      <span className="text-sm font-medium">{r.risk}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      <strong>Mitigation:</strong> {r.mitigation}
+                    </p>
+                  </div>
+                ))}
+              </TabsContent>
+
+              <TabsContent value="validation" className="mt-4 space-y-2">
+                {rewriteData.validationPlan.map((step, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm">
+                    <span className="text-xs font-bold tabular-nums text-primary mt-0.5 w-5 text-right shrink-0">
+                      {i + 1}.
+                    </span>
+                    <span>{step}</span>
+                  </div>
+                ))}
+              </TabsContent>
+            </>
+          )}
+
+          {!isRewrite && diagnoseData && (
+            <TabsContent value="recommendations" className="mt-4 space-y-2">
+              {diagnoseData.recommendations.map((rec, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm">
+                  <ChevronRight className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />
+                  <span>{rec}</span>
+                </div>
+              ))}
+            </TabsContent>
+          )}
+        </Tabs>
+      </CardContent>
+    </Card>
+  );
+}

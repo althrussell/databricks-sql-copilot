@@ -2,12 +2,19 @@
  * Candidate Builder
  *
  * Takes an array of QueryRun, groups by fingerprint, computes window stats,
- * scores each group, and returns ranked Candidate[].
+ * scores each group, allocates cost, computes performance flags,
+ * extracts dbt metadata, and returns ranked Candidate[].
  */
 
-import type { QueryRun, Candidate, QueryOrigin } from "@/lib/domain/types";
+import type { QueryRun, Candidate, QueryOrigin, WarehouseCost } from "@/lib/domain/types";
 import { fingerprint } from "@/lib/domain/sql-fingerprint";
 import { scoreCandidate, type ScoreInput } from "@/lib/domain/scoring";
+import { computeFlags } from "@/lib/domain/performance-flags";
+import {
+  isDbtQuery,
+  extractDbtMetadata,
+  extractQueryTag,
+} from "@/lib/domain/dbt-parser";
 
 interface RunGroup {
   fingerprint: string;
@@ -54,8 +61,29 @@ function avg(values: number[]): number {
 
 /**
  * Build ranked candidates from raw query runs.
+ *
+ * @param runs - All query runs in the window
+ * @param warehouseCosts - DBU + dollar costs per warehouse (already joined with list_prices)
  */
-export function buildCandidates(runs: QueryRun[]): Candidate[] {
+export function buildCandidates(
+  runs: QueryRun[],
+  warehouseCosts: WarehouseCost[] = []
+): Candidate[] {
+  // Aggregate costs per warehouse (dollars come pre-computed from SQL join)
+  const whDollarCost = new Map<string, number>();
+  const whTotalDBUs = new Map<string, number>();
+  for (const c of warehouseCosts) {
+    whDollarCost.set(c.warehouseId, (whDollarCost.get(c.warehouseId) ?? 0) + c.totalDollars);
+    whTotalDBUs.set(c.warehouseId, (whTotalDBUs.get(c.warehouseId) ?? 0) + c.totalDBUs);
+  }
+
+  // Total duration per warehouse (for proportional cost allocation)
+  const whTotalDurationMs = new Map<string, number>();
+  for (const run of runs) {
+    const whId = run.warehouseId;
+    whTotalDurationMs.set(whId, (whTotalDurationMs.get(whId) ?? 0) + run.durationMs);
+  }
+
   // 1. Group by fingerprint
   const groups = new Map<string, RunGroup>();
 
@@ -95,7 +123,7 @@ export function buildCandidates(runs: QueryRun[]): Candidate[] {
     const cachedCount = groupRuns.filter((r) => r.fromResultCache).length;
     const cacheHitRate = n > 0 ? cachedCount / n : 0;
 
-    // New aggregate stats
+    // Extended aggregate stats
     const totalShuffleBytes = groupRuns.reduce(
       (s, r) => s + r.shuffleReadBytes,
       0
@@ -111,14 +139,12 @@ export function buildCandidates(runs: QueryRun[]): Candidate[] {
     );
 
     // Pruning efficiency: prunedFiles / (prunedFiles + readFiles)
-    // Higher = better (more files pruned away)
     const pruningEfficiencies = groupRuns
       .filter((r) => r.prunedFiles + r.readFiles > 0)
       .map((r) => r.prunedFiles / (r.prunedFiles + r.readFiles));
     const avgPruningEfficiency = avg(pruningEfficiencies);
 
     // Parallelism ratio: totalTaskDurationMs / totalDurationMs
-    // >1 means tasks ran in parallel, ~1 means serial
     const parallelismRatios = groupRuns
       .filter((r) => r.durationMs > 0)
       .map((r) => r.totalTaskDurationMs / r.durationMs);
@@ -188,14 +214,50 @@ export function buildCandidates(runs: QueryRun[]): Candidate[] {
 
     const { impactScore, breakdown, tags } = scoreCandidate(scoreInput);
 
-    candidates.push({
+    // ── P1: Cost allocation ──
+    // Proportional: candidate_cost = warehouse_cost * (candidate_duration / warehouse_total_duration)
+    let allocatedCostDollars = 0;
+    let allocatedDBUs = 0;
+    for (const [whId] of warehouseCounts) {
+      const whTotalMs = whTotalDurationMs.get(whId) ?? 0;
+      if (whTotalMs <= 0) continue;
+
+      // Sum of durations for this candidate on this warehouse
+      const candidateWhDurationMs = groupRuns
+        .filter((r) => r.warehouseId === whId)
+        .reduce((s, r) => s + r.durationMs, 0);
+
+      const proportion = candidateWhDurationMs / whTotalMs;
+
+      // Dollar allocation
+      const whCost = whDollarCost.get(whId) ?? 0;
+      if (whCost > 0) {
+        allocatedCostDollars += whCost * proportion;
+      }
+
+      // DBU allocation (always compute, even without prices)
+      const whDBUs = whTotalDBUs.get(whId) ?? 0;
+      if (whDBUs > 0) {
+        allocatedDBUs += whDBUs * proportion;
+      }
+    }
+
+    // ── P6: dbt metadata ──
+    const sampleSql = slowest.queryText;
+    const dbtDetected = isDbtQuery(sampleSql, slowest.clientApplication);
+    const dbtMetaParsed = dbtDetected ? extractDbtMetadata(sampleSql) : null;
+    const queryTag = extractQueryTag(sampleSql);
+
+    const candidate: Candidate = {
       fingerprint: group.fingerprint,
       sampleStatementId: slowest.statementId,
+      sampleStartedAt: slowest.startedAt,
       sampleQueryText: slowest.queryText,
       sampleExecutedBy: slowest.executedBy ?? "Unknown",
       warehouseId: topWarehouse[0],
       warehouseName: topWarehouse[1].name,
       queryOrigin: primaryOrigin,
+      querySource: slowest.querySource,
       statementType: primaryStmtType,
       clientApplication: primaryClientApp,
       topUsers: topN(userCounts, 3),
@@ -223,9 +285,22 @@ export function buildCandidates(runs: QueryRun[]): Candidate[] {
         avgFetchMs,
         avgIoCachePercent,
       },
+      allocatedCostDollars,
+      allocatedDBUs,
+      performanceFlags: [], // computed below
+      dbtMeta: {
+        isDbt: dbtDetected,
+        nodeId: dbtMetaParsed?.nodeId ?? null,
+        queryTag,
+      },
       tags,
       status: "NEW",
-    });
+    };
+
+    // ── P4: Performance flags ──
+    candidate.performanceFlags = computeFlags(candidate);
+
+    candidates.push(candidate);
   }
 
   // 3. Sort by impact score descending

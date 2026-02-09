@@ -11,9 +11,8 @@ export interface GetWarehouseCostsParams {
 interface WarehouseCostRow {
   warehouse_id: string;
   sku_name: string;
-  sql_tier: string | null;
-  is_serverless: boolean | null;
   total_dbus: number;
+  total_dollars: number;
 }
 
 function escapeString(value: string): string {
@@ -21,12 +20,11 @@ function escapeString(value: string): string {
 }
 
 /**
- * Fetch SQL warehouse DBU costs from system.billing.usage.
+ * Fetch SQL warehouse DBU costs from system.billing.usage
+ * joined with system.billing.list_prices to get real dollar amounts.
  *
- * Filters to billing_origin_product = 'SQL' and groups by warehouse_id.
- * Returns one row per warehouse/SKU combo with aggregated DBU totals.
- *
- * See docs/schemas/system_billing_usage.csv for full schema.
+ * Uses pricing.effective_list.`default` for the unit price,
+ * joined on the price validity window (price_start_time to price_end_time).
  */
 export async function getWarehouseCosts(
   params: GetWarehouseCostsParams
@@ -34,36 +32,39 @@ export async function getWarehouseCosts(
   const { startTime, endTime, warehouseId } = params;
 
   const warehouseFilter = warehouseId
-    ? `AND usage_metadata.warehouse_id = '${escapeString(warehouseId)}'`
+    ? `AND u.usage_metadata.warehouse_id = '${escapeString(warehouseId)}'`
     : "";
 
   const sql = `
     SELECT
-      usage_metadata.warehouse_id AS warehouse_id,
-      sku_name,
-      product_features.sql_tier AS sql_tier,
-      product_features.is_serverless AS is_serverless,
-      SUM(usage_quantity) AS total_dbus
-    FROM system.billing.usage
-    WHERE billing_origin_product = 'SQL'
-      AND usage_metadata.warehouse_id IS NOT NULL
-      AND usage_start_time >= '${escapeString(startTime)}'
-      AND usage_start_time <= '${escapeString(endTime)}'
+      u.usage_metadata.warehouse_id AS warehouse_id,
+      u.sku_name,
+      SUM(u.usage_quantity) AS total_dbus,
+      SUM(u.usage_quantity * COALESCE(CAST(p.pricing.effective_list.\`default\` AS DOUBLE), 0)) AS total_dollars
+    FROM system.billing.usage u
+    LEFT JOIN system.billing.list_prices p
+      ON u.cloud = p.cloud
+      AND u.sku_name = p.sku_name
+      AND u.usage_start_time >= p.price_start_time
+      AND (p.price_end_time IS NULL OR u.usage_start_time < p.price_end_time)
+    WHERE u.usage_unit = 'DBU'
+      AND u.sku_name LIKE '%SQL_COMPUTE%'
+      AND u.usage_metadata.warehouse_id IS NOT NULL
+      AND u.usage_start_time >= '${escapeString(startTime)}'
+      AND u.usage_start_time <= '${escapeString(endTime)}'
       ${warehouseFilter}
     GROUP BY
-      usage_metadata.warehouse_id,
-      sku_name,
-      product_features.sql_tier,
-      product_features.is_serverless
-    ORDER BY total_dbus DESC
+      u.usage_metadata.warehouse_id,
+      u.sku_name
+    ORDER BY total_dollars DESC
   `;
 
   const result = await executeQuery<WarehouseCostRow>(sql);
   return result.rows.map((row) => ({
     warehouseId: row.warehouse_id ?? "unknown",
     skuName: row.sku_name ?? "Unknown",
-    sqlTier: row.sql_tier ?? "Unknown",
-    isServerless: row.is_serverless ?? false,
+    isServerless: (row.sku_name ?? "").toLowerCase().includes("serverless"),
     totalDBUs: Number(row.total_dbus) || 0,
+    totalDollars: Number(row.total_dollars) || 0,
   }));
 }

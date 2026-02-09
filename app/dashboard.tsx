@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useEffect, useMemo, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Clock,
@@ -42,6 +42,23 @@ import {
   Settings2,
   Hash,
   Pause,
+  ExternalLink,
+  DollarSign,
+  ShieldAlert,
+  Activity,
+  Package,
+  History,
+  Pencil,
+  Trash2,
+  PlusCircle,
+  Gauge,
+  Tag,
+  Flag,
+  Loader2,
+  Maximize2,
+  CheckCircle2,
+  XCircle,
+  Info,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -75,8 +92,25 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { explainScore } from "@/lib/domain/scoring";
-import type { Candidate, QueryOrigin, WarehouseEvent, WarehouseCost } from "@/lib/domain/types";
+import type {
+  Candidate,
+  QueryOrigin,
+  WarehouseEvent,
+  WarehouseCost,
+  WarehouseUtilization,
+  WarehouseAuditEvent,
+} from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 
 /* ── Constants ── */
@@ -87,6 +121,44 @@ const TIME_PRESETS = [
   { label: "24 hours", value: "24h", icon: Clock },
   { label: "7 days", value: "7d", icon: Clock },
 ] as const;
+
+/* ── Deep link helpers (client-side, using workspaceUrl prop) ── */
+
+function buildLink(
+  base: string,
+  type: string,
+  id: string | null | undefined,
+  extras?: { queryStartTimeMs?: number }
+): string | null {
+  if (!id || !base) return null;
+  switch (type) {
+    case "query-profile": {
+      const params = new URLSearchParams({ queryId: id });
+      if (extras?.queryStartTimeMs) {
+        params.set("queryStartTimeMs", String(extras.queryStartTimeMs));
+      }
+      return `${base}/sql/history?${params.toString()}`;
+    }
+    case "warehouse":
+      return `${base}/sql/warehouses/${id}`;
+    case "dashboard":
+      return `${base}/sql/dashboardsv3/${id}`;
+    case "legacy-dashboard":
+      return `${base}/sql/dashboards/${id}`;
+    case "notebook":
+      return `${base}/editor/notebooks/${id}`;
+    case "job":
+      return `${base}/jobs/${id}`;
+    case "alert":
+      return `${base}/sql/alerts/${id}`;
+    case "sql-query":
+      return `${base}/sql/queries/${id}`;
+    case "genie":
+      return `${base}/genie/rooms/${id}`;
+    default:
+      return null;
+  }
+}
 
 /* ── Helpers ── */
 
@@ -122,6 +194,13 @@ function formatDBUs(dbus: number): string {
   if (dbus >= 1_000) return `${(dbus / 1_000).toFixed(1)}k`;
   if (dbus >= 1) return dbus.toFixed(1);
   return dbus.toFixed(2);
+}
+
+function formatDollars(dollars: number): string {
+  if (dollars >= 1_000) return `$${(dollars / 1_000).toFixed(1)}k`;
+  if (dollars >= 1) return `$${dollars.toFixed(2)}`;
+  if (dollars > 0) return `$${dollars.toFixed(3)}`;
+  return "$0";
 }
 
 function timeAgo(isoTime: string): string {
@@ -171,6 +250,32 @@ function eventColor(eventType: string): string {
   }
 }
 
+function auditActionIcon(action: string) {
+  switch (action) {
+    case "Created":
+      return PlusCircle;
+    case "Edited":
+      return Pencil;
+    case "Deleted":
+      return Trash2;
+    default:
+      return History;
+  }
+}
+
+function auditActionColor(action: string): string {
+  switch (action) {
+    case "Created":
+      return "text-emerald-600 dark:text-emerald-400";
+    case "Edited":
+      return "text-blue-600 dark:text-blue-400";
+    case "Deleted":
+      return "text-red-600 dark:text-red-400";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
 function scoreColor(score: number): string {
   if (score >= 70) return "bg-red-500";
   if (score >= 40) return "bg-amber-500";
@@ -181,6 +286,20 @@ function scoreTextColor(score: number): string {
   if (score >= 70) return "text-red-600 dark:text-red-400";
   if (score >= 40) return "text-amber-600 dark:text-amber-400";
   return "text-emerald-600 dark:text-emerald-400";
+}
+
+function flagSeverityColor(severity: "warning" | "critical"): string {
+  if (severity === "critical")
+    return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800";
+  return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800";
+}
+
+function utilizationColor(pct: number): string {
+  if (pct >= 70)
+    return "bg-emerald-500";
+  if (pct >= 30)
+    return "bg-amber-500";
+  return "bg-red-500";
 }
 
 function tagToStatus(
@@ -295,6 +414,32 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
+function DeepLinkIcon({
+  href,
+  label,
+}: {
+  href: string | null;
+  label: string;
+}) {
+  if (!href) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-primary hover:text-primary/80 transition-colors"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 /* ── Empty / Error states ── */
 
 function EmptyState({ message }: { message?: string }) {
@@ -346,20 +491,32 @@ function StatCell({
   icon: Icon,
   label,
   value,
+  href,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  href?: string | null;
 }) {
-  return (
+  const content = (
     <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
       <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-[11px] text-muted-foreground">{label}</p>
         <p className="text-sm font-semibold tabular-nums truncate">{value}</p>
       </div>
+      {href && <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />}
     </div>
   );
+
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
+        {content}
+      </a>
+    );
+  }
+  return content;
 }
 
 function TimeBar({
@@ -399,10 +556,12 @@ function DetailPanel({
   candidate,
   open,
   onOpenChange,
+  workspaceUrl,
 }: {
   candidate: Candidate | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  workspaceUrl: string;
 }) {
   if (!candidate) return null;
   const reasons = explainScore(candidate.scoreBreakdown);
@@ -417,6 +576,34 @@ function DetailPanel({
     1
   );
 
+  // Build source deep link
+  const src = candidate.querySource;
+  const sourceLink = src.dashboardId
+    ? buildLink(workspaceUrl, "dashboard", src.dashboardId)
+    : src.legacyDashboardId
+      ? buildLink(workspaceUrl, "legacy-dashboard", src.legacyDashboardId)
+      : src.jobId
+        ? buildLink(workspaceUrl, "job", src.jobId)
+        : src.notebookId
+          ? buildLink(workspaceUrl, "notebook", src.notebookId)
+          : src.alertId
+            ? buildLink(workspaceUrl, "alert", src.alertId)
+            : src.sqlQueryId
+              ? buildLink(workspaceUrl, "sql-query", src.sqlQueryId)
+              : null;
+
+  const queryProfileLink = buildLink(
+    workspaceUrl,
+    "query-profile",
+    candidate.sampleStatementId,
+    { queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime() }
+  );
+  const warehouseLink = buildLink(
+    workspaceUrl,
+    "warehouse",
+    candidate.warehouseId
+  );
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
@@ -429,19 +616,83 @@ function DetailPanel({
                 className={`h-4 w-4 ${candidate.impactScore >= 60 ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}
               />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <SheetTitle>
                 Impact Score: {candidate.impactScore}
               </SheetTitle>
               <SheetDescription>
                 {candidate.statementType} &middot;{" "}
                 {candidate.warehouseName}
+                {candidate.allocatedCostDollars > 0 ? (
+                  <> &middot; {formatDollars(candidate.allocatedCostDollars)}</>
+                ) : candidate.allocatedDBUs > 0 ? (
+                  <> &middot; {formatDBUs(candidate.allocatedDBUs)} DBUs</>
+                ) : null}
               </SheetDescription>
             </div>
+            {queryProfileLink && (
+              <a
+                href={queryProfileLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/5 transition-colors flex items-center gap-1.5"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Query Profile
+              </a>
+            )}
           </div>
         </SheetHeader>
 
         <div className="space-y-5 px-4 pb-6">
+          {/* Performance Flags */}
+          {candidate.performanceFlags.length > 0 && (
+            <div>
+              <SectionLabel>Performance Flags</SectionLabel>
+              <div className="flex flex-wrap gap-1.5">
+                {candidate.performanceFlags.map((pf) => (
+                  <Tooltip key={pf.flag}>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium cursor-help ${flagSeverityColor(pf.severity)}`}
+                      >
+                        <Flag className="h-3 w-3" />
+                        {pf.label}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      {pf.detail}
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Cost Allocation */}
+          {(candidate.allocatedCostDollars > 0 || candidate.allocatedDBUs > 0) && (
+            <div>
+              <SectionLabel>Estimated Cost (Window)</SectionLabel>
+              <div className="flex items-baseline gap-2 rounded-lg bg-muted/30 border border-border p-3">
+                <DollarSign className="h-5 w-5 text-emerald-600 shrink-0" />
+                <div>
+                  <p className="text-2xl font-bold tabular-nums">
+                    {candidate.allocatedCostDollars > 0
+                      ? formatDollars(candidate.allocatedCostDollars)
+                      : `${formatDBUs(candidate.allocatedDBUs)} DBUs`}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Proportional to compute time on{" "}
+                    {candidate.warehouseName}
+                    {candidate.allocatedCostDollars <= 0 && candidate.allocatedDBUs > 0
+                      ? " ($ prices unavailable)"
+                      : ""}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* SQL Preview */}
           <div>
             <SectionLabel>Sample SQL</SectionLabel>
@@ -451,6 +702,32 @@ function DetailPanel({
               </pre>
             </div>
           </div>
+
+          {/* dbt Metadata */}
+          {candidate.dbtMeta.isDbt && (
+            <div>
+              <SectionLabel>dbt Metadata</SectionLabel>
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">dbt Model</span>
+                </div>
+                {candidate.dbtMeta.nodeId && (
+                  <p className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                    {candidate.dbtMeta.nodeId}
+                  </p>
+                )}
+                {candidate.dbtMeta.queryTag && (
+                  <div className="flex items-center gap-1.5">
+                    <Tag className="h-3 w-3 text-blue-500" />
+                    <span className="text-xs text-blue-600 dark:text-blue-400">
+                      {candidate.dbtMeta.queryTag}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Time Breakdown */}
           <div>
@@ -521,10 +798,11 @@ function DetailPanel({
             <div className="space-y-2">
               <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
                 <OriginIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-xs text-muted-foreground">Source</p>
                   <p className="text-sm font-medium truncate">{originLabel(candidate.queryOrigin)}</p>
                 </div>
+                <DeepLinkIcon href={sourceLink} label={`Open ${originLabel(candidate.queryOrigin)} in Databricks`} />
               </div>
               <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
                 <MonitorSmartphone className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -535,11 +813,12 @@ function DetailPanel({
               </div>
               <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
                 <Warehouse className="h-4 w-4 text-muted-foreground shrink-0" />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-xs text-muted-foreground">Warehouse</p>
                   <p className="text-sm font-medium truncate">{candidate.warehouseName}</p>
                   <p className="text-[11px] text-muted-foreground font-mono">{candidate.warehouseId}</p>
                 </div>
+                <DeepLinkIcon href={warehouseLink} label="Open Warehouse in Databricks" />
               </div>
             </div>
           </div>
@@ -582,6 +861,13 @@ function DetailPanel({
 
 /* ── Main Dashboard ── */
 
+export interface DataSourceHealth {
+  name: string;
+  status: "ok" | "error";
+  error?: string;
+  rowCount: number;
+}
+
 interface DashboardProps {
   warehouses: WarehouseOption[];
   initialCandidates: Candidate[];
@@ -589,7 +875,12 @@ interface DashboardProps {
   initialTimePreset: string;
   warehouseEvents: WarehouseEvent[];
   warehouseCosts: WarehouseCost[];
+  warehouseUtilization: WarehouseUtilization[];
+  warehouseAudit: WarehouseAuditEvent[];
+  workspaceUrl: string;
   fetchError: string | null;
+  dataSourceHealth?: DataSourceHealth[];
+  children?: React.ReactNode;
 }
 
 export function Dashboard({
@@ -597,10 +888,62 @@ export function Dashboard({
   initialCandidates,
   initialTotalQueries,
   initialTimePreset,
-  warehouseEvents,
-  warehouseCosts,
+  warehouseEvents: initialEvents,
+  warehouseCosts: initialCosts,
+  warehouseUtilization: initialUtilization,
+  warehouseAudit: initialAudit,
+  workspaceUrl,
   fetchError,
+  dataSourceHealth: initialHealth = [],
+  children,
 }: DashboardProps) {
+  // ── Enrichment data (streamed in from Phase 2) ──
+  const [enrichedCandidates, setEnrichedCandidates] = useState<Candidate[] | null>(null);
+  const [enrichedCosts, setEnrichedCosts] = useState<WarehouseCost[] | null>(null);
+  const [enrichedEvents, setEnrichedEvents] = useState<WarehouseEvent[] | null>(null);
+  const [enrichedUtilization, setEnrichedUtilization] = useState<WarehouseUtilization[] | null>(null);
+  const [enrichedAudit, setEnrichedAudit] = useState<WarehouseAuditEvent[] | null>(null);
+  const [enrichmentLoaded, setEnrichmentLoaded] = useState(false);
+  const [enrichmentHealth, setEnrichmentHealth] = useState<DataSourceHealth[]>([]);
+
+  // Watch for enrichment data to appear in the DOM (streamed from server)
+  useEffect(() => {
+    const check = () => {
+      const el = document.getElementById("enrichment-data");
+      if (el) {
+        try {
+          const data = JSON.parse(el.textContent ?? "{}");
+          if (data.candidates) setEnrichedCandidates(data.candidates);
+          if (data.warehouseCosts) setEnrichedCosts(data.warehouseCosts);
+          if (data.warehouseEvents) setEnrichedEvents(data.warehouseEvents);
+          if (data.warehouseUtilization) setEnrichedUtilization(data.warehouseUtilization);
+          if (data.warehouseAudit) setEnrichedAudit(data.warehouseAudit);
+          if (data.dataSourceHealth) setEnrichmentHealth(data.dataSourceHealth);
+          setEnrichmentLoaded(true);
+        } catch {
+          // ignore parse errors
+        }
+        return true;
+      }
+      return false;
+    };
+
+    if (check()) return;
+    // Poll for the script tag to appear (streaming)
+    const interval = setInterval(() => {
+      if (check()) clearInterval(interval);
+    }, 200);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Combine health info
+  const allHealth: DataSourceHealth[] = [...initialHealth, ...enrichmentHealth];
+
+  // Use enriched data when available, fall back to initial props
+  const warehouseEvents = enrichedEvents ?? initialEvents;
+  const warehouseCosts = enrichedCosts ?? initialCosts;
+  const warehouseUtilization = enrichedUtilization ?? initialUtilization;
+  const warehouseAudit = enrichedAudit ?? initialAudit;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [timePreset, setTimePreset] = useState(initialTimePreset);
@@ -609,14 +952,48 @@ export function Dashboard({
     null
   );
   const [sheetOpen, setSheetOpen] = useState(false);
-  const candidates = initialCandidates;
+  const [flagFilter, setFlagFilter] = useState<string | null>(null);
+  // Use enriched candidates when available (includes cost allocation)
+  const candidates = enrichedCandidates ?? initialCandidates;
   const totalQueries = initialTotalQueries;
 
-  // Client-side filter by warehouse
+  // Total dollar cost (pre-computed in SQL from billing.usage JOIN list_prices)
+  const totalDollarCost = useMemo(() => {
+    const relevantCosts =
+      warehouseFilter === "all"
+        ? warehouseCosts
+        : warehouseCosts.filter((c) => c.warehouseId === warehouseFilter);
+    return relevantCosts.reduce((s, c) => s + c.totalDollars, 0);
+  }, [warehouseCosts, warehouseFilter]);
+
+  // Client-side filter by warehouse and performance flags
   const filtered = useMemo(() => {
-    if (warehouseFilter === "all") return candidates;
-    return candidates.filter((c) => c.warehouseId === warehouseFilter);
-  }, [candidates, warehouseFilter]);
+    let result = candidates;
+    if (warehouseFilter !== "all") {
+      result = result.filter((c) => c.warehouseId === warehouseFilter);
+    }
+    if (flagFilter) {
+      result = result.filter((c) =>
+        c.performanceFlags.some((f) => f.flag === flagFilter)
+      );
+    }
+    return result;
+  }, [candidates, warehouseFilter, flagFilter]);
+
+  // Collect all unique flags across candidates for filter chips
+  const allFlags = useMemo(() => {
+    const flagCounts = new Map<string, { label: string; count: number }>();
+    for (const c of candidates) {
+      for (const pf of c.performanceFlags) {
+        const entry = flagCounts.get(pf.flag) ?? { label: pf.label, count: 0 };
+        entry.count++;
+        flagCounts.set(pf.flag, entry);
+      }
+    }
+    return [...flagCounts.entries()]
+      .map(([flag, info]) => ({ flag, label: info.label, count: info.count }))
+      .sort((a, b) => b.count - a.count);
+  }, [candidates]);
 
   // KPIs computed from filtered view
   const kpis = useMemo(() => {
@@ -628,12 +1005,17 @@ export function Dashboard({
     );
     const totalRuns = filtered.reduce((s, c) => s + c.windowStats.count, 0);
     const allUsers = new Set(filtered.flatMap((c) => c.topUsers));
+    const totalAllocatedCost = filtered.reduce(
+      (s, c) => s + c.allocatedCostDollars,
+      0
+    );
     return {
       uniqueWarehouses,
       highImpact,
       totalDuration,
       totalRuns,
       uniqueUsers: allUsers.size,
+      totalAllocatedCost,
     };
   }, [filtered]);
 
@@ -644,7 +1026,6 @@ export function Dashboard({
         ? warehouseCosts
         : warehouseCosts.filter((c) => c.warehouseId === warehouseFilter);
     const totalDBUs = relevantCosts.reduce((s, c) => s + c.totalDBUs, 0);
-    // Aggregate per warehouse for the "all" summary
     const perWarehouse = new Map<string, number>();
     for (const c of relevantCosts) {
       perWarehouse.set(
@@ -669,6 +1050,22 @@ export function Dashboard({
     return warehouses.find((w) => w.warehouseId === warehouseFilter) ?? null;
   }, [warehouses, warehouseFilter]);
 
+  // Utilization for the selected warehouse (or all)
+  const filteredUtilization = useMemo(() => {
+    if (warehouseFilter === "all") return warehouseUtilization;
+    return warehouseUtilization.filter(
+      (u) => u.warehouseId === warehouseFilter
+    );
+  }, [warehouseUtilization, warehouseFilter]);
+
+  // Audit trail for the selected warehouse
+  const filteredAudit = useMemo(() => {
+    if (warehouseFilter === "all") return warehouseAudit.slice(0, 20);
+    return warehouseAudit
+      .filter((a) => a.warehouseId === warehouseFilter)
+      .slice(0, 15);
+  }, [warehouseAudit, warehouseFilter]);
+
   // Top 3 most expensive warehouses for the "all" summary
   const topCostWarehouses = useMemo(() => {
     if (warehouseFilter !== "all") return [];
@@ -691,11 +1088,10 @@ export function Dashboard({
       value: string;
       detail: string;
       color: string;
-      /** Higher = more interesting (used to pick top 4) */
       priority: number;
     }[] = [];
 
-    // Busiest user (by total query count across all candidates)
+    // Busiest user
     const userRunCounts = new Map<string, number>();
     for (const c of filtered) {
       for (const u of c.topUsers) {
@@ -712,11 +1108,30 @@ export function Dashboard({
         value: topUser.split("@")[0],
         detail: `${formatCount(topUserRuns)} query runs`,
         color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-        priority: 100, // always show
+        priority: 100,
       });
     }
 
-    // Busiest warehouse (by total runs)
+    // Most expensive query pattern (prefer $ cost, fallback to DBUs)
+    const costliest = [...filtered].sort(
+      (a, b) =>
+        (b.allocatedCostDollars || b.allocatedDBUs) -
+        (a.allocatedCostDollars || a.allocatedDBUs)
+    )[0];
+    if (costliest && (costliest.allocatedCostDollars > 0 || costliest.allocatedDBUs > 0)) {
+      items.push({
+        icon: DollarSign,
+        label: "Most Expensive Pattern",
+        value: costliest.allocatedCostDollars > 0
+          ? formatDollars(costliest.allocatedCostDollars)
+          : `${formatDBUs(costliest.allocatedDBUs)} DBUs`,
+        detail: truncateQuery(costliest.sampleQueryText, 35),
+        color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+        priority: 98,
+      });
+    }
+
+    // Busiest warehouse
     const whRunCounts = new Map<string, { name: string; runs: number }>();
     for (const c of filtered) {
       const id = c.warehouseId;
@@ -731,12 +1146,12 @@ export function Dashboard({
         label: "Busiest Warehouse",
         value: topWh.name,
         detail: `${formatCount(topWh.runs)} query runs`,
-        color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-        priority: 99,
+        color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
+        priority: 95,
       });
     }
 
-    // Highest capacity wait (most queuing)
+    // Highest capacity wait
     const candidatesByCapacity = [...filtered].sort(
       (a, b) => b.scoreBreakdown.capacity - a.scoreBreakdown.capacity
     );
@@ -774,49 +1189,26 @@ export function Dashboard({
       });
     }
 
-    // Heaviest Shuffle — query pattern with highest total shuffle bytes
-    const candidateByShuffle = [...filtered].sort(
-      (a, b) => b.windowStats.totalShuffleBytes - a.windowStats.totalShuffleBytes
-    );
-    if (
-      candidateByShuffle.length > 0 &&
-      candidateByShuffle[0].windowStats.totalShuffleBytes > 0
-    ) {
-      const worst = candidateByShuffle[0];
-      items.push({
-        icon: Network,
-        label: "Heaviest Shuffle",
-        value: formatBytes(worst.windowStats.totalShuffleBytes),
-        detail: "Possible bad join strategy",
-        color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
-        priority: Math.min(worst.windowStats.totalShuffleBytes / 1e6, 85),
-      });
+    // Worst utilization
+    if (filteredUtilization.length > 0) {
+      const worstUtil = filteredUtilization[0];
+      if (worstUtil.utilizationPercent < 50) {
+        const whName =
+          warehouses.find((w) => w.warehouseId === worstUtil.warehouseId)?.name ??
+          worstUtil.warehouseId;
+        items.push({
+          icon: Gauge,
+          label: "Lowest Utilization",
+          value: `${worstUtil.utilizationPercent}%`,
+          detail: `${whName} — ${formatDuration(worstUtil.idleTimeMs)} idle`,
+          color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+          priority: 88,
+        });
+      }
     }
 
-    // Worst Pruning — query pattern with lowest pruning efficiency (that has file scans)
-    const candidatesByPruning = filtered
-      .filter((c) => c.windowStats.avgPruningEfficiency >= 0)
-      .sort(
-        (a, b) => a.windowStats.avgPruningEfficiency - b.windowStats.avgPruningEfficiency
-      );
-    if (
-      candidatesByPruning.length > 0 &&
-      candidatesByPruning[0].windowStats.avgPruningEfficiency < 0.5
-    ) {
-      const worst = candidatesByPruning[0];
-      items.push({
-        icon: FilterX,
-        label: "Worst Pruning",
-        value: `${Math.round(worst.windowStats.avgPruningEfficiency * 100)}% eff.`,
-        detail: "Missing partition or Z-order?",
-        color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-        priority: Math.max(80 - worst.windowStats.avgPruningEfficiency * 80, 50),
-      });
-    }
-
-    // Return top 4 most interesting insights
     return items.sort((a, b) => b.priority - a.priority).slice(0, 4);
-  }, [filtered]);
+  }, [filtered, filteredUtilization, warehouses]);
 
   function handleTimeChange(preset: string) {
     setTimePreset(preset);
@@ -830,7 +1222,14 @@ export function Dashboard({
     setSheetOpen(true);
   }
 
-  // Unique warehouse list from candidates (for filter dropdown)
+  const openInNewTab = useCallback(
+    (url: string | null) => {
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
+    },
+    []
+  );
+
+  // Unique warehouse list from candidates
   const warehouseOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const c of candidates) {
@@ -892,12 +1291,74 @@ export function Dashboard({
           )}
         </div>
 
+        {/* ── Performance Flag Filters ── */}
+        {allFlags.length > 0 && !fetchError && (
+          <div className="flex flex-wrap items-center gap-2">
+            <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground mr-1">Filter by flag:</span>
+            <FilterChip
+              selected={flagFilter === null}
+              onClick={() => setFlagFilter(null)}
+            >
+              All
+            </FilterChip>
+            {allFlags.slice(0, 8).map((f) => (
+              <FilterChip
+                key={f.flag}
+                selected={flagFilter === f.flag}
+                onClick={() =>
+                  setFlagFilter(flagFilter === f.flag ? null : f.flag)
+                }
+              >
+                {f.label} ({f.count})
+              </FilterChip>
+            ))}
+          </div>
+        )}
+
         {/* ── Error ── */}
         {fetchError && <ErrorBanner message={fetchError} />}
 
+        {/* ── Data Source Health ── */}
+        {allHealth.length > 0 && allHealth.some((h) => h.status === "error") && (
+          <Card className="border-amber-200 dark:border-amber-800">
+            <CardContent className="flex items-start gap-3 py-3">
+              <Info className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                  Some data sources unavailable
+                </p>
+                <div className="flex flex-wrap gap-3 mt-1.5">
+                  {allHealth.map((h) => (
+                    <Tooltip key={h.name}>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex items-center gap-1 text-[11px] cursor-help">
+                          {h.status === "ok" ? (
+                            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                          ) : (
+                            <XCircle className="h-3 w-3 text-red-500" />
+                          )}
+                          <span className={h.status === "ok" ? "text-muted-foreground" : "text-red-600 dark:text-red-400 font-medium"}>
+                            {h.name.replace(/_/g, " ")}
+                          </span>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        {h.status === "ok"
+                          ? `Loaded ${h.rowCount} rows`
+                          : h.error ?? "Failed to load"}
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* ── KPI row ── */}
         {!fetchError && (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-7">
             <KpiCard
               icon={Database}
               label="Total Runs"
@@ -932,20 +1393,26 @@ export function Dashboard({
             />
             <KpiCard
               icon={Coins}
-              label="SQL DBU Cost"
-              value={`${formatDBUs(costData.totalDBUs)} DBUs`}
+              label="SQL DBUs"
+              value={`${formatDBUs(costData.totalDBUs)}`}
               detail={
                 warehouseFilter === "all"
-                  ? `Across ${costData.perWarehouse.size} warehouse${costData.perWarehouse.size !== 1 ? "s" : ""}`
+                  ? `Across ${costData.perWarehouse.size} warehouses`
                   : "Selected warehouse"
               }
+            />
+            <KpiCard
+              icon={DollarSign}
+              label="Est. Cost"
+              value={formatDollars(totalDollarCost)}
+              detail="Based on list prices"
             />
           </div>
         )}
 
         {/* ── Warehouse Detail Section ── */}
         {!fetchError && selectedWarehouse && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             {/* Config card */}
             <Card className="py-4">
               <CardContent className="space-y-3">
@@ -953,7 +1420,11 @@ export function Dashboard({
                   <div className="rounded-lg bg-primary/10 p-2">
                     <Settings2 className="h-4 w-4 text-primary" />
                   </div>
-                  <h3 className="text-sm font-semibold">Configuration</h3>
+                  <h3 className="text-sm font-semibold flex-1">Configuration</h3>
+                  <DeepLinkIcon
+                    href={buildLink(workspaceUrl, "warehouse", warehouseFilter)}
+                    label="Open Warehouse in Databricks"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-muted/30 border border-border p-2.5">
@@ -981,6 +1452,48 @@ export function Dashboard({
                     <p className="text-sm font-semibold truncate">{selectedWarehouse.createdBy.split("@")[0]}</p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Utilization card */}
+            <Card className="py-4">
+              <CardContent className="space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Activity className="h-4 w-4 text-primary" />
+                  </div>
+                  <h3 className="text-sm font-semibold">Utilization</h3>
+                </div>
+                {filteredUtilization.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-4 text-center">No utilization data</p>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredUtilization.slice(0, 5).map((u) => {
+                      const whName =
+                        warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
+                        u.warehouseId.slice(0, 8);
+                      return (
+                        <div key={u.warehouseId} className="space-y-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-medium truncate max-w-[120px]">{whName}</span>
+                            <span className="tabular-nums font-semibold">{u.utilizationPercent}%</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${utilizationColor(u.utilizationPercent)}`}
+                              style={{ width: `${u.utilizationPercent}%` }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                            <span>Active: {formatDuration(u.activeTimeMs)}</span>
+                            <span>Idle: {formatDuration(u.idleTimeMs)}</span>
+                            <span>{u.queryCount} queries</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1034,6 +1547,11 @@ export function Dashboard({
                     {formatDBUs(costData.totalDBUs)}
                   </p>
                   <p className="text-sm text-muted-foreground">DBUs</p>
+                  {totalDollarCost > 0 && (
+                    <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 ml-auto">
+                      {formatDollars(totalDollarCost)}
+                    </span>
+                  )}
                 </div>
                 {costData.relevantCosts.length > 0 && (
                   <div className="space-y-2">
@@ -1047,31 +1565,96 @@ export function Dashboard({
                             </Badge>
                           )}
                         </div>
-                        <span className="tabular-nums font-medium ml-2 shrink-0">{formatDBUs(c.totalDBUs)}</span>
+                        <span className="tabular-nums font-medium ml-2 shrink-0">
+                          {c.totalDollars > 0 ? formatDollars(c.totalDollars) : `${formatDBUs(c.totalDBUs)} DBU`}
+                        </span>
                       </div>
                     ))}
                   </div>
-                )}
-                {costData.relevantCosts.length > 0 && costData.relevantCosts[0]?.sqlTier && (
-                  <p className="text-xs text-muted-foreground">
-                    Tier: {costData.relevantCosts[0].sqlTier}
-                  </p>
                 )}
               </CardContent>
             </Card>
           </div>
         )}
 
+        {/* ── Config Audit Trail ── */}
+        {!fetchError && filteredAudit.length > 0 && (
+          <Card className="py-4">
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <History className="h-4 w-4 text-primary" />
+                </div>
+                <h3 className="text-sm font-semibold">
+                  Warehouse Config Audit Trail
+                  <span className="text-muted-foreground font-normal ml-1">
+                    ({filteredAudit.length})
+                  </span>
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 pr-4">When</th>
+                      <th className="pb-2 pr-4">Action</th>
+                      <th className="pb-2 pr-4">By</th>
+                      <th className="pb-2 pr-4">Warehouse</th>
+                      <th className="pb-2 pr-4">Size</th>
+                      <th className="pb-2 pr-4">Scaling</th>
+                      <th className="pb-2 pr-4">Auto-stop</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAudit.map((a, i) => {
+                      const AIcon = auditActionIcon(a.actionName);
+                      return (
+                        <tr key={i} className="border-b border-border/50 last:border-0">
+                          <td className="py-1.5 pr-4 tabular-nums text-muted-foreground">
+                            {timeAgo(a.eventTime)}
+                          </td>
+                          <td className="py-1.5 pr-4">
+                            <span className={`flex items-center gap-1 font-medium ${auditActionColor(a.actionName)}`}>
+                              <AIcon className="h-3 w-3" />
+                              {a.actionName}
+                            </span>
+                          </td>
+                          <td className="py-1.5 pr-4 truncate max-w-[120px]">
+                            {a.editorUser.split("@")[0]}
+                          </td>
+                          <td className="py-1.5 pr-4 font-medium truncate max-w-[120px]">
+                            {a.warehouseName ?? "\u2014"}
+                          </td>
+                          <td className="py-1.5 pr-4">{a.warehouseSize ?? "\u2014"}</td>
+                          <td className="py-1.5 pr-4">
+                            {a.minClusters != null && a.maxClusters != null
+                              ? `${a.minClusters}\u2013${a.maxClusters}`
+                              : "\u2014"}
+                          </td>
+                          <td className="py-1.5 pr-4">
+                            {a.autoStopMins ? `${a.autoStopMins}m` : "\u2014"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* ── Top Cost Warehouses (when "All" selected) ── */}
         {!fetchError && warehouseFilter === "all" && topCostWarehouses.length > 0 && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {topCostWarehouses.map((wh) => (
-              <Card key={wh.id} className="py-3">
+              <Card key={wh.id} className="py-3 cursor-pointer hover:border-primary/30 transition-colors"
+                onClick={() => setWarehouseFilter(wh.id)}>
                 <CardContent className="flex items-start gap-3">
                   <div className="rounded-lg p-2 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                     <Coins className="h-4 w-4" />
                   </div>
-                  <div className="min-w-0 space-y-0.5">
+                  <div className="min-w-0 space-y-0.5 flex-1">
                     <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Top SQL Spend
                     </p>
@@ -1080,10 +1663,56 @@ export function Dashboard({
                       {formatDBUs(wh.dbus)} DBUs in window
                     </p>
                   </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
                 </CardContent>
               </Card>
             ))}
           </div>
+        )}
+
+        {/* ── Utilization Overview (when "All" selected) ── */}
+        {!fetchError && warehouseFilter === "all" && warehouseUtilization.length > 0 && (
+          <Card className="py-4">
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <Gauge className="h-4 w-4 text-primary" />
+                </div>
+                <h3 className="text-sm font-semibold">Warehouse Utilization</h3>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {warehouseUtilization.slice(0, 6).map((u) => {
+                  const whName =
+                    warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
+                    u.warehouseId.slice(0, 12);
+                  return (
+                    <div
+                      key={u.warehouseId}
+                      className="rounded-lg border border-border p-3 space-y-1.5 cursor-pointer hover:border-primary/30 transition-colors"
+                      onClick={() => setWarehouseFilter(u.warehouseId)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium truncate max-w-[140px]">{whName}</span>
+                        <span className={`text-sm font-bold tabular-nums ${u.utilizationPercent >= 70 ? "text-emerald-600" : u.utilizationPercent >= 30 ? "text-amber-600" : "text-red-600"}`}>
+                          {u.utilizationPercent}%
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${utilizationColor(u.utilizationPercent)}`}
+                          style={{ width: `${u.utilizationPercent}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-muted-foreground">
+                        <span>{u.queryCount} queries</span>
+                        <span>Idle: {formatDuration(u.idleTimeMs)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* ── Insights row ── */}
@@ -1126,7 +1755,7 @@ export function Dashboard({
                   {filtered.length} candidates
                 </Badge>
                 <span className="text-sm text-muted-foreground">
-                  Ranked by impact score — click a row for details
+                  Ranked by impact score — click for details, right-click for actions
                 </span>
               </div>
             </div>
@@ -1146,109 +1775,219 @@ export function Dashboard({
                       <TableHead>Top User</TableHead>
                       <TableHead className="text-right">Runs</TableHead>
                       <TableHead className="text-right">p95</TableHead>
+                      <TableHead className="text-right">Cost</TableHead>
                       <TableHead className="text-right">
-                        Total
+                        Flags
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filtered.map((c, idx) => {
                       const OriginIcon = originIcon(c.queryOrigin);
+                      const profileLink = buildLink(
+                        workspaceUrl,
+                        "query-profile",
+                        c.sampleStatementId,
+                        { queryStartTimeMs: new Date(c.sampleStartedAt).getTime() }
+                      );
+                      const whLink = buildLink(
+                        workspaceUrl,
+                        "warehouse",
+                        c.warehouseId
+                      );
+                      const src = c.querySource;
+                      const srcLink = src.dashboardId
+                        ? buildLink(workspaceUrl, "dashboard", src.dashboardId)
+                        : src.legacyDashboardId
+                          ? buildLink(workspaceUrl, "legacy-dashboard", src.legacyDashboardId)
+                          : src.jobId
+                            ? buildLink(workspaceUrl, "job", src.jobId)
+                            : src.notebookId
+                              ? buildLink(workspaceUrl, "notebook", src.notebookId)
+                              : null;
+
                       return (
-                        <TableRow
-                          key={c.fingerprint}
-                          className="cursor-pointer group"
-                          onClick={() => handleRowClick(c)}
-                        >
-                          <TableCell className="text-xs text-muted-foreground tabular-nums">
-                            {idx + 1}
-                          </TableCell>
-                          <TableCell>
-                            <ScoreBar score={c.impactScore} />
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1 min-w-0">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <p className="font-mono text-xs truncate max-w-[300px] cursor-help">
-                                    {truncateQuery(c.sampleQueryText)}
-                                  </p>
-                                </TooltipTrigger>
-                                <TooltipContent
-                                  side="bottom"
-                                  align="start"
-                                  className="max-w-md"
-                                >
-                                  <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                                    {c.sampleQueryText.slice(0, 500)}
-                                    {c.sampleQueryText.length > 500
-                                      ? "\u2026"
-                                      : ""}
-                                  </pre>
-                                </TooltipContent>
-                              </Tooltip>
-                              <div className="flex items-center gap-1.5">
-                                {c.tags.slice(0, 3).map((tag) => (
-                                  <StatusBadge
-                                    key={tag}
-                                    status={tagToStatus(tag)}
-                                    className="text-[10px] px-1.5 py-0"
-                                  >
-                                    {tag}
-                                  </StatusBadge>
-                                ))}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex">
-                                  <OriginIcon className="h-4 w-4 text-muted-foreground" />
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {originLabel(c.queryOrigin)}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm truncate block max-w-[120px]">
-                              {c.warehouseName}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="text-sm truncate block max-w-[120px] cursor-help">
-                                  {c.topUsers[0] ?? "\u2014"}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <div className="space-y-1">
-                                  <p className="font-semibold">
-                                    {c.uniqueUserCount} user
-                                    {c.uniqueUserCount !== 1 ? "s" : ""}
-                                  </p>
-                                  {c.topUsers.map((u) => (
-                                    <p key={u} className="text-xs">
-                                      {u}
-                                    </p>
-                                  ))}
+                        <ContextMenu key={c.fingerprint}>
+                          <ContextMenuTrigger asChild>
+                            <TableRow
+                              className="cursor-pointer group"
+                              onClick={() => handleRowClick(c)}
+                            >
+                              <TableCell className="text-xs text-muted-foreground tabular-nums">
+                                {idx + 1}
+                              </TableCell>
+                              <TableCell>
+                                <ScoreBar score={c.impactScore} />
+                              </TableCell>
+                              <TableCell>
+                                <div className="space-y-1 min-w-0">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <p className="font-mono text-xs truncate max-w-[300px] cursor-help">
+                                        {truncateQuery(c.sampleQueryText)}
+                                      </p>
+                                    </TooltipTrigger>
+                                    <TooltipContent
+                                      side="bottom"
+                                      align="start"
+                                      className="max-w-md"
+                                    >
+                                      <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                                        {c.sampleQueryText.slice(0, 500)}
+                                        {c.sampleQueryText.length > 500
+                                          ? "\u2026"
+                                          : ""}
+                                      </pre>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  <div className="flex items-center gap-1.5">
+                                    {c.tags.slice(0, 2).map((tag) => (
+                                      <StatusBadge
+                                        key={tag}
+                                        status={tagToStatus(tag)}
+                                        className="text-[10px] px-1.5 py-0"
+                                      >
+                                        {tag}
+                                      </StatusBadge>
+                                    ))}
+                                    {c.dbtMeta.isDbt && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400">
+                                        dbt
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums font-medium">
-                            {c.windowStats.count}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums font-semibold">
-                            {formatDuration(c.windowStats.p95Ms)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-sm">
-                            {formatDuration(c.windowStats.totalDurationMs)}
-                          </TableCell>
-                        </TableRow>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-flex">
+                                      <OriginIcon className="h-4 w-4 text-muted-foreground" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    {originLabel(c.queryOrigin)}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm truncate block max-w-[120px]">
+                                  {c.warehouseName}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-sm truncate block max-w-[120px] cursor-help">
+                                      {c.topUsers[0] ?? "\u2014"}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="space-y-1">
+                                      <p className="font-semibold">
+                                        {c.uniqueUserCount} user
+                                        {c.uniqueUserCount !== 1 ? "s" : ""}
+                                      </p>
+                                      {c.topUsers.map((u) => (
+                                        <p key={u} className="text-xs">
+                                          {u}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums font-medium">
+                                {c.windowStats.count}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums font-semibold">
+                                {formatDuration(c.windowStats.p95Ms)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums text-sm">
+                                {c.allocatedCostDollars > 0
+                                  ? formatDollars(c.allocatedCostDollars)
+                                  : c.allocatedDBUs > 0
+                                    ? `${formatDBUs(c.allocatedDBUs)} DBU`
+                                    : "\u2014"}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {c.performanceFlags.length > 0 ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex items-center gap-1">
+                                        <ShieldAlert className={`h-3.5 w-3.5 ${c.performanceFlags.some((f) => f.severity === "critical") ? "text-red-500" : "text-amber-500"}`} />
+                                        <span className="text-xs font-medium">
+                                          {c.performanceFlags.length}
+                                        </span>
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs">
+                                      <div className="space-y-1">
+                                        {c.performanceFlags.map((f) => (
+                                          <p key={f.flag} className="text-xs">
+                                            <span className="font-semibold">{f.label}:</span>{" "}
+                                            {f.detail}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">\u2014</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-56">
+                            <ContextMenuItem onClick={() => handleRowClick(c)}>
+                              <Search className="mr-2 h-4 w-4" />
+                              Quick View
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}`)}>
+                              <Maximize2 className="mr-2 h-4 w-4" />
+                              Full Details
+                            </ContextMenuItem>
+                            {profileLink && (
+                              <ContextMenuItem onClick={() => openInNewTab(profileLink)}>
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                Open Query Profile
+                              </ContextMenuItem>
+                            )}
+                            <ContextMenuSeparator />
+                            {whLink && (
+                              <ContextMenuItem onClick={() => openInNewTab(whLink)}>
+                                <Warehouse className="mr-2 h-4 w-4" />
+                                Open Warehouse
+                              </ContextMenuItem>
+                            )}
+                            {srcLink && (
+                              <ContextMenuItem onClick={() => openInNewTab(srcLink)}>
+                                <OriginIcon className="mr-2 h-4 w-4" />
+                                Open {originLabel(c.queryOrigin)}
+                              </ContextMenuItem>
+                            )}
+                            <ContextMenuSeparator />
+                            <ContextMenuSub>
+                              <ContextMenuSubTrigger>
+                                <Warehouse className="mr-2 h-4 w-4" />
+                                Filter by Warehouse
+                              </ContextMenuSubTrigger>
+                              <ContextMenuSubContent>
+                                <ContextMenuItem onClick={() => setWarehouseFilter(c.warehouseId)}>
+                                  {c.warehouseName}
+                                </ContextMenuItem>
+                              </ContextMenuSubContent>
+                            </ContextMenuSub>
+                            <ContextMenuItem
+                              onClick={() => {
+                                navigator.clipboard.writeText(c.sampleQueryText);
+                              }}
+                            >
+                              <Terminal className="mr-2 h-4 w-4" />
+                              Copy SQL
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
                       );
                     })}
                   </TableBody>
@@ -1263,7 +2002,19 @@ export function Dashboard({
           candidate={selectedCandidate}
           open={sheetOpen}
           onOpenChange={setSheetOpen}
+          workspaceUrl={workspaceUrl}
         />
+
+        {/* Enrichment loading indicator */}
+        {!enrichmentLoaded && !fetchError && (
+          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            Loading cost &amp; utilization data…
+          </div>
+        )}
+
+        {/* Enrichment data injection point (server-streamed) */}
+        {children}
       </div>
     </TooltipProvider>
   );

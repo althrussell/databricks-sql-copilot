@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 import "./globals.css";
 
@@ -16,6 +17,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DBSQL Co-Pilot",
   description: "Databricks SQL performance advisor",
+  icons: {
+    icon: "/databricks-icon.svg",
+  },
 };
 
 export default function RootLayout({
@@ -33,13 +37,39 @@ export default function RootLayout({
           <div className="container mx-auto flex h-14 items-center px-6">
             <Link
               href="/"
-              className="text-lg font-bold tracking-tight text-foreground hover:text-primary transition-colors"
+              className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
             >
-              DBSQL Co-Pilot
+              <Image
+                src="/databricks-icon.svg"
+                alt="Databricks"
+                width={26}
+                height={26}
+                className="shrink-0"
+                priority
+              />
+              <span className="text-lg font-bold tracking-tight text-foreground">
+                DBSQL Co-Pilot
+              </span>
             </Link>
             <span className="ml-3 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
               Performance Advisor
             </span>
+
+            {/* Nav links */}
+            <nav className="ml-auto flex items-center gap-1">
+              <Link
+                href="/"
+                className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              >
+                Dashboard
+              </Link>
+              <Link
+                href="/recommendations"
+                className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              >
+                Recommendations
+              </Link>
+            </nav>
           </div>
         </header>
 

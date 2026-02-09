@@ -49,7 +49,7 @@ export interface QueryRun {
   spilledLocalBytes: number;
   fromResultCache: boolean;
   readIoCachePercent: number;
-  // New columns
+  // Extended columns
   totalTaskDurationMs: number;
   shuffleReadBytes: number;
   readFiles: number;
@@ -58,10 +58,19 @@ export interface QueryRun {
   executedAs: string | null;
 }
 
+/** Performance flag on a candidate */
+export interface PerformanceFlagInfo {
+  flag: string;
+  label: string;
+  severity: "warning" | "critical";
+  detail: string;
+}
+
 /** Aggregated candidate (Sprint 1+) */
 export interface Candidate {
   fingerprint: string;
   sampleStatementId: string;
+  sampleStartedAt: string; // ISO timestamp of the sample query
   sampleQueryText: string;
   sampleExecutedBy: string;
   /** Warehouse that ran the most executions of this query pattern */
@@ -69,6 +78,8 @@ export interface Candidate {
   warehouseName: string;
   /** Primary origin (most common across runs) */
   queryOrigin: QueryOrigin;
+  /** Primary query source (from slowest run) */
+  querySource: QuerySource;
   /** Statement type (SELECT, INSERT, etc.) */
   statementType: string;
   /** Most common client application (e.g. Tableau, Databricks SQL) */
@@ -93,7 +104,7 @@ export interface Candidate {
     totalReadBytes: number;
     totalSpilledBytes: number;
     cacheHitRate: number;
-    // New aggregate stats
+    // Extended aggregate stats
     totalShuffleBytes: number;
     totalWrittenBytes: number;
     totalReadRows: number;
@@ -106,6 +117,18 @@ export interface Candidate {
     avgExecutionMs: number;
     avgFetchMs: number;
     avgIoCachePercent: number;
+  };
+  /** Cost allocation: estimated $ for this pattern in the window */
+  allocatedCostDollars: number;
+  /** Cost allocation: estimated DBUs for this pattern in the window */
+  allocatedDBUs: number;
+  /** Performance flags */
+  performanceFlags: PerformanceFlagInfo[];
+  /** dbt metadata, if present */
+  dbtMeta: {
+    isDbt: boolean;
+    nodeId: string | null;
+    queryTag: string | null;
   };
   tags: string[];
   status:
@@ -128,14 +151,40 @@ export interface WarehouseEvent {
   eventTime: string;
 }
 
-/** Aggregated DBU cost for a warehouse from system.billing.usage */
+/** Aggregated DBU cost for a warehouse from system.billing.usage joined with list_prices */
 export interface WarehouseCost {
   warehouseId: string;
   skuName: string;
-  sqlTier: string;
   isServerless: boolean;
   /** Total DBUs consumed in the time window */
   totalDBUs: number;
+  /** Total dollar cost (DBUs * effective list price at time of usage) */
+  totalDollars: number;
+}
+
+/** Warehouse utilization metrics (derived) */
+export interface WarehouseUtilization {
+  warehouseId: string;
+  onTimeMs: number;
+  activeTimeMs: number;
+  idleTimeMs: number;
+  utilizationPercent: number; // 0–100
+  queryCount: number;
+}
+
+/** Warehouse config audit event from system.access.audit */
+export interface WarehouseAuditEvent {
+  eventTime: string;
+  actionName: string; // "Created", "Edited", "Deleted"
+  warehouseId: string;
+  editorUser: string;
+  warehouseName: string | null;
+  warehouseType: string | null;
+  warehouseSize: string | null;
+  minClusters: number | null;
+  maxClusters: number | null;
+  autoStopMins: string | null;
+  warehouseChannel: string | null;
 }
 
 /** Time-window filter for queries */
