@@ -5,7 +5,6 @@ import { listRecentQueries } from "@/lib/queries/query-history";
 import { listWarehouses } from "@/lib/queries/warehouses";
 import { listWarehouseEvents } from "@/lib/queries/warehouse-events";
 import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
-import { listWarehouseAudit } from "@/lib/queries/warehouse-audit";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { computeUtilization } from "@/lib/domain/warehouse-utilization";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
@@ -15,7 +14,6 @@ import type {
   WarehouseEvent,
   WarehouseCost,
   WarehouseUtilization,
-  WarehouseAuditEvent,
   QueryRun,
 } from "@/lib/domain/types";
 
@@ -149,7 +147,6 @@ async function CoreDashboardLoader({
       warehouseEvents={[]}
       warehouseCosts={[]}
       warehouseUtilization={[]}
-      warehouseAudit={[]}
       workspaceUrl={workspaceUrl}
       fetchError={fetchError}
       dataSourceHealth={allCoreHealth}
@@ -191,7 +188,7 @@ function withTimeout<T>(
 }
 
 /**
- * Phase 2: Enrichment — costs, events, utilization, audit.
+ * Phase 2: Enrichment — costs, events, utilization.
  * Runs in parallel, streamed to client after core dashboard.
  * Re-uses the queryRuns from Phase 1 (passed as prop) to avoid re-fetching.
  * Each query has a 60s timeout to prevent indefinite hanging.
@@ -210,7 +207,7 @@ async function EnrichmentLoader({
 
   // All data sources now share the same shifted window (already offset by
   // BILLING_LAG_HOURS) so costs, events, queries, and audit all align.
-  const [costResult, eventsResult, auditResult] = await Promise.all([
+  const [costResult, eventsResult] = await Promise.all([
     withTimeout(
       getWarehouseCosts({ startTime: start, endTime: end }).catch(
         catchAndLogTracked("billing_costs", [] as WarehouseCost[])
@@ -227,20 +224,11 @@ async function EnrichmentLoader({
       "warehouse_events",
       [] as WarehouseEvent[]
     ),
-    withTimeout(
-      listWarehouseAudit({ startTime: start, endTime: end }).catch(
-        catchAndLogTracked("audit_trail", [] as WarehouseAuditEvent[])
-      ),
-      TIMEOUT_MS,
-      "audit_trail",
-      [] as WarehouseAuditEvent[]
-    ),
   ]);
 
   enrichHealth.push(
     { name: "billing_costs", status: "ok", rowCount: costResult.length },
-    { name: "warehouse_events", status: "ok", rowCount: eventsResult.length },
-    { name: "audit_trail", status: "ok", rowCount: auditResult.length }
+    { name: "warehouse_events", status: "ok", rowCount: eventsResult.length }
   );
 
   // Merge with any failed sources
@@ -264,7 +252,7 @@ async function EnrichmentLoader({
   );
 
   console.log(
-    `[phase2] costs=${costResult.length} events=${eventsResult.length} audit=${auditResult.length}`
+    `[phase2] costs=${costResult.length} events=${eventsResult.length}`
   );
 
   // Inject enrichment data as a hidden JSON script for the client to pick up
@@ -273,7 +261,6 @@ async function EnrichmentLoader({
     warehouseCosts: costResult,
     warehouseEvents: eventsResult,
     warehouseUtilization: utilization,
-    warehouseAudit: auditResult,
     dataSourceHealth: finalEnrichHealth,
   };
 

@@ -8,7 +8,6 @@ import {
   Warehouse,
   Coins,
   Activity,
-  History,
   Loader2,
   CheckCircle2,
 } from "lucide-react";
@@ -19,7 +18,6 @@ const LOAD_STEPS = [
   { label: "Loading warehouse metadata", icon: Warehouse, delayMs: 1600 },
   { label: "Computing cost allocation", icon: Coins, delayMs: 2500 },
   { label: "Analyzing utilization", icon: Activity, delayMs: 3500 },
-  { label: "Loading audit trail", icon: History, delayMs: 4500 },
 ];
 
 export function DashboardSkeleton() {

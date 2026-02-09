@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition, useEffect, useRef } from "react";
-import Link from "next/link";
 import {
   Clock,
   Database,
@@ -39,7 +38,6 @@ import {
   Loader2,
   AlertTriangle,
   ShieldAlert,
-  ArrowRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -836,14 +834,6 @@ function AiResultsPanel({
             <Sparkles className="h-4 w-4 text-primary" />
             AI Analysis
           </CardTitle>
-          {isRewrite && (
-            <Link href={`/rewrite/${fingerprint}`}>
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                Open Workbench
-                <ArrowRight className="h-3 w-3" />
-              </Button>
-            </Link>
-          )}
         </div>
       </CardHeader>
       <CardContent>

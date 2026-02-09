@@ -176,21 +176,6 @@ export interface WarehouseUtilization {
   queryCount: number;
 }
 
-/** Warehouse config audit event from system.access.audit */
-export interface WarehouseAuditEvent {
-  eventTime: string;
-  actionName: string; // "Created", "Edited", "Deleted"
-  warehouseId: string;
-  editorUser: string;
-  warehouseName: string | null;
-  warehouseType: string | null;
-  warehouseSize: string | null;
-  minClusters: number | null;
-  maxClusters: number | null;
-  autoStopMins: string | null;
-  warehouseChannel: string | null;
-}
-
 /** Time-window filter for queries */
 export interface TimeWindow {
   startTime: string; // ISO timestamp

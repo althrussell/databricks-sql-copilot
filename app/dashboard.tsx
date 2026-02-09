@@ -23,10 +23,8 @@ import {
   Cpu,
   BarChart3,
   User,
-  TrendingUp,
   Hourglass,
   Flame,
-  Crown,
   Network,
   FilterX,
   Rows3,
@@ -47,11 +45,6 @@ import {
   ShieldAlert,
   Activity,
   Package,
-  History,
-  Pencil,
-  Trash2,
-  PlusCircle,
-  Gauge,
   Tag,
   Flag,
   Loader2,
@@ -128,7 +121,6 @@ import type {
   WarehouseEvent,
   WarehouseCost,
   WarehouseUtilization,
-  WarehouseAuditEvent,
 } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 
@@ -438,32 +430,6 @@ function eventColor(eventType: string): string {
   }
 }
 
-function auditActionIcon(action: string) {
-  switch (action) {
-    case "Created":
-      return PlusCircle;
-    case "Edited":
-      return Pencil;
-    case "Deleted":
-      return Trash2;
-    default:
-      return History;
-  }
-}
-
-function auditActionColor(action: string): string {
-  switch (action) {
-    case "Created":
-      return "text-emerald-600 dark:text-emerald-400";
-    case "Edited":
-      return "text-blue-600 dark:text-blue-400";
-    case "Deleted":
-      return "text-red-600 dark:text-red-400";
-    default:
-      return "text-muted-foreground";
-  }
-}
-
 function scoreColor(score: number): string {
   if (score >= 70) return "bg-red-500";
   if (score >= 40) return "bg-amber-500";
@@ -557,51 +523,6 @@ function originLabel(origin: QueryOrigin): string {
 
 /* ── Sub-components ── */
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-3 pt-1">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-        {title}
-      </h2>
-      <div className="flex-1 h-px bg-border" />
-    </div>
-  );
-}
-
-function KpiCell({
-  label,
-  value,
-  detail,
-  valueColor = "text-foreground",
-  onClick,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  /** Tailwind text class for the value */
-  valueColor?: string;
-  /** Optional click handler */
-  onClick?: () => void;
-}) {
-  return (
-    <div
-      className={`space-y-0.5 ${onClick ? "cursor-pointer" : ""}`}
-      onClick={onClick}
-    >
-      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground leading-tight">
-        {label}
-      </p>
-      <p className={`text-lg font-bold tabular-nums leading-none ${valueColor}`}>
-        {value}
-      </p>
-      {detail && (
-        <p className="text-[10px] text-muted-foreground leading-tight truncate">
-          {detail}
-        </p>
-      )}
-    </div>
-  );
-}
 
 function ScoreBar({ score }: { score: number }) {
   return (
@@ -1113,7 +1034,6 @@ interface DashboardProps {
   warehouseEvents: WarehouseEvent[];
   warehouseCosts: WarehouseCost[];
   warehouseUtilization: WarehouseUtilization[];
-  warehouseAudit: WarehouseAuditEvent[];
   workspaceUrl: string;
   fetchError: string | null;
   dataSourceHealth?: DataSourceHealth[];
@@ -1129,7 +1049,6 @@ export function Dashboard({
   warehouseEvents: initialEvents,
   warehouseCosts: initialCosts,
   warehouseUtilization: initialUtilization,
-  warehouseAudit: initialAudit,
   workspaceUrl,
   fetchError,
   dataSourceHealth: initialHealth = [],
@@ -1140,7 +1059,6 @@ export function Dashboard({
   const [enrichedCosts, setEnrichedCosts] = useState<WarehouseCost[] | null>(null);
   const [enrichedEvents, setEnrichedEvents] = useState<WarehouseEvent[] | null>(null);
   const [enrichedUtilization, setEnrichedUtilization] = useState<WarehouseUtilization[] | null>(null);
-  const [enrichedAudit, setEnrichedAudit] = useState<WarehouseAuditEvent[] | null>(null);
   const [enrichmentLoaded, setEnrichmentLoaded] = useState(false);
   const [enrichmentHealth, setEnrichmentHealth] = useState<DataSourceHealth[]>([]);
 
@@ -1155,7 +1073,6 @@ export function Dashboard({
           if (data.warehouseCosts) setEnrichedCosts(data.warehouseCosts);
           if (data.warehouseEvents) setEnrichedEvents(data.warehouseEvents);
           if (data.warehouseUtilization) setEnrichedUtilization(data.warehouseUtilization);
-          if (data.warehouseAudit) setEnrichedAudit(data.warehouseAudit);
           if (data.dataSourceHealth) setEnrichmentHealth(data.dataSourceHealth);
           setEnrichmentLoaded(true);
         } catch {
@@ -1181,7 +1098,6 @@ export function Dashboard({
   const warehouseEvents = enrichedEvents ?? initialEvents;
   const warehouseCosts = enrichedCosts ?? initialCosts;
   const warehouseUtilization = enrichedUtilization ?? initialUtilization;
-  const warehouseAudit = enrichedAudit ?? initialAudit;
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -1368,166 +1284,6 @@ export function Dashboard({
     );
   }, [warehouseUtilization, warehouseFilter]);
 
-  // Audit trail for the selected warehouse
-  const filteredAudit = useMemo(() => {
-    if (warehouseFilter === "all") return warehouseAudit.slice(0, 20);
-    return warehouseAudit
-      .filter((a) => a.warehouseId === warehouseFilter)
-      .slice(0, 15);
-  }, [warehouseAudit, warehouseFilter]);
-
-  // Top 3 most expensive warehouses for the "all" summary
-  const topCostWarehouses = useMemo(() => {
-    if (warehouseFilter !== "all") return [];
-    const entries = [...costData.perWarehouse.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-    return entries.map(([id, dbus]) => {
-      const wh = warehouses.find((w) => w.warehouseId === id);
-      return { id, name: wh?.name ?? id, dbus };
-    });
-  }, [costData.perWarehouse, warehouseFilter, warehouses]);
-
-  // Insights: interesting callouts from the data
-  const insights = useMemo(() => {
-    if (filtered.length === 0) return [];
-
-    const items: {
-      icon: React.ComponentType<{ className?: string }>;
-      label: string;
-      value: string;
-      detail: string;
-      color: string;
-      priority: number;
-      /** Navigation target: "warehouse:id", "query:fingerprint", "scroll:table" */
-      href?: string;
-    }[] = [];
-
-    // Busiest user
-    const userRunCounts = new Map<string, number>();
-    for (const c of filtered) {
-      for (const u of c.topUsers) {
-        userRunCounts.set(u, (userRunCounts.get(u) ?? 0) + c.windowStats.count);
-      }
-    }
-    if (userRunCounts.size > 0) {
-      const [topUser, topUserRuns] = [...userRunCounts.entries()].sort(
-        (a, b) => b[1] - a[1]
-      )[0];
-      items.push({
-        icon: Crown,
-        label: "Busiest User",
-        value: topUser.split("@")[0],
-        detail: `${formatCount(topUserRuns)} query runs`,
-        color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-        priority: 100,
-        href: `scroll:table`,
-      });
-    }
-
-    // Most expensive query pattern (prefer $ cost, fallback to DBUs)
-    const costliest = [...filtered].sort(
-      (a, b) =>
-        (b.allocatedCostDollars || b.allocatedDBUs) -
-        (a.allocatedCostDollars || a.allocatedDBUs)
-    )[0];
-    if (costliest && (costliest.allocatedCostDollars > 0 || costliest.allocatedDBUs > 0)) {
-      items.push({
-        icon: DollarSign,
-        label: "Most Expensive Pattern",
-        value: costliest.allocatedCostDollars > 0
-          ? formatDollars(costliest.allocatedCostDollars)
-          : `${formatDBUs(costliest.allocatedDBUs)} DBUs`,
-        detail: truncateQuery(costliest.sampleQueryText, 35),
-        color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-        priority: 98,
-        href: `query:${costliest.fingerprint}`,
-      });
-    }
-
-    // Busiest warehouse
-    const whRunCounts = new Map<string, { id: string; name: string; runs: number }>();
-    for (const c of filtered) {
-      const id = c.warehouseId;
-      const entry = whRunCounts.get(id) ?? { id, name: c.warehouseName, runs: 0 };
-      entry.runs += c.windowStats.count;
-      whRunCounts.set(id, entry);
-    }
-    if (whRunCounts.size > 0) {
-      const topWh = [...whRunCounts.values()].sort((a, b) => b.runs - a.runs)[0];
-      items.push({
-        icon: TrendingUp,
-        label: "Busiest Warehouse",
-        value: topWh.name,
-        detail: `${formatCount(topWh.runs)} query runs`,
-        color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
-        priority: 95,
-        href: `warehouse:${topWh.id}`,
-      });
-    }
-
-    // Highest capacity wait
-    const candidatesByCapacity = [...filtered].sort(
-      (a, b) => b.scoreBreakdown.capacity - a.scoreBreakdown.capacity
-    );
-    if (
-      candidatesByCapacity.length > 0 &&
-      candidatesByCapacity[0].scoreBreakdown.capacity > 0
-    ) {
-      const worst = candidatesByCapacity[0];
-      items.push({
-        icon: Hourglass,
-        label: "Longest Queue Wait",
-        value: worst.warehouseName,
-        detail: `Capacity score ${worst.scoreBreakdown.capacity}/100`,
-        color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-        priority: worst.scoreBreakdown.capacity,
-        href: `query:${worst.fingerprint}`,
-      });
-    }
-
-    // Biggest spills
-    const candidatesBySpill = [...filtered].sort(
-      (a, b) => b.windowStats.totalSpilledBytes - a.windowStats.totalSpilledBytes
-    );
-    if (
-      candidatesBySpill.length > 0 &&
-      candidatesBySpill[0].windowStats.totalSpilledBytes > 0
-    ) {
-      const worst = candidatesBySpill[0];
-      items.push({
-        icon: Flame,
-        label: "Biggest Spill",
-        value: formatBytes(worst.windowStats.totalSpilledBytes),
-        detail: `${truncateQuery(worst.sampleQueryText, 40)}`,
-        color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
-        priority: Math.min(worst.windowStats.totalSpilledBytes / 1e6, 90),
-        href: `query:${worst.fingerprint}`,
-      });
-    }
-
-    // Worst utilization
-    if (filteredUtilization.length > 0) {
-      const worstUtil = filteredUtilization[0];
-      if (worstUtil.utilizationPercent < 50) {
-        const whName =
-          warehouses.find((w) => w.warehouseId === worstUtil.warehouseId)?.name ??
-          worstUtil.warehouseId;
-        items.push({
-          icon: Gauge,
-          label: "Lowest Utilization",
-          value: `${worstUtil.utilizationPercent}%`,
-          detail: `${whName} — ${formatDuration(worstUtil.idleTimeMs)} idle`,
-          color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
-          priority: 88,
-          href: `warehouse:${worstUtil.warehouseId}`,
-        });
-      }
-    }
-
-    return items.sort((a, b) => b.priority - a.priority).slice(0, 4);
-  }, [filtered, filteredUtilization, warehouses]);
-
   function handleTimeChange(preset: string) {
     setTimePreset(preset);
     setCustomRange(null);
@@ -1566,19 +1322,6 @@ export function Dashboard({
   );
 
   /** Navigate from a tile click: "query:fp", "warehouse:id", or "scroll:table" */
-  function handleTileClick(href?: string) {
-    if (!href) return;
-    if (href.startsWith("query:")) {
-      router.push(`/queries/${href.slice(6)}`);
-    } else if (href.startsWith("warehouse:")) {
-      setWarehouseFilter(href.slice(10));
-      // Smooth scroll to top so the warehouse detail section is visible
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } else if (href === "scroll:table") {
-      tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }
-
   // Unique warehouse list from candidates
   const warehouseOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -1600,7 +1343,7 @@ export function Dashboard({
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
+      <div className="space-y-3">
         {/* ── Toolbar ── */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Time range: quick presets + custom range picker */}
@@ -1672,30 +1415,6 @@ export function Dashboard({
           )}
         </div>
 
-        {/* ── Performance Flag Filters ── */}
-        {allFlags.length > 0 && !fetchError && (
-          <div className="flex flex-wrap items-center gap-2">
-            <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground mr-1">Filter by flag:</span>
-            <FilterChip
-              selected={flagFilter === null}
-              onClick={() => setFlagFilter(null)}
-            >
-              All
-            </FilterChip>
-            {allFlags.slice(0, 8).map((f) => (
-              <FilterChip
-                key={f.flag}
-                selected={flagFilter === f.flag}
-                onClick={() =>
-                  setFlagFilter(flagFilter === f.flag ? null : f.flag)
-                }
-              >
-                {f.label} ({f.count})
-              </FilterChip>
-            ))}
-          </div>
-        )}
 
         {/* ── Error ── */}
         {fetchError && <ErrorBanner message={fetchError} />}
@@ -1737,63 +1456,44 @@ export function Dashboard({
           </Card>
         )}
 
-        {/* ── KPI strip — single compact row ── */}
+        {/* ── KPI strip — compact inline stats ── */}
         {!fetchError && (
-          <Card className="py-3">
-            <CardContent>
-              <div className="grid grid-cols-4 gap-x-6 gap-y-3 md:grid-cols-7">
-                <KpiCell
-                  label="Total Runs"
-                  value={formatCount(warehouseFilter === "all" ? totalQueries : kpis.totalRuns)}
-                  detail="In window"
-                  valueColor="text-blue-600 dark:text-blue-400"
-                  onClick={() => handleTileClick("scroll:table")}
-                />
-                <KpiCell
-                  label="Critical"
-                  value={kpis.highImpact.toLocaleString()}
-                  detail="Score ≥ 50"
-                  valueColor={kpis.highImpact > 0 ? "text-red-600 dark:text-red-400" : "text-foreground"}
-                  onClick={() => handleTileClick("scroll:table")}
-                />
-                <KpiCell
-                  label="Compute"
-                  value={formatDuration(kpis.totalDuration)}
-                  detail="Wall time"
-                  valueColor="text-amber-600 dark:text-amber-400"
-                  onClick={() => handleTileClick("scroll:table")}
-                />
-                <KpiCell
-                  label="Est. Cost"
-                  value={formatDollars(totalDollarCost)}
-                  detail="List prices"
-                  valueColor="text-emerald-600 dark:text-emerald-400"
-                  onClick={() => handleTileClick("scroll:table")}
-                />
-                <KpiCell
-                  label="Patterns"
-                  value={filtered.length.toLocaleString()}
-                  detail="Fingerprints"
-                  valueColor="text-violet-600 dark:text-violet-400"
-                  onClick={() => handleTileClick("scroll:table")}
-                />
-                <KpiCell
-                  label="Users"
-                  value={kpis.uniqueUsers.toLocaleString()}
-                  detail="Authors"
-                  valueColor="text-teal-600 dark:text-teal-400"
-                  onClick={() => handleTileClick("scroll:table")}
-                />
-                <KpiCell
-                  label="SQL DBUs"
-                  value={formatDBUs(costData.totalDBUs)}
-                  detail={warehouseFilter === "all" ? `${costData.perWarehouse.size} warehouses` : "Selected"}
-                  valueColor="text-emerald-600 dark:text-emerald-400"
-                  onClick={() => handleTileClick("scroll:table")}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+            <span className="tabular-nums">
+              <span className="font-bold text-blue-600 dark:text-blue-400">{formatCount(warehouseFilter === "all" ? totalQueries : kpis.totalRuns)}</span>
+              <span className="text-muted-foreground ml-1">runs</span>
+            </span>
+            {kpis.highImpact > 0 && (
+              <span className="tabular-nums">
+                <span className="font-bold text-red-600 dark:text-red-400">{kpis.highImpact}</span>
+                <span className="text-muted-foreground ml-1">critical</span>
+              </span>
+            )}
+            <span className="tabular-nums">
+              <span className="font-bold text-amber-600 dark:text-amber-400">{formatDuration(kpis.totalDuration)}</span>
+              <span className="text-muted-foreground ml-1">compute</span>
+            </span>
+            <span className="tabular-nums">
+              <span className="font-bold text-violet-600 dark:text-violet-400">{filtered.length}</span>
+              <span className="text-muted-foreground ml-1">patterns</span>
+            </span>
+            <span className="tabular-nums">
+              <span className="font-bold text-teal-600 dark:text-teal-400">{kpis.uniqueUsers}</span>
+              <span className="text-muted-foreground ml-1">users</span>
+            </span>
+            {totalDollarCost > 0 && (
+              <span className="tabular-nums">
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatDollars(totalDollarCost)}</span>
+                <span className="text-muted-foreground ml-1">est. cost</span>
+              </span>
+            )}
+            {costData.totalDBUs > 0 && (
+              <span className="tabular-nums">
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatDBUs(costData.totalDBUs)}</span>
+                <span className="text-muted-foreground ml-1">DBUs</span>
+              </span>
+            )}
+          </div>
         )}
 
         {/* ── Warehouse Detail Section ── */}
@@ -1966,228 +1666,41 @@ export function Dashboard({
           </div>
         )}
 
-        {/* ── Config Audit Trail ── */}
-        {!fetchError && filteredAudit.length > 0 && (
-          <Card className="py-4">
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="rounded-lg bg-violet-100 dark:bg-violet-900/30 p-2">
-                  <History className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-                </div>
-                <h3 className="text-sm font-semibold">
-                  Warehouse Config Audit Trail
-                  <span className="text-muted-foreground font-normal ml-1">
-                    ({filteredAudit.length})
-                  </span>
-                </h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 pr-4">When</th>
-                      <th className="pb-2 pr-4">Action</th>
-                      <th className="pb-2 pr-4">By</th>
-                      <th className="pb-2 pr-4">Warehouse</th>
-                      <th className="pb-2 pr-4">Size</th>
-                      <th className="pb-2 pr-4">Scaling</th>
-                      <th className="pb-2 pr-4">Auto-stop</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAudit.map((a, i) => {
-                      const AIcon = auditActionIcon(a.actionName);
-                      return (
-                        <tr key={i} className="border-b border-border/50 last:border-0">
-                          <td className="py-1.5 pr-4 tabular-nums text-muted-foreground">
-                            {timeAgo(a.eventTime)}
-                          </td>
-                          <td className="py-1.5 pr-4">
-                            <span className={`flex items-center gap-1 font-medium ${auditActionColor(a.actionName)}`}>
-                              <AIcon className="h-3 w-3" />
-                              {a.actionName}
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-4 truncate max-w-[120px]">
-                            {a.editorUser.split("@")[0]}
-                          </td>
-                          <td className="py-1.5 pr-4 font-medium truncate max-w-[120px]">
-                            {a.warehouseName ?? "\u2014"}
-                          </td>
-                          <td className="py-1.5 pr-4">{a.warehouseSize ?? "\u2014"}</td>
-                          <td className="py-1.5 pr-4">
-                            {a.minClusters != null && a.maxClusters != null
-                              ? `${a.minClusters}\u2013${a.maxClusters}`
-                              : "\u2014"}
-                          </td>
-                          <td className="py-1.5 pr-4">
-                            {a.autoStopMins ? `${a.autoStopMins}m` : "\u2014"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Insights strip (compact) ── */}
-        {!fetchError && insights.length > 0 && (
-          <Card className="py-2.5">
-            <CardContent>
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Insights</span>
-                {insights.map((insight) => {
-                  const Icon = insight.icon;
-                  return (
-                    <div
-                      key={insight.label}
-                      className={`flex items-center gap-2 min-w-0 ${
-                        insight.href ? "cursor-pointer hover:opacity-80" : ""
-                      }`}
-                      onClick={() => handleTileClick(insight.href)}
-                    >
-                      <div className={`rounded p-1 ${insight.color}`}>
-                        <Icon className="h-3 w-3" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate max-w-[140px]">
-                          {insight.value}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground truncate max-w-[140px]">
-                          {insight.label}
-                        </p>
-                      </div>
-                      {insight.href && (
-                        <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Top Cost Warehouses (when "All" selected) ── */}
-        {!fetchError && warehouseFilter === "all" && topCostWarehouses.length > 0 && (
-          <Card className="py-2.5">
-            <CardContent>
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Spend</span>
-                {topCostWarehouses.map((wh, idx) => {
-                  const whDollars = warehouseCosts
-                    .filter((c) => c.warehouseId === wh.id)
-                    .reduce((s, c) => s + c.totalDollars, 0);
-                  return (
-                    <div
-                      key={wh.id}
-                      className="flex items-center gap-2 cursor-pointer hover:opacity-80"
-                      onClick={() => setWarehouseFilter(wh.id)}
-                    >
-                      <span className="flex h-5 w-5 items-center justify-center rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-[10px] font-bold shrink-0">
-                        {idx + 1}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate max-w-[160px]">{wh.name}</p>
-                        <p className="text-[10px] text-muted-foreground tabular-nums">
-                          {formatDBUs(wh.dbus)} DBUs
-                          {whDollars > 0 && (
-                            <span className="text-emerald-600 dark:text-emerald-400 font-medium ml-1">
-                              {formatDollars(whDollars)}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ── Utilization Overview (when "All" selected) ── */}
-        {!fetchError && warehouseFilter === "all" && warehouseUtilization.length > 0 && (() => {
-          const active = warehouseUtilization.filter((u) => u.queryCount > 0);
-          const idleCount = warehouseUtilization.filter((u) => u.queryCount === 0).length;
-          return (
-            <Card className="py-2.5">
-              <CardContent className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Warehouse Utilization</span>
-                  {idleCount > 0 && (
-                    <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-                      {idleCount} idle warehouse{idleCount !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-                {active.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-3 lg:grid-cols-6">
-                    {active.slice(0, 6).map((u) => {
-                      const whName =
-                        warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
-                        u.warehouseId.slice(0, 12);
-                      return (
-                        <div
-                          key={u.warehouseId}
-                          className="space-y-1 cursor-pointer hover:opacity-80"
-                          onClick={() => setWarehouseFilter(u.warehouseId)}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-medium truncate">{whName}</span>
-                            <span className={`text-xs font-bold tabular-nums shrink-0 ${utilizationTextColor(u.utilizationPercent, u.queryCount)}`}>
-                              {`${u.utilizationPercent}%`}
-                            </span>
-                          </div>
-                          <div className="h-1 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${utilizationColor(u.utilizationPercent)}`}
-                              style={{ width: `${u.utilizationPercent}%` }}
-                            />
-                          </div>
-                          <p className="text-[9px] text-muted-foreground tabular-nums">
-                            {u.queryCount} queries &middot; {formatDuration(u.idleTimeMs)} idle
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">All {idleCount} warehouses idle in this window</p>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })()}
 
         {/* ── Table ── */}
         {!fetchError && filtered.length === 0 && <EmptyState />}
 
         {!fetchError && filtered.length > 0 && (
           <div ref={tableRef}>
-            <div className="space-y-3">
-              <SectionHeader title="Query Candidates" />
-              <div className="flex items-center gap-3 flex-wrap">
-                <Badge variant="outline" className="border-border">
-                  {sorted.length} candidates
-                </Badge>
-                <div className="relative flex-1 max-w-xs min-w-[180px]">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search queries, users, warehouses…"
-                    value={tableSearch}
-                    onChange={(e) => setTableSearch(e.target.value)}
-                    className="h-8 pl-8 text-xs"
-                  />
-                </div>
-                <span className="text-[11px] text-muted-foreground hidden md:inline">
-                  Click for details &middot; right-click for actions
-                </span>
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <div className="relative flex-1 max-w-xs min-w-[180px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search queries, users, warehouses…"
+                  value={tableSearch}
+                  onChange={(e) => setTableSearch(e.target.value)}
+                  className="h-8 pl-8 text-xs"
+                />
               </div>
+              {allFlags.length > 0 && (
+                <Select value={flagFilter ?? "all"} onValueChange={(v) => setFlagFilter(v === "all" ? null : v)}>
+                  <SelectTrigger className="w-auto h-8 text-xs gap-1.5">
+                    <ShieldAlert className="h-3 w-3 text-muted-foreground" />
+                    <SelectValue placeholder="All flags" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All flags</SelectItem>
+                    {allFlags.slice(0, 8).map((f) => (
+                      <SelectItem key={f.flag} value={f.flag}>
+                        {f.label} ({f.count})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <span className="text-[11px] text-muted-foreground tabular-nums ml-auto">
+                {sorted.length} patterns
+              </span>
             </div>
 
             <Card>

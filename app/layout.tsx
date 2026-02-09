@@ -71,12 +71,6 @@ export default function RootLayout({
                 >
                   Dashboard
                 </Link>
-                <Link
-                  href="/recommendations"
-                  className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                >
-                  Recommendations
-                </Link>
                 <div className="h-5 w-px bg-border mx-1" />
                 <ThemeToggle />
               </nav>
