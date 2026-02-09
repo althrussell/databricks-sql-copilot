@@ -6,6 +6,7 @@ import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 import type { WarehouseCost } from "@/lib/domain/types";
 import { ValidateClient } from "./validate-client";
 
@@ -19,7 +20,17 @@ interface ValidatePageProps {
 function ValidateSkeleton() {
   return (
     <div className="space-y-6">
-      <Skeleton className="h-8 w-64" />
+      <Card>
+        <CardContent className="flex items-center gap-4 py-6">
+          <Loader2 className="h-6 w-6 animate-spin text-primary shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Loading validation…</p>
+            <p className="text-xs text-muted-foreground">
+              Fetching query data from Databricks
+            </p>
+          </div>
+        </CardContent>
+      </Card>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {[0, 1].map((i) => (
           <Card key={i}>

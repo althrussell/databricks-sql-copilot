@@ -41,17 +41,22 @@ function timeRangeForPreset(preset: string): { start: string; end: string } {
   // End = now minus billing lag (most recent point where billing data exists)
   const end = new Date(now.getTime() - lagMs);
 
-  // Window size based on preset
-  const windowMs: Record<string, number> = {
+  // Window size based on preset — supports "1h", "6h", "24h", "7d", and custom "Nh"
+  const knownMs: Record<string, number> = {
     "1h": 1 * 60 * 60 * 1000,
     "6h": 6 * 60 * 60 * 1000,
     "24h": 24 * 60 * 60 * 1000,
     "7d": 7 * 24 * 60 * 60 * 1000,
   };
 
-  const window = windowMs[preset] ?? windowMs["1h"];
-  const start = new Date(end.getTime() - window);
+  let windowMs = knownMs[preset];
+  if (!windowMs) {
+    // Parse custom format like "12h", "48h" etc.
+    const match = preset.match(/^(\d+)h$/);
+    windowMs = match ? parseInt(match[1], 10) * 60 * 60 * 1000 : knownMs["1h"];
+  }
 
+  const start = new Date(end.getTime() - windowMs);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
@@ -82,8 +87,8 @@ function catchAndLogTracked<T>(
  * Renders the main dashboard immediately with query patterns (no cost yet).
  * Phase 2 enrichment data streams in after.
  */
-async function CoreDashboardLoader() {
-  const { start, end } = timeRangeForPreset("1h");
+async function CoreDashboardLoader({ preset }: { preset: string }) {
+  const { start, end } = timeRangeForPreset(preset);
 
   let warehouses: WarehouseOption[] = [];
   let candidates: Candidate[] = [];
@@ -130,7 +135,7 @@ async function CoreDashboardLoader() {
       warehouses={warehouses}
       initialCandidates={candidates}
       initialTotalQueries={totalQueryCount}
-      initialTimePreset="1h"
+      initialTimePreset={preset}
       warehouseEvents={[]}
       warehouseCosts={[]}
       warehouseUtilization={[]}
@@ -274,10 +279,16 @@ async function EnrichmentLoader({
   );
 }
 
-export default function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ time?: string }>;
+}) {
+  const params = await searchParams;
+  const preset = params.time ?? "1h";
   return (
     <Suspense fallback={<DashboardSkeleton />}>
-      <CoreDashboardLoader />
+      <CoreDashboardLoader preset={preset} />
     </Suspense>
   );
 }

@@ -7,7 +7,6 @@ import {
   Database,
   Zap,
   Warehouse,
-  Users,
   LayoutDashboard,
   FileCode2,
   BriefcaseBusiness,
@@ -65,7 +64,7 @@ import type { Candidate, QueryOrigin } from "@/lib/domain/types";
 import type { DiagnoseResponse, RewriteResponse } from "@/lib/ai/promptBuilder";
 import type { AiResult } from "@/lib/ai/aiClient";
 
-/* ── Helpers (shared with dashboard) ── */
+/* ── Helpers ── */
 
 function formatDuration(ms: number): string {
   if (ms < 1_000) return `${ms}ms`;
@@ -212,36 +211,54 @@ function buildLink(
   }
 }
 
-/* ── Sub-components ── */
+/* ── Tiny sub-components ── */
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+    <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
       {children}
     </h4>
   );
 }
 
-function StatCard({
+function MiniStat({
   icon: Icon,
   label,
   value,
-  subtext,
+  sub,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
-  subtext?: string;
+  sub?: string;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-muted/30 border border-border p-3">
-      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] text-muted-foreground">{label}</p>
-        <p className="text-sm font-semibold tabular-nums truncate">{value}</p>
-        {subtext && (
-          <p className="text-[10px] text-muted-foreground">{subtext}</p>
-        )}
+    <div className="flex items-center gap-2">
+      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <div className="min-w-0">
+        <p className="text-[10px] text-muted-foreground leading-tight">{label}</p>
+        <p className="text-sm font-semibold tabular-nums leading-tight">{value}</p>
+        {sub && <p className="text-[9px] text-muted-foreground leading-tight">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+function IoCell({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 rounded-md bg-muted/30 border border-border px-2 py-1.5">
+      <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
+      <div className="min-w-0">
+        <p className="text-[9px] text-muted-foreground leading-tight">{label}</p>
+        <p className="text-xs font-semibold tabular-nums leading-tight">{value}</p>
       </div>
     </div>
   );
@@ -261,19 +278,49 @@ function TimeBar({
   const pct = maxMs > 0 ? Math.max(1, (ms / maxMs) * 100) : 0;
   return (
     <div className="flex items-center gap-2">
-      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <span className="text-xs text-muted-foreground w-28 shrink-0">
+      <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
+      <span className="text-[11px] text-muted-foreground w-24 shrink-0">
         {label}
       </span>
-      <div className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden">
+      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
         <div
           className="h-full rounded-full bg-primary/60 transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs font-medium tabular-nums w-16 text-right">
+      <span className="text-[11px] font-medium tabular-nums w-14 text-right">
         {formatDuration(ms)}
       </span>
+    </div>
+  );
+}
+
+function ContextRow({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  href,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  sub?: string;
+  href?: string | null;
+}) {
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] text-muted-foreground leading-tight">{label}</p>
+        <p className="text-xs font-medium truncate leading-tight">{value}</p>
+        {sub && <p className="text-[9px] text-muted-foreground font-mono leading-tight">{sub}</p>}
+      </div>
+      {href && (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 shrink-0">
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
     </div>
   );
 }
@@ -341,145 +388,141 @@ export function QueryDetailClient({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const costString = candidate.allocatedCostDollars > 0
+    ? formatDollars(candidate.allocatedCostDollars)
+    : candidate.allocatedDBUs > 0
+      ? `${formatDBUs(candidate.allocatedDBUs)} DBUs`
+      : null;
+
   return (
     <TooltipProvider>
-      <div className="space-y-6">
-        {/* ── Header card ── */}
-        <Card>
-          <CardContent className="py-6">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`rounded-lg p-2.5 ${candidate.impactScore >= 60 ? "bg-red-100 dark:bg-red-900/30" : "bg-amber-100 dark:bg-amber-900/30"}`}
-                  >
-                    <Zap
-                      className={`h-5 w-5 ${candidate.impactScore >= 60 ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}
-                    />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-bold tracking-tight">
+      <div className="space-y-4">
+        {/* ── Hero ── */}
+        <Card className="py-4">
+          <CardContent>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              {/* Left: score + meta */}
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`rounded-lg p-2 shrink-0 ${candidate.impactScore >= 60 ? "bg-red-100 dark:bg-red-900/30" : "bg-amber-100 dark:bg-amber-900/30"}`}
+                >
+                  <Zap
+                    className={`h-5 w-5 ${candidate.impactScore >= 60 ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <h1 className="text-xl font-bold tracking-tight whitespace-nowrap">
                       Impact Score:{" "}
                       <span className={scoreTextColor(candidate.impactScore)}>
                         {candidate.impactScore}
                       </span>
                     </h1>
-                    <p className="text-sm text-muted-foreground">
-                      {candidate.statementType} &middot;{" "}
-                      {candidate.warehouseName}
-                      {candidate.allocatedCostDollars > 0 && (
-                        <> &middot; {formatDollars(candidate.allocatedCostDollars)}</>
-                      )}
-                      {candidate.allocatedCostDollars <= 0 &&
-                        candidate.allocatedDBUs > 0 && (
-                          <>
-                            {" "}
-                            &middot; {formatDBUs(candidate.allocatedDBUs)} DBUs
-                          </>
-                        )}
-                    </p>
+                    {costString && (
+                      <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                        {costString}
+                      </span>
+                    )}
                   </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {candidate.statementType} &middot; {candidate.warehouseName} &middot; {ws.count} runs &middot; p95 {formatDuration(ws.p95Ms)}
+                  </p>
                 </div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-1.5">
-                  {candidate.tags.map((tag) => (
-                    <StatusBadge key={tag} status={tagToStatus(tag)}>
-                      {tag}
-                    </StatusBadge>
-                  ))}
-                  {candidate.dbtMeta.isDbt && (
-                    <Badge
-                      variant="outline"
-                      className="border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-400"
-                    >
-                      <Package className="h-3 w-3 mr-1" />
-                      dbt
-                    </Badge>
-                  )}
-                </div>
-
-                {/* Performance Flags */}
-                {candidate.performanceFlags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {candidate.performanceFlags.map((pf) => (
-                      <Tooltip key={pf.flag}>
-                        <TooltipTrigger asChild>
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium cursor-help ${flagSeverityColor(pf.severity)}`}
-                          >
-                            <Flag className="h-3 w-3" />
-                            {pf.label}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-xs">
-                          {pf.detail}
-                        </TooltipContent>
-                      </Tooltip>
-                    ))}
-                  </div>
-                )}
               </div>
 
-              {/* CTAs */}
+              {/* Right: CTA */}
               <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center rounded-lg border border-border overflow-hidden">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 rounded-none border-r border-border"
+                        disabled={diagnosing || rewriting}
+                        onClick={() => {
+                          startDiagnose(async () => {
+                            const result = await diagnoseQuery(candidate);
+                            setAiResult(result);
+                            setActiveAiTab("summary");
+                          });
+                        }}
+                      >
+                        {diagnosing ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Stethoscope className="h-3.5 w-3.5" />
+                        )}
+                        {diagnosing ? "Diagnosing\u2026" : "1. Diagnose"}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>AI analyses execution metrics and explains root causes</TooltipContent>
+                  </Tooltip>
+                  <div className="px-1 text-muted-foreground">
+                    <ArrowRight className="h-3 w-3" />
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="sm"
+                        className="gap-1.5 rounded-none"
+                        disabled={diagnosing || rewriting}
+                        onClick={() => {
+                          startRewrite(async () => {
+                            const result = await rewriteQuery(candidate);
+                            setAiResult(result);
+                            setActiveAiTab("summary");
+                          });
+                        }}
+                      >
+                        {rewriting ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" />
+                        )}
+                        {rewriting ? "Generating\u2026" : "2. Rewrite"}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>AI proposes an optimised SQL rewrite</TooltipContent>
+                  </Tooltip>
+                </div>
                 {queryProfileLink && (
-                  <Button variant="outline" size="sm" asChild>
-                    <a
-                      href={queryProfileLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                      Query Profile
+                  <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1" asChild>
+                    <a href={queryProfileLink} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3" />
+                      Profile
                     </a>
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={diagnosing || rewriting}
-                  onClick={() => {
-                    startDiagnose(async () => {
-                      const result = await diagnoseQuery(candidate);
-                      setAiResult(result);
-                      setActiveAiTab("summary");
-                    });
-                  }}
-                >
-                  {diagnosing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Stethoscope className="h-3.5 w-3.5" />
-                  )}
-                  {diagnosing ? "Diagnosing\u2026" : "Diagnose"}
-                </Button>
-                <Button
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={diagnosing || rewriting}
-                  onClick={() => {
-                    startRewrite(async () => {
-                      const result = await rewriteQuery(candidate);
-                      setAiResult(result);
-                      setActiveAiTab("summary");
-                    });
-                  }}
-                >
-                  {rewriting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-3.5 w-3.5" />
-                  )}
-                  {rewriting ? "Generating\u2026" : "Generate Rewrite"}
-                </Button>
               </div>
+            </div>
+
+            {/* Tags + Flags — compact row under hero */}
+            <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-border">
+              {candidate.tags.map((tag) => (
+                <StatusBadge key={tag} status={tagToStatus(tag)}>{tag}</StatusBadge>
+              ))}
+              {candidate.dbtMeta.isDbt && (
+                <Badge variant="outline" className="border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-400 text-[10px]">
+                  <Package className="h-3 w-3 mr-0.5" />dbt
+                </Badge>
+              )}
+              {candidate.performanceFlags.map((pf) => (
+                <Tooltip key={pf.flag}>
+                  <TooltipTrigger asChild>
+                    <span className={`inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-help ${flagSeverityColor(pf.severity)}`}>
+                      <Flag className="h-2.5 w-2.5" />
+                      {pf.label}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">{pf.detail}</TooltipContent>
+                </Tooltip>
+              ))}
             </div>
           </CardContent>
         </Card>
 
-        {/* ── AI Results Panel ── */}
+        {/* ── AI Results ── */}
         {aiResult && (
           <AiResultsPanel
             result={aiResult}
@@ -490,31 +533,20 @@ export function QueryDetailClient({
         )}
 
         {/* ── Two-column layout ── */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Left column: SQL + Time + I/O */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* SQL Preview */}
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm">Sample SQL</CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleCopy}
-                    className="h-7 px-2 text-xs gap-1.5"
-                  >
-                    {copied ? (
-                      <Check className="h-3 w-3 text-emerald-500" />
-                    ) : (
-                      <Copy className="h-3 w-3" />
-                    )}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Left: SQL + Time + I/O */}
+          <div className="lg:col-span-2 space-y-4">
+            {/* SQL */}
+            <Card className="py-3">
+              <CardContent>
+                <div className="flex items-center justify-between mb-2">
+                  <SectionLabel>Sample SQL</SectionLabel>
+                  <Button variant="ghost" size="sm" onClick={handleCopy} className="h-6 px-2 text-[10px] gap-1">
+                    {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
                     {copied ? "Copied" : "Copy"}
                   </Button>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-lg bg-muted/50 border border-border p-4 max-h-72 overflow-y-auto">
+                <div className="rounded-lg bg-muted/50 border border-border p-3 max-h-56 overflow-y-auto">
                   <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed text-foreground/80">
                     {candidate.sampleQueryText}
                   </pre>
@@ -523,125 +555,50 @@ export function QueryDetailClient({
             </Card>
 
             {/* Time Breakdown */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">
-                  Time Breakdown (avg per execution)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <TimeBar
-                  label="Compilation"
-                  ms={ws.avgCompilationMs}
-                  maxMs={maxTimeSegment}
-                  icon={Layers}
-                />
-                <TimeBar
-                  label="Queue Wait"
-                  ms={ws.avgQueueWaitMs}
-                  maxMs={maxTimeSegment}
-                  icon={Hourglass}
-                />
-                <TimeBar
-                  label="Compute Wait"
-                  ms={ws.avgComputeWaitMs}
-                  maxMs={maxTimeSegment}
-                  icon={Clock}
-                />
-                <TimeBar
-                  label="Execution"
-                  ms={ws.avgExecutionMs}
-                  maxMs={maxTimeSegment}
-                  icon={Cpu}
-                />
-                <TimeBar
-                  label="Result Fetch"
-                  ms={ws.avgFetchMs}
-                  maxMs={maxTimeSegment}
-                  icon={ArrowDownToLine}
-                />
-              </CardContent>
-            </Card>
-
-            {/* I/O Stats */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">I/O &amp; Resources</CardTitle>
-              </CardHeader>
+            <Card className="py-3">
               <CardContent>
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                  <StatCard
-                    icon={HardDrive}
-                    label="Data Read"
-                    value={formatBytes(ws.totalReadBytes)}
-                  />
-                  <StatCard
-                    icon={ArrowDownToLine}
-                    label="Data Written"
-                    value={formatBytes(ws.totalWrittenBytes)}
-                  />
-                  <StatCard
-                    icon={Rows3}
-                    label="Rows Read"
-                    value={formatCount(ws.totalReadRows)}
-                  />
-                  <StatCard
-                    icon={Rows3}
-                    label="Rows Produced"
-                    value={formatCount(ws.totalProducedRows)}
-                  />
-                  <StatCard
-                    icon={Flame}
-                    label="Spill to Disk"
-                    value={formatBytes(ws.totalSpilledBytes)}
-                  />
-                  <StatCard
-                    icon={Network}
-                    label="Shuffle"
-                    value={formatBytes(ws.totalShuffleBytes)}
-                  />
-                  <StatCard
-                    icon={Database}
-                    label="IO Cache Hit"
-                    value={`${Math.round(ws.avgIoCachePercent)}%`}
-                  />
-                  <StatCard
-                    icon={FilterX}
-                    label="Pruning Eff."
-                    value={`${Math.round(ws.avgPruningEfficiency * 100)}%`}
-                  />
+                <SectionLabel>Time Breakdown (avg per execution)</SectionLabel>
+                <div className="space-y-1.5 mt-1">
+                  <TimeBar label="Compilation" ms={ws.avgCompilationMs} maxMs={maxTimeSegment} icon={Layers} />
+                  <TimeBar label="Queue Wait" ms={ws.avgQueueWaitMs} maxMs={maxTimeSegment} icon={Hourglass} />
+                  <TimeBar label="Compute Wait" ms={ws.avgComputeWaitMs} maxMs={maxTimeSegment} icon={Clock} />
+                  <TimeBar label="Execution" ms={ws.avgExecutionMs} maxMs={maxTimeSegment} icon={Cpu} />
+                  <TimeBar label="Result Fetch" ms={ws.avgFetchMs} maxMs={maxTimeSegment} icon={ArrowDownToLine} />
                 </div>
               </CardContent>
             </Card>
 
-            {/* dbt Metadata */}
+            {/* I/O */}
+            <Card className="py-3">
+              <CardContent>
+                <SectionLabel>I/O &amp; Resources</SectionLabel>
+                <div className="grid grid-cols-2 gap-1.5 mt-1 md:grid-cols-4">
+                  <IoCell icon={HardDrive} label="Data Read" value={formatBytes(ws.totalReadBytes)} />
+                  <IoCell icon={ArrowDownToLine} label="Data Written" value={formatBytes(ws.totalWrittenBytes)} />
+                  <IoCell icon={Rows3} label="Rows Read" value={formatCount(ws.totalReadRows)} />
+                  <IoCell icon={Rows3} label="Rows Produced" value={formatCount(ws.totalProducedRows)} />
+                  <IoCell icon={Flame} label="Spill to Disk" value={formatBytes(ws.totalSpilledBytes)} />
+                  <IoCell icon={Network} label="Shuffle" value={formatBytes(ws.totalShuffleBytes)} />
+                  <IoCell icon={Database} label="IO Cache Hit" value={`${Math.round(ws.avgIoCachePercent)}%`} />
+                  <IoCell icon={FilterX} label="Pruning Eff." value={`${Math.round(ws.avgPruningEfficiency * 100)}%`} />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* dbt Metadata (conditional) */}
             {candidate.dbtMeta.isDbt && (
-              <Card className="border-blue-200 dark:border-blue-800">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                    dbt Metadata
-                  </CardTitle>
-                </CardHeader>
+              <Card className="py-3 border-blue-200 dark:border-blue-800">
                 <CardContent>
-                  <div className="space-y-2">
+                  <SectionLabel>dbt Metadata</SectionLabel>
+                  <div className="flex items-center gap-3 mt-1">
+                    <Package className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
                     {candidate.dbtMeta.nodeId && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          Node:
-                        </span>
-                        <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
-                          {candidate.dbtMeta.nodeId}
-                        </code>
-                      </div>
+                      <code className="text-xs font-mono text-blue-600 dark:text-blue-400">{candidate.dbtMeta.nodeId}</code>
                     )}
                     {candidate.dbtMeta.queryTag && (
-                      <div className="flex items-center gap-2">
-                        <Tag className="h-3 w-3 text-blue-500" />
-                        <span className="text-xs text-blue-600 dark:text-blue-400">
-                          {candidate.dbtMeta.queryTag}
-                        </span>
-                      </div>
+                      <span className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+                        <Tag className="h-3 w-3" />{candidate.dbtMeta.queryTag}
+                      </span>
                     )}
                   </div>
                 </CardContent>
@@ -649,193 +606,87 @@ export function QueryDetailClient({
             )}
           </div>
 
-          {/* Right column: Execution stats, Cost, Context, Why Ranked */}
-          <div className="space-y-6">
-            {/* Execution Summary */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Execution Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <StatCard
-                  icon={BarChart3}
-                  label="Executions"
-                  value={ws.count.toString()}
-                  subtext="in time window"
-                />
-                <StatCard
-                  icon={Timer}
-                  label="p95 Latency"
-                  value={formatDuration(ws.p95Ms)}
-                  subtext={`p50: ${formatDuration(ws.p50Ms)}`}
-                />
-                <StatCard
-                  icon={Cpu}
-                  label="Total Compute Time"
-                  value={formatDuration(ws.totalDurationMs)}
-                />
-                <StatCard
-                  icon={Zap}
-                  label="Parallelism"
-                  value={`${ws.avgTaskParallelism.toFixed(1)}x`}
-                  subtext="avg task parallelism"
-                />
-              </CardContent>
-            </Card>
+          {/* Right sidebar: single dense card */}
+          <div>
+            <Card className="py-3">
+              <CardContent className="space-y-4">
+                {/* Execution Summary — 2x2 grid */}
+                <div>
+                  <SectionLabel>Execution</SectionLabel>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
+                    <MiniStat icon={BarChart3} label="Executions" value={ws.count.toString()} sub="in window" />
+                    <MiniStat icon={Timer} label="p95 Latency" value={formatDuration(ws.p95Ms)} sub={`p50: ${formatDuration(ws.p50Ms)}`} />
+                    <MiniStat icon={Cpu} label="Total Time" value={formatDuration(ws.totalDurationMs)} />
+                    <MiniStat icon={Zap} label="Parallelism" value={`${ws.avgTaskParallelism.toFixed(1)}x`} />
+                  </div>
+                </div>
 
-            {/* Cost */}
-            {(candidate.allocatedCostDollars > 0 ||
-              candidate.allocatedDBUs > 0) && (
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">
-                    Estimated Cost (Window)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4">
-                    <DollarSign className="h-6 w-6 text-emerald-600 shrink-0" />
-                    <div>
-                      <p className="text-3xl font-bold tabular-nums">
-                        {candidate.allocatedCostDollars > 0
-                          ? formatDollars(candidate.allocatedCostDollars)
-                          : `${formatDBUs(candidate.allocatedDBUs)} DBUs`}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Proportional to compute time on{" "}
-                        {candidate.warehouseName}
-                        {candidate.allocatedCostDollars <= 0 &&
-                          candidate.allocatedDBUs > 0 &&
-                          " ($ prices unavailable)"}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Context */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Context</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex items-center gap-3 rounded-lg bg-muted/30 border border-border p-3">
-                  <OriginIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-muted-foreground">Source</p>
-                    <p className="text-sm font-medium truncate">
-                      {originLabel(candidate.queryOrigin)}
-                    </p>
-                  </div>
-                  {sourceLink && (
-                    <a
-                      href={sourceLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:text-primary/80"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 rounded-lg bg-muted/30 border border-border p-3">
-                  <MonitorSmartphone className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-[11px] text-muted-foreground">
-                      Client App
-                    </p>
-                    <p className="text-sm font-medium truncate">
-                      {candidate.clientApplication}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 rounded-lg bg-muted/30 border border-border p-3">
-                  <Warehouse className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] text-muted-foreground">
-                      Warehouse
-                    </p>
-                    <p className="text-sm font-medium truncate">
-                      {candidate.warehouseName}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground font-mono">
-                      {candidate.warehouseId}
-                    </p>
-                  </div>
-                  {warehouseLink && (
-                    <a
-                      href={warehouseLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:text-primary/80"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Why Ranked */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Why Ranked</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {reasons.map((r, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-2 text-sm text-muted-foreground"
-                    >
-                      <ChevronRight className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />
-                      <span>{r}</span>
-                    </div>
-                  ))}
-                </div>
-                {/* Score breakdown */}
-                <div className="mt-4 space-y-1.5">
-                  {Object.entries(candidate.scoreBreakdown).map(
-                    ([key, value]) => (
-                      <div key={key} className="flex items-center gap-2">
-                        <span className="text-[11px] text-muted-foreground w-16 capitalize">
-                          {key}
-                        </span>
-                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${scoreColor(value)}`}
-                            style={{ width: `${value}%` }}
-                          />
-                        </div>
-                        <span className="text-[11px] font-medium tabular-nums w-6 text-right">
-                          {value}
-                        </span>
+                {/* Cost (inline, not a separate card) */}
+                {(candidate.allocatedCostDollars > 0 || candidate.allocatedDBUs > 0) && (
+                  <div>
+                    <SectionLabel>Estimated Cost</SectionLabel>
+                    <div className="flex items-center gap-2 rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 px-3 py-2 mt-1">
+                      <DollarSign className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <p className="text-lg font-bold tabular-nums leading-tight">
+                          {candidate.allocatedCostDollars > 0
+                            ? formatDollars(candidate.allocatedCostDollars)
+                            : `${formatDBUs(candidate.allocatedDBUs)} DBUs`}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground leading-tight">
+                          on {candidate.warehouseName}
+                        </p>
                       </div>
-                    )
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Top Users */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">
-                  Top Users ({candidate.uniqueUserCount} total)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1.5">
-                  {candidate.topUsers.map((user) => (
-                    <div
-                      key={user}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <User className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="truncate">{user}</span>
                     </div>
-                  ))}
+                  </div>
+                )}
+
+                {/* Context — compact rows */}
+                <div>
+                  <SectionLabel>Context</SectionLabel>
+                  <div className="divide-y divide-border mt-1">
+                    <ContextRow icon={OriginIcon} label="Source" value={originLabel(candidate.queryOrigin)} href={sourceLink} />
+                    <ContextRow icon={MonitorSmartphone} label="Client App" value={candidate.clientApplication} />
+                    <ContextRow icon={Warehouse} label="Warehouse" value={candidate.warehouseName} sub={candidate.warehouseId} href={warehouseLink} />
+                  </div>
+                </div>
+
+                {/* Why Ranked */}
+                <div>
+                  <SectionLabel>Why Ranked</SectionLabel>
+                  <div className="space-y-1 mt-1">
+                    {reasons.map((r, i) => (
+                      <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                        <ChevronRight className="h-3 w-3 mt-0.5 text-primary shrink-0" />
+                        <span>{r}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Score bars */}
+                  <div className="mt-2 space-y-1">
+                    {Object.entries(candidate.scoreBreakdown).map(([key, value]) => (
+                      <div key={key} className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground w-14 capitalize">{key}</span>
+                        <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                          <div className={`h-full rounded-full ${scoreColor(value)}`} style={{ width: `${value}%` }} />
+                        </div>
+                        <span className="text-[10px] font-medium tabular-nums w-5 text-right">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Top Users — inline */}
+                <div>
+                  <SectionLabel>Users ({candidate.uniqueUserCount})</SectionLabel>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {candidate.topUsers.map((user) => (
+                      <span key={user} className="inline-flex items-center gap-1 text-xs bg-muted/50 border border-border rounded-md px-2 py-0.5">
+                        <User className="h-3 w-3 text-muted-foreground" />
+                        <span className="truncate max-w-[160px]">{user}</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -865,12 +716,8 @@ function AiResultsPanel({
         <CardContent className="flex items-start gap-3 py-4">
           <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-              AI Analysis Failed
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {result.message}
-            </p>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-300">AI Analysis Failed</p>
+            <p className="text-sm text-muted-foreground mt-1">{result.message}</p>
           </div>
         </CardContent>
       </Card>
@@ -883,12 +730,8 @@ function AiResultsPanel({
         <CardContent className="flex items-start gap-3 py-4">
           <ShieldAlert className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
-              Guardrail Triggered
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {result.message}
-            </p>
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Guardrail Triggered</p>
+            <p className="text-sm text-muted-foreground mt-1">{result.message}</p>
           </div>
         </CardContent>
       </Card>
@@ -934,9 +777,7 @@ function AiResultsPanel({
         <Tabs value={activeTab} onValueChange={onTabChange}>
           <TabsList className="w-full justify-start">
             {tabItems.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>
-                {tab.label}
-              </TabsTrigger>
+              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
             ))}
           </TabsList>
 
@@ -991,9 +832,7 @@ function AiResultsPanel({
                 </div>
                 <div>
                   <SectionLabel>Rationale</SectionLabel>
-                  <p className="text-sm text-muted-foreground">
-                    {rewriteData.rationale}
-                  </p>
+                  <p className="text-sm text-muted-foreground">{rewriteData.rationale}</p>
                 </div>
               </TabsContent>
 
@@ -1007,9 +846,7 @@ function AiResultsPanel({
                       <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
                       <span className="text-sm font-medium">{r.risk}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      <strong>Mitigation:</strong> {r.mitigation}
-                    </p>
+                    <p className="text-xs text-muted-foreground"><strong>Mitigation:</strong> {r.mitigation}</p>
                   </div>
                 ))}
               </TabsContent>
@@ -1017,9 +854,7 @@ function AiResultsPanel({
               <TabsContent value="validation" className="mt-4 space-y-2">
                 {rewriteData.validationPlan.map((step, i) => (
                   <div key={i} className="flex items-start gap-2 text-sm">
-                    <span className="text-xs font-bold tabular-nums text-primary mt-0.5 w-5 text-right shrink-0">
-                      {i + 1}.
-                    </span>
+                    <span className="text-xs font-bold tabular-nums text-primary mt-0.5 w-5 text-right shrink-0">{i + 1}.</span>
                     <span>{step}</span>
                   </div>
                 ))}

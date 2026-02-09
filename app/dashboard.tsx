@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useTransition, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Clock,
   Database,
@@ -62,10 +62,24 @@ import {
   Sparkles,
   Stethoscope,
   ArrowRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
+  CalendarDays,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -136,10 +150,14 @@ const TIME_PRESETS = [
 
 /** Compute the human-readable window description for the current preset */
 function describeWindow(preset: string): string {
-  const windowHours: Record<string, number> = {
+  const knownHours: Record<string, number> = {
     "1h": 1, "6h": 6, "24h": 24, "7d": 168,
   };
-  const hrs = windowHours[preset] ?? 1;
+  let hrs = knownHours[preset];
+  if (hrs === undefined) {
+    const match = preset.match(/^(\d+)h$/);
+    hrs = match ? parseInt(match[1], 10) : 1;
+  }
   const endAgo = BILLING_LAG_HOURS;
   const startAgo = endAgo + hrs;
   if (startAgo <= 48) {
@@ -407,50 +425,38 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
-function KpiCard({
+function KpiCell({
   label,
   value,
   detail,
-  icon: Icon,
-  iconBg = "bg-primary/10",
-  iconFg = "text-primary",
+  valueColor = "text-foreground",
   onClick,
 }: {
   label: string;
   value: string;
   detail?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  /** Tailwind bg class for icon container */
-  iconBg?: string;
-  /** Tailwind text class for icon */
-  iconFg?: string;
-  /** Optional click handler to make the card interactive */
+  /** Tailwind text class for the value */
+  valueColor?: string;
+  /** Optional click handler */
   onClick?: () => void;
 }) {
   return (
-    <Card
-      className={`py-4 transition-colors ${
-        onClick ? "cursor-pointer hover:border-primary/30" : ""
-      }`}
+    <div
+      className={`space-y-0.5 ${onClick ? "cursor-pointer" : ""}`}
       onClick={onClick}
     >
-      <CardContent className="flex items-start gap-3">
-        <div className={`rounded-lg p-2 ${iconBg}`}>
-          <Icon className={`h-4 w-4 ${iconFg}`} />
-        </div>
-        <div className="space-y-0.5">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {label}
-          </p>
-          <p className="text-2xl font-bold tabular-nums leading-none">
-            {value}
-          </p>
-          {detail && (
-            <p className="text-xs text-muted-foreground">{detail}</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground leading-tight">
+        {label}
+      </p>
+      <p className={`text-lg font-bold tabular-nums leading-none ${valueColor}`}>
+        {value}
+      </p>
+      {detail && (
+        <p className="text-[10px] text-muted-foreground leading-tight truncate">
+          {detail}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -700,6 +706,47 @@ function DetailPanel({
               </a>
             )}
           </div>
+
+          {/* ── CTA — pinned right under header, always visible ── */}
+          <div className="flex items-center gap-2 pt-2 mt-1 border-t border-border">
+            <Button
+              onClick={() => {
+                onOpenChange(false);
+                window.location.href = `/queries/${candidate.fingerprint}`;
+              }}
+              className="flex-1 gap-1.5"
+              size="sm"
+            >
+              <Stethoscope className="h-3.5 w-3.5" />
+              AI Diagnose
+            </Button>
+            <div className="text-muted-foreground">
+              <ArrowRight className="h-3 w-3" />
+            </div>
+            <Button
+              onClick={() => {
+                onOpenChange(false);
+                window.location.href = `/rewrite/${candidate.fingerprint}`;
+              }}
+              className="flex-1 gap-1.5"
+              size="sm"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              AI Rewrite
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                onOpenChange(false);
+                window.location.href = `/queries/${candidate.fingerprint}`;
+              }}
+              className="gap-1.5"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+              Details
+            </Button>
+          </div>
         </SheetHeader>
 
         <div className="space-y-5 px-4 pb-6">
@@ -912,54 +959,6 @@ function DetailPanel({
             </div>
           </div>
 
-          {/* ── Action Buttons ── */}
-          <div className="pt-2 border-t border-border space-y-2">
-            <SectionLabel>Actions</SectionLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                onClick={() => {
-                  onOpenChange(false);
-                  window.location.href = `/queries/${candidate.fingerprint}`;
-                }}
-                className="w-full"
-              >
-                <Stethoscope className="h-4 w-4" />
-                AI Diagnose
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  onOpenChange(false);
-                  window.location.href = `/rewrite/${candidate.fingerprint}`;
-                }}
-                className="w-full"
-              >
-                <Sparkles className="h-4 w-4" />
-                AI Rewrite
-              </Button>
-            </div>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                onOpenChange(false);
-                window.location.href = `/queries/${candidate.fingerprint}`;
-              }}
-              className="w-full"
-            >
-              <ArrowRight className="h-4 w-4" />
-              View Full Details
-            </Button>
-            {queryProfileLink && (
-              <Button
-                variant="ghost"
-                onClick={() => window.open(queryProfileLink, "_blank")}
-                className="w-full text-muted-foreground"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Open Query Profile in Databricks
-              </Button>
-            )}
-          </div>
         </div>
       </SheetContent>
     </Sheet>
@@ -1052,6 +1051,7 @@ export function Dashboard({
   const warehouseUtilization = enrichedUtilization ?? initialUtilization;
   const warehouseAudit = enrichedAudit ?? initialAudit;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [timePreset, setTimePreset] = useState(initialTimePreset);
   const [warehouseFilter, setWarehouseFilter] = useState("all");
@@ -1061,6 +1061,16 @@ export function Dashboard({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [flagFilter, setFlagFilter] = useState<string | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
+
+  // Table: search, sort, pagination
+  const [tableSearch, setTableSearch] = useState("");
+  type SortKey = "impact" | "runs" | "p95" | "cost" | "flags";
+  type SortDir = "asc" | "desc";
+  const [sortKey, setSortKey] = useState<SortKey>("impact");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+
   // Use enriched candidates when available (includes cost allocation)
   const candidates = enrichedCandidates ?? initialCandidates;
   const totalQueries = initialTotalQueries;
@@ -1074,7 +1084,7 @@ export function Dashboard({
     return relevantCosts.reduce((s, c) => s + c.totalDollars, 0);
   }, [warehouseCosts, warehouseFilter]);
 
-  // Client-side filter by warehouse and performance flags
+  // Client-side filter by warehouse, flags, and search text
   const filtered = useMemo(() => {
     let result = candidates;
     if (warehouseFilter !== "all") {
@@ -1085,8 +1095,66 @@ export function Dashboard({
         c.performanceFlags.some((f) => f.flag === flagFilter)
       );
     }
+    if (tableSearch.trim()) {
+      const q = tableSearch.trim().toLowerCase();
+      result = result.filter(
+        (c) =>
+          c.sampleQueryText.toLowerCase().includes(q) ||
+          c.topUsers.some((u) => u.toLowerCase().includes(q)) ||
+          c.warehouseName.toLowerCase().includes(q)
+      );
+    }
     return result;
-  }, [candidates, warehouseFilter, flagFilter]);
+  }, [candidates, warehouseFilter, flagFilter, tableSearch]);
+
+  // Sorted view
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (sortKey) {
+        case "impact":
+          return (a.impactScore - b.impactScore) * dir;
+        case "runs":
+          return (a.windowStats.count - b.windowStats.count) * dir;
+        case "p95":
+          return (a.windowStats.p95Ms - b.windowStats.p95Ms) * dir;
+        case "cost":
+          return (a.allocatedCostDollars - b.allocatedCostDollars) * dir;
+        case "flags":
+          return (a.performanceFlags.length - b.performanceFlags.length) * dir;
+        default:
+          return 0;
+      }
+    });
+    return arr;
+  }, [filtered, sortKey, sortDir]);
+
+  // Paginated view
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const paged = useMemo(
+    () => sorted.slice(page * pageSize, (page + 1) * pageSize),
+    [sorted, page, pageSize]
+  );
+
+  // Reset page when filters change
+  useEffect(() => { setPage(0); }, [warehouseFilter, flagFilter, tableSearch, sortKey, sortDir, pageSize]);
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }
+
+  function SortIcon({ col }: { col: SortKey }) {
+    if (sortKey !== col) return <ArrowUpDown className="h-3 w-3 opacity-30" />;
+    return sortDir === "desc"
+      ? <ArrowDown className="h-3 w-3" />
+      : <ArrowUp className="h-3 w-3" />;
+  }
 
   // Collect all unique flags across candidates for filter chips
   const allFlags = useMemo(() => {
@@ -1106,7 +1174,7 @@ export function Dashboard({
   // KPIs computed from filtered view
   const kpis = useMemo(() => {
     const uniqueWarehouses = new Set(filtered.map((c) => c.warehouseId)).size;
-    const highImpact = filtered.filter((c) => c.impactScore >= 60).length;
+    const highImpact = filtered.filter((c) => c.impactScore >= 50).length;
     const totalDuration = filtered.reduce(
       (s, c) => s + c.windowStats.totalDurationMs,
       0
@@ -1328,8 +1396,10 @@ export function Dashboard({
 
   function handleTimeChange(preset: string) {
     setTimePreset(preset);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("time", preset);
     startTransition(() => {
-      router.refresh();
+      router.push(`/?${params.toString()}`);
     });
   }
 
@@ -1380,10 +1450,11 @@ export function Dashboard({
 
   return (
     <TooltipProvider>
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* ── Toolbar ── */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
+          {/* Time range: quick presets + custom picker */}
+          <div className="flex items-center gap-1.5">
             {TIME_PRESETS.map((p) => (
               <FilterChip
                 key={p.value}
@@ -1393,6 +1464,53 @@ export function Dashboard({
                 {p.label}
               </FilterChip>
             ))}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={!["1h","6h","24h","7d"].includes(timePreset) ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                >
+                  <CalendarDays className="h-3 w-3" />
+                  {!["1h","6h","24h","7d"].includes(timePreset) ? `${timePreset.replace("h","")}h` : "Custom"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72 p-4" align="start">
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-medium mb-1">Custom time window</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Drag the slider to set a custom lookback window (1–168 hours).
+                      Data is shifted {BILLING_LAG_HOURS}h for billing accuracy.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Slider
+                      defaultValue={[(() => {
+                        const h = parseInt(timePreset);
+                        return isNaN(h) ? ({"1h":1,"6h":6,"24h":24,"7d":168}[timePreset] ?? 1) : h;
+                      })()]}
+                      min={1}
+                      max={168}
+                      step={1}
+                      onValueCommit={([v]) => {
+                        // Map to preset if exact, else use custom
+                        const presetMap: Record<number, string> = { 1: "1h", 6: "6h", 24: "24h", 168: "7d" };
+                        handleTimeChange(presetMap[v] ?? `${v}h`);
+                      }}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>1h</span>
+                      <span>12h</span>
+                      <span>24h</span>
+                      <span>72h</span>
+                      <span>7d</span>
+                    </div>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="h-6 w-px bg-border hidden md:block" />
@@ -1415,9 +1533,7 @@ export function Dashboard({
           </Select>
 
           {isPending && (
-            <span className="text-xs text-muted-foreground animate-pulse ml-2">
-              Refreshing\u2026
-            </span>
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary ml-2" />
           )}
 
           {/* Compact data window indicator */}
@@ -1427,7 +1543,7 @@ export function Dashboard({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-help">
-                    <Info className="h-3 w-3" />
+                    <CalendarDays className="h-3 w-3" />
                     <span className="hidden sm:inline">{describeWindow(timePreset)}</span>
                     <span className="sm:hidden">Shifted {BILLING_LAG_HOURS}h</span>
                   </span>
@@ -1506,83 +1622,63 @@ export function Dashboard({
           </Card>
         )}
 
-        {/* ── KPI cards — primary row (4) + secondary row (3) ── */}
+        {/* ── KPI strip — single compact row ── */}
         {!fetchError && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <KpiCard
-                icon={Database}
-                label="Total Runs"
-                value={formatCount(
-                  warehouseFilter === "all" ? totalQueries : kpis.totalRuns
-                )}
-                detail="Finished queries in window"
-                iconBg="bg-blue-100 dark:bg-blue-900/30"
-                iconFg="text-blue-600 dark:text-blue-400"
-                onClick={() => handleTileClick("scroll:table")}
-              />
-              <KpiCard
-                icon={AlertTriangle}
-                label="High Impact"
-                value={kpis.highImpact.toLocaleString()}
-                detail="Score ≥ 60"
-                iconBg="bg-red-100 dark:bg-red-900/30"
-                iconFg="text-red-600 dark:text-red-400"
-                onClick={() => handleTileClick("scroll:table")}
-              />
-              <KpiCard
-                icon={Zap}
-                label="Total Compute"
-                value={formatDuration(kpis.totalDuration)}
-                detail="Aggregate wall time"
-                iconBg="bg-amber-100 dark:bg-amber-900/30"
-                iconFg="text-amber-600 dark:text-amber-400"
-                onClick={() => handleTileClick("scroll:table")}
-              />
-              <KpiCard
-                icon={DollarSign}
-                label="Est. Cost"
-                value={formatDollars(totalDollarCost)}
-                detail="Based on list prices at time of use"
-                iconBg="bg-emerald-100 dark:bg-emerald-900/30"
-                iconFg="text-emerald-600 dark:text-emerald-400"
-                onClick={() => handleTileClick("scroll:table")}
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <KpiCard
-                icon={Search}
-                label="Unique Patterns"
-                value={filtered.length.toLocaleString()}
-                detail="Distinct fingerprints"
-                iconBg="bg-violet-100 dark:bg-violet-900/30"
-                iconFg="text-violet-600 dark:text-violet-400"
-                onClick={() => handleTileClick("scroll:table")}
-              />
-              <KpiCard
-                icon={Users}
-                label="Unique Users"
-                value={kpis.uniqueUsers.toLocaleString()}
-                detail="Distinct query authors"
-                iconBg="bg-teal-100 dark:bg-teal-900/30"
-                iconFg="text-teal-600 dark:text-teal-400"
-                onClick={() => handleTileClick("scroll:table")}
-              />
-              <KpiCard
-                icon={Coins}
-                label="SQL DBUs"
-                value={`${formatDBUs(costData.totalDBUs)}`}
-                detail={
-                  warehouseFilter === "all"
-                    ? `Across ${costData.perWarehouse.size} warehouses`
-                    : "Selected warehouse"
-                }
-                iconBg="bg-emerald-100 dark:bg-emerald-900/30"
-                iconFg="text-emerald-600 dark:text-emerald-400"
-                onClick={() => handleTileClick("scroll:table")}
-              />
-            </div>
-          </div>
+          <Card className="py-3">
+            <CardContent>
+              <div className="grid grid-cols-4 gap-x-6 gap-y-3 md:grid-cols-7">
+                <KpiCell
+                  label="Total Runs"
+                  value={formatCount(warehouseFilter === "all" ? totalQueries : kpis.totalRuns)}
+                  detail="In window"
+                  valueColor="text-blue-600 dark:text-blue-400"
+                  onClick={() => handleTileClick("scroll:table")}
+                />
+                <KpiCell
+                  label="Critical"
+                  value={kpis.highImpact.toLocaleString()}
+                  detail="Score ≥ 50"
+                  valueColor={kpis.highImpact > 0 ? "text-red-600 dark:text-red-400" : "text-foreground"}
+                  onClick={() => handleTileClick("scroll:table")}
+                />
+                <KpiCell
+                  label="Compute"
+                  value={formatDuration(kpis.totalDuration)}
+                  detail="Wall time"
+                  valueColor="text-amber-600 dark:text-amber-400"
+                  onClick={() => handleTileClick("scroll:table")}
+                />
+                <KpiCell
+                  label="Est. Cost"
+                  value={formatDollars(totalDollarCost)}
+                  detail="List prices"
+                  valueColor="text-emerald-600 dark:text-emerald-400"
+                  onClick={() => handleTileClick("scroll:table")}
+                />
+                <KpiCell
+                  label="Patterns"
+                  value={filtered.length.toLocaleString()}
+                  detail="Fingerprints"
+                  valueColor="text-violet-600 dark:text-violet-400"
+                  onClick={() => handleTileClick("scroll:table")}
+                />
+                <KpiCell
+                  label="Users"
+                  value={kpis.uniqueUsers.toLocaleString()}
+                  detail="Authors"
+                  valueColor="text-teal-600 dark:text-teal-400"
+                  onClick={() => handleTileClick("scroll:table")}
+                />
+                <KpiCell
+                  label="SQL DBUs"
+                  value={formatDBUs(costData.totalDBUs)}
+                  detail={warehouseFilter === "all" ? `${costData.perWarehouse.size} warehouses` : "Selected"}
+                  valueColor="text-emerald-600 dark:text-emerald-400"
+                  onClick={() => handleTileClick("scroll:table")}
+                />
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* ── Warehouse Detail Section ── */}
@@ -1822,143 +1918,136 @@ export function Dashboard({
           </Card>
         )}
 
-        {/* ── Insights row (promoted above utilization/cost) ── */}
+        {/* ── Insights strip (compact) ── */}
         {!fetchError && insights.length > 0 && (
-          <div className="space-y-3">
-            <SectionHeader title="Key Insights" />
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              {insights.map((insight) => {
-                const Icon = insight.icon;
-                return (
-                  <Card
-                    key={insight.label}
-                    className={`py-3 transition-colors ${
-                      insight.href
-                        ? "cursor-pointer hover:border-primary/30"
-                        : ""
-                    }`}
-                    onClick={() => handleTileClick(insight.href)}
-                  >
-                    <CardContent className="flex items-start gap-3">
-                      <div className={`rounded-lg p-2 ${insight.color}`}>
-                        <Icon className="h-4 w-4" />
+          <Card className="py-2.5">
+            <CardContent>
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Insights</span>
+                {insights.map((insight) => {
+                  const Icon = insight.icon;
+                  return (
+                    <div
+                      key={insight.label}
+                      className={`flex items-center gap-2 min-w-0 ${
+                        insight.href ? "cursor-pointer hover:opacity-80" : ""
+                      }`}
+                      onClick={() => handleTileClick(insight.href)}
+                    >
+                      <div className={`rounded p-1 ${insight.color}`}>
+                        <Icon className="h-3 w-3" />
                       </div>
-                      <div className="min-w-0 space-y-0.5 flex-1">
-                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          {insight.label}
-                        </p>
-                        <p className="text-sm font-bold truncate">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold truncate max-w-[140px]">
                           {insight.value}
                         </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {insight.detail}
+                        <p className="text-[10px] text-muted-foreground truncate max-w-[140px]">
+                          {insight.label}
                         </p>
                       </div>
                       {insight.href && (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                        <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
                       )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* ── Top Cost Warehouses (when "All" selected) ── */}
         {!fetchError && warehouseFilter === "all" && topCostWarehouses.length > 0 && (
-          <div className="space-y-3">
-            <SectionHeader title="Top SQL Spend by Warehouse" />
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {topCostWarehouses.map((wh, idx) => {
-                const whDollars = warehouseCosts
-                  .filter((c) => c.warehouseId === wh.id)
-                  .reduce((s, c) => s + c.totalDollars, 0);
-                return (
-                  <Card key={wh.id} className="py-3 cursor-pointer hover:border-primary/30 transition-colors"
-                    onClick={() => setWarehouseFilter(wh.id)}>
-                    <CardContent className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-xs font-bold">
-                        #{idx + 1}
-                      </div>
-                      <div className="min-w-0 space-y-0.5 flex-1">
-                        <p className="text-sm font-bold truncate">{wh.name}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
-                          <span>{formatDBUs(wh.dbus)} DBUs</span>
+          <Card className="py-2.5">
+            <CardContent>
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Top Spend</span>
+                {topCostWarehouses.map((wh, idx) => {
+                  const whDollars = warehouseCosts
+                    .filter((c) => c.warehouseId === wh.id)
+                    .reduce((s, c) => s + c.totalDollars, 0);
+                  return (
+                    <div
+                      key={wh.id}
+                      className="flex items-center gap-2 cursor-pointer hover:opacity-80"
+                      onClick={() => setWarehouseFilter(wh.id)}
+                    >
+                      <span className="flex h-5 w-5 items-center justify-center rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-[10px] font-bold shrink-0">
+                        {idx + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold truncate max-w-[160px]">{wh.name}</p>
+                        <p className="text-[10px] text-muted-foreground tabular-nums">
+                          {formatDBUs(wh.dbus)} DBUs
                           {whDollars > 0 && (
-                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium ml-1">
                               {formatDollars(whDollars)}
                             </span>
                           )}
-                        </div>
+                        </p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
+                      <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* ── Utilization Overview (when "All" selected) ── */}
-        {!fetchError && warehouseFilter === "all" && warehouseUtilization.length > 0 && (
-          <div className="space-y-3">
-            <SectionHeader title="Warehouse Utilization" />
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {warehouseUtilization.slice(0, 6).map((u) => {
-                const whName =
-                  warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
-                  u.warehouseId.slice(0, 12);
-                const whDollars = warehouseCosts
-                  .filter((c) => c.warehouseId === u.warehouseId)
-                  .reduce((s, c) => s + c.totalDollars, 0);
-                const isIdle = u.queryCount === 0;
-                return (
-                  <Card
-                    key={u.warehouseId}
-                    className="py-3 cursor-pointer hover:border-primary/30 transition-colors"
-                    onClick={() => setWarehouseFilter(u.warehouseId)}
-                  >
-                    <CardContent className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium truncate max-w-[160px]">{whName}</span>
-                        <span className={`text-sm font-bold tabular-nums ${
-                          isIdle
-                            ? "text-muted-foreground"
-                            : u.utilizationPercent >= 70
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : u.utilizationPercent >= 30
-                            ? "text-amber-600 dark:text-amber-400"
-                            : "text-red-600 dark:text-red-400"
-                        }`}>
-                          {isIdle ? "Idle" : `${u.utilizationPercent}%`}
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+        {!fetchError && warehouseFilter === "all" && warehouseUtilization.length > 0 && (() => {
+          const active = warehouseUtilization.filter((u) => u.queryCount > 0);
+          const idleCount = warehouseUtilization.filter((u) => u.queryCount === 0).length;
+          return (
+            <Card className="py-2.5">
+              <CardContent className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Warehouse Utilization</span>
+                  {idleCount > 0 && (
+                    <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                      {idleCount} idle warehouse{idleCount !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+                {active.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-3 lg:grid-cols-6">
+                    {active.slice(0, 6).map((u) => {
+                      const whName =
+                        warehouses.find((w) => w.warehouseId === u.warehouseId)?.name ??
+                        u.warehouseId.slice(0, 12);
+                      return (
                         <div
-                          className={`h-full rounded-full transition-all ${
-                            isIdle ? "bg-muted-foreground/30" : utilizationColor(u.utilizationPercent)
-                          }`}
-                          style={{ width: `${isIdle ? 100 : u.utilizationPercent}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-[10px] text-muted-foreground">
-                        <span>{u.queryCount} queries</span>
-                        {whDollars > 0 && (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                            {formatDollars(whDollars)}
-                          </span>
-                        )}
-                        <span>Idle: {formatDuration(u.idleTimeMs)}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                          key={u.warehouseId}
+                          className="space-y-1 cursor-pointer hover:opacity-80"
+                          onClick={() => setWarehouseFilter(u.warehouseId)}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-medium truncate">{whName}</span>
+                            <span className={`text-xs font-bold tabular-nums shrink-0 ${utilizationTextColor(u.utilizationPercent, u.queryCount)}`}>
+                              {`${u.utilizationPercent}%`}
+                            </span>
+                          </div>
+                          <div className="h-1 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${utilizationColor(u.utilizationPercent)}`}
+                              style={{ width: `${u.utilizationPercent}%` }}
+                            />
+                          </div>
+                          <p className="text-[9px] text-muted-foreground tabular-nums">
+                            {u.queryCount} queries &middot; {formatDuration(u.idleTimeMs)} idle
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">All {idleCount} warehouses idle in this window</p>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* ── Table ── */}
         {!fetchError && filtered.length === 0 && <EmptyState />}
@@ -1967,12 +2056,21 @@ export function Dashboard({
           <div ref={tableRef}>
             <div className="space-y-3">
               <SectionHeader title="Query Candidates" />
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <Badge variant="outline" className="border-border">
-                  {filtered.length} candidates
+                  {sorted.length} candidates
                 </Badge>
-                <span className="text-sm text-muted-foreground">
-                  Ranked by impact score — click for details, right-click for actions
+                <div className="relative flex-1 max-w-xs min-w-[180px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search queries, users, warehouses…"
+                    value={tableSearch}
+                    onChange={(e) => setTableSearch(e.target.value)}
+                    className="h-8 pl-8 text-xs"
+                  />
+                </div>
+                <span className="text-[11px] text-muted-foreground hidden md:inline">
+                  Click for details &middot; right-click for actions
                 </span>
               </div>
             </div>
@@ -1983,24 +2081,40 @@ export function Dashboard({
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="w-10">#</TableHead>
-                      <TableHead className="w-24">Impact</TableHead>
-                      <TableHead>Query</TableHead>
-                      <TableHead className="w-14 text-center">
-                        Source
+                      <TableHead className="w-24">
+                        <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors" onClick={() => handleSort("impact")}>
+                          Impact <SortIcon col="impact" />
+                        </button>
                       </TableHead>
+                      <TableHead>Query</TableHead>
+                      <TableHead className="w-14 text-center">Source</TableHead>
                       <TableHead>Warehouse</TableHead>
-                      <TableHead>Top User</TableHead>
-                      <TableHead className="text-right">Runs</TableHead>
-                      <TableHead className="text-right">p95</TableHead>
-                      <TableHead className="text-right">Cost</TableHead>
+                      <TableHead>User / Source</TableHead>
                       <TableHead className="text-right">
-                        Flags
+                        <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("runs")}>
+                          Runs <SortIcon col="runs" />
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("p95")}>
+                          p95 <SortIcon col="p95" />
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("cost")}>
+                          Cost <SortIcon col="cost" />
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("flags")}>
+                          Flags <SortIcon col="flags" />
+                        </button>
                       </TableHead>
                       <TableHead className="w-24 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((c, idx) => {
+                    {paged.map((c, idx) => {
                       const OriginIcon = originIcon(c.queryOrigin);
                       const profileLink = buildLink(
                         workspaceUrl,
@@ -2032,7 +2146,7 @@ export function Dashboard({
                               onClick={() => handleRowClick(c)}
                             >
                               <TableCell className="text-xs text-muted-foreground tabular-nums">
-                                {idx + 1}
+                                {page * pageSize + idx + 1}
                               </TableCell>
                               <TableCell>
                                 <ScoreBar score={c.impactScore} />
@@ -2096,9 +2210,14 @@ export function Dashboard({
                               <TableCell>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <span className="text-sm truncate block max-w-[120px] cursor-help">
-                                      {c.topUsers[0] ?? "\u2014"}
-                                    </span>
+                                    <div className="max-w-[120px] cursor-help">
+                                      <span className="text-sm truncate block">
+                                        {c.topUsers[0]?.split("@")[0] ?? "\u2014"}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground truncate block">
+                                        {originLabel(c.queryOrigin)}
+                                      </span>
+                                    </div>
                                   </TooltipTrigger>
                                   <TooltipContent>
                                     <div className="space-y-1">
@@ -2265,6 +2384,40 @@ export function Dashboard({
                     })}
                   </TableBody>
                 </Table>
+              </div>
+
+              {/* ── Pagination ── */}
+              <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Rows per page</span>
+                  <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                    <SelectTrigger className="h-7 w-[60px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[10, 25, 50, 100].map((n) => (
+                        <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground tabular-nums mr-2">
+                    {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} of {sorted.length}
+                  </span>
+                  <Button variant="ghost" size="icon-xs" disabled={page === 0} onClick={() => setPage(0)}>
+                    <ChevronsLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon-xs" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon-xs" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon-xs" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>
+                    <ChevronsRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </Card>
           </div>

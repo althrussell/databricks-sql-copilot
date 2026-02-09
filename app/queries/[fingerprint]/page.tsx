@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { Candidate, WarehouseCost } from "@/lib/domain/types";
 import { QueryDetailClient } from "./query-detail-client";
@@ -24,21 +25,26 @@ interface QueryDetailPageProps {
 function DetailSkeleton() {
   return (
     <div className="space-y-6">
+      {/* Prominent loading indicator */}
       <Card>
-        <CardContent className="py-6 space-y-4">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-96" />
-          <div className="flex gap-3">
-            <Skeleton className="h-10 w-32" />
-            <Skeleton className="h-10 w-32" />
+        <CardContent className="flex items-center gap-4 py-6">
+          <Loader2 className="h-6 w-6 animate-spin text-primary shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Loading query details…</p>
+            <p className="text-xs text-muted-foreground">
+              Fetching execution metrics from Databricks
+            </p>
           </div>
         </CardContent>
       </Card>
+
+      {/* Content skeleton */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardContent className="py-4 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton className="h-6 w-48" />
+              {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-8 w-full" />
               ))}
             </CardContent>
@@ -47,8 +53,9 @@ function DetailSkeleton() {
         <div className="space-y-6">
           <Card>
             <CardContent className="py-4 space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full" />
+              <Skeleton className="h-6 w-32" />
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full" />
               ))}
             </CardContent>
           </Card>

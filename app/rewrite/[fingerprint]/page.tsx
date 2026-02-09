@@ -7,6 +7,7 @@ import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 import type { WarehouseCost } from "@/lib/domain/types";
 import { RewriteWorkbenchClient } from "./rewrite-workbench-client";
 
@@ -20,7 +21,17 @@ interface RewritePageProps {
 function WorkbenchSkeleton() {
   return (
     <div className="space-y-6">
-      <Skeleton className="h-8 w-64" />
+      <Card>
+        <CardContent className="flex items-center gap-4 py-6">
+          <Loader2 className="h-6 w-6 animate-spin text-primary shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Loading rewrite workbench…</p>
+            <p className="text-xs text-muted-foreground">
+              Fetching query data from Databricks
+            </p>
+          </div>
+        </CardContent>
+      </Card>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardContent className="py-4 space-y-3">
