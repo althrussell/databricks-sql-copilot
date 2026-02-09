@@ -37,3 +37,8 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+#agent Docs
+docs
+AGENTS.md
+.cursor
