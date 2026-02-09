@@ -63,7 +63,7 @@ export async function listWarehouses(): Promise<WarehouseOption[]> {
         COUNT(*) AS recent_query_count
       FROM system.query.history
       WHERE start_time >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())
-        AND execution_status = 'FINISHED'
+        AND execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
         AND statement_type IN ('SELECT', 'INSERT', 'MERGE', 'UPDATE', 'DELETE', 'COPY')
       GROUP BY compute.warehouse_id
     ) h ON w.warehouse_id = h.warehouse_id

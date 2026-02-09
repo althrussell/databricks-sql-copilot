@@ -69,16 +69,14 @@ export async function callAi(
   const maxTokens = MAX_OUTPUT_TOKENS[mode];
 
   // Build the ai_query SQL
-  // ai_query(model, prompt, options) returns a STRING
+  // ai_query(endpoint, request, modelParameters => named_struct(...))
   const combinedPrompt = `${prompt.systemPrompt}\n\n${prompt.userPrompt}`;
   const escapedPrompt = escapeForSql(combinedPrompt);
 
   const sql = `
     SELECT ai_query(
       '${model}',
-      '${escapedPrompt}',
-      maxTokens => ${maxTokens},
-      temperature => 0.1
+      '${escapedPrompt}'
     ) AS response
   `;
 

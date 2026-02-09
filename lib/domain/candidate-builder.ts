@@ -104,6 +104,10 @@ export function buildCandidates(
     const { runs: groupRuns } = group;
     const n = groupRuns.length;
 
+    // Count failed and canceled executions
+    const failedCount = groupRuns.filter((r) => r.status === "FAILED").length;
+    const canceledCount = groupRuns.filter((r) => r.status === "CANCELED").length;
+
     // Sort durations for percentile calculations
     const durations = groupRuns.map((r) => r.durationMs).sort((a, b) => a - b);
     const p50Ms = percentile(durations, 0.5);
@@ -285,6 +289,8 @@ export function buildCandidates(
         avgFetchMs,
         avgIoCachePercent,
       },
+      failedCount,
+      canceledCount,
       allocatedCostDollars,
       allocatedDBUs,
       performanceFlags: [], // computed below

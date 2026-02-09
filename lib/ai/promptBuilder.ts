@@ -1,12 +1,12 @@
 /**
- * Structured AI Prompt Builder
+ * Structured AI Prompt Builder — Databricks SQL Performance Expert
  *
  * Constructs system + user prompts for two modes:
- *   1. Diagnose (cheap) — explain why the query is slow
- *   2. Rewrite (expensive) — propose an optimized version
+ *   1. Diagnose — explain why the query is slow, with evidence
+ *   2. Rewrite — propose an optimized version with risks + validation plan
  *
- * Prompts include masked SQL, metrics, and context.
- * Output contract enforces structured JSON response.
+ * Prompts are specifically tuned for Databricks SQL / Delta Lake / Photon
+ * and include masked SQL, execution metrics, and warehouse context.
  */
 
 import type { Candidate } from "@/lib/domain/types";
@@ -61,51 +61,127 @@ export interface RewriteResponse {
   validationPlan: string[];
 }
 
-const SYSTEM_PROMPT_DIAGNOSE = `You are a Databricks SQL performance expert. Analyze the provided SQL query and its execution metrics to explain why it is slow or resource-intensive.
+/* ═══════════════════════════════════════════════════════════
+ *  SYSTEM PROMPTS — Databricks SQL Performance Expert
+ * ═══════════════════════════════════════════════════════════ */
 
-You MUST respond with valid JSON matching this exact structure:
+const DATABRICKS_KNOWLEDGE = `
+## Databricks SQL & Delta Lake Optimisation Knowledge
+
+### Delta Lake storage optimisations
+- **Z-ORDER**: Co-locate related data in the same files. Best on high-cardinality columns used in WHERE / JOIN. E.g. \`OPTIMIZE table ZORDER BY (col)\`.
+- **Liquid Clustering** (preferred over Z-ORDER on newer tables): \`ALTER TABLE t CLUSTER BY (col1, col2)\`. Auto-compacts and co-locates. Recommend migrating from Z-ORDER.
+- **OPTIMIZE / VACUUM**: Compact small files. Reduce file-open overhead and improve scan speed.
+- **Bloom Filters**: Speed up point-lookup WHERE clauses. Recommend for high-cardinality string columns used in equality filters.
+- **Deletion Vectors**: Enable fast deletes without rewriting data files. Check if table supports them.
+- **Data Skipping**: Delta auto-collects min/max stats on first 32 columns. Ensure filtered columns are within the first 32 or reorder columns.
+- **Predictive I/O**: Photon can read only the needed data from Parquet. Works best with column pruning.
+
+### Photon engine specifics
+- Photon accelerates: aggregations, joins, window functions, string operations, Parquet/Delta scans.
+- Photon is LESS effective for: Python UDFs, complex nested struct operations, very small result sets.
+- Pro SQL Warehouses always use Photon. Serverless warehouses also use Photon.
+
+### Query anti-patterns to detect
+- **Full table scans**: No partition pruning or data skipping. Look for high read_bytes with low pruning efficiency.
+- **Spill to disk**: Indicates insufficient memory for hash joins / sorts / aggregations. Suggest larger warehouse or breaking into stages.
+- **Data skew in joins**: One side of join is much larger. Suggest broadcast hint or salting.
+- **Cartesian products / CROSS JOIN**: Accidental or unnecessary. Huge row explosion.
+- **SELECT ***: Reading all columns when only some are needed. Column pruning saves I/O.
+- **DISTINCT vs GROUP BY**: GROUP BY is often faster than DISTINCT for deduplication.
+- **NOT IN vs NOT EXISTS vs LEFT ANTI JOIN**: NOT IN with NULLs is dangerous and slow. Recommend LEFT ANTI JOIN.
+- **Correlated subqueries**: Can cause row-by-row evaluation. Rewrite as JOIN or window function.
+- **UNION vs UNION ALL**: UNION deduplicates (expensive). Use UNION ALL when duplicates are acceptable.
+- **UDF overhead**: Scalar Python UDFs are slow. Prefer SQL expressions or built-in functions.
+- **Over-partitioning**: Too many small partitions = small file problem. Ideal partition size is 128MB-1GB.
+- **String operations in WHERE**: LIKE '%...%' prevents data skipping. Use startsWith or bloom filters.
+- **Unnecessary ORDER BY**: Sorting in subqueries or CTEs that don't need ordering.
+- **Missing predicate pushdown**: Filters applied after joins instead of before. Push filters into subqueries.
+- **Window functions without PARTITION BY**: Operates on entire dataset, no parallelism.
+
+### Databricks-specific SQL features to leverage
+- **QUALIFY**: Filter window function results without wrapping in subquery. \`QUALIFY ROW_NUMBER() OVER (...) = 1\`.
+- **PIVOT / UNPIVOT**: Native support, avoid manual CASE WHEN pivots.
+- **MERGE INTO**: For upserts. More efficient than DELETE + INSERT.
+- **TABLESAMPLE**: For development/testing. \`FROM table TABLESAMPLE (10 PERCENT)\`.
+- **Dynamic file pruning**: Happens automatically with joins on partitioned tables. Ensure join keys align with partition columns.
+- **Star schema detection**: Photon optimises star schema joins automatically when fact + dimension pattern is detected.
+- **Broadcast hints**: \`/*+ BROADCAST(small_table) */\` for small dimension tables (<= ~100MB).
+- **Range join optimisation**: For inequality joins, Databricks can use range join if properly structured.
+- **TEMPORARY VIEW**: Use instead of repeated CTEs if referenced multiple times.
+- **Materialised Views**: For expensive queries that run repeatedly. \`CREATE MATERIALIZED VIEW\`.
+`;
+
+const SYSTEM_PROMPT_DIAGNOSE = `You are a senior Databricks SQL performance engineer. Your job is to diagnose slow or resource-intensive queries running on Databricks SQL Warehouses backed by Delta Lake and Photon.
+
+${DATABRICKS_KNOWLEDGE}
+
+## Your task
+Analyse the provided SQL query and its execution metrics. Identify the root causes of poor performance with specific, evidence-based reasoning tied to the metrics.
+
+## Response format
+You MUST respond with valid JSON matching this exact structure (no markdown, no explanation outside JSON):
 {
-  "summary": ["bullet1", "bullet2", "bullet3"],
+  "summary": ["key finding 1", "key finding 2"],
   "rootCauses": [
-    {"cause": "description", "evidence": "metric-based evidence", "severity": "high|medium|low"}
+    {"cause": "specific technical cause", "evidence": "cite exact metric values", "severity": "high|medium|low"}
   ],
-  "recommendations": ["actionable recommendation 1", "recommendation 2"]
+  "recommendations": ["specific actionable step 1", "specific actionable step 2"]
 }
 
-Guidelines:
-- Be specific — reference actual metrics provided
-- Rank root causes by likely impact
-- Recommendations should be actionable (not generic)
-- Use Databricks SQL-specific advice (Delta optimization, Z-ORDER, OPTIMIZE, caching, etc.)
-- Keep summary to 2-3 bullets
-- Include 1-5 root causes, ranked by severity
-- Include 2-5 concrete recommendations`;
+## Quality standards
+- ALWAYS cite specific metric values as evidence (e.g. "spill of 2.3GB indicates hash join exceeded memory")
+- Root causes must be ranked by likely impact (highest first)
+- Recommendations must be Databricks-specific and immediately actionable
+- If the query is already well-optimised, say so honestly
+- Include 1-5 root causes and 2-5 recommendations
+- Each recommendation should say WHAT to do, WHERE to do it, and WHY it will help
+- Consider the full execution timeline: compilation → queue wait → compute wait → execution → fetch`;
 
-const SYSTEM_PROMPT_REWRITE = `You are a Databricks SQL performance expert. Analyze the provided SQL query and its execution metrics, then propose an optimized rewrite.
+const SYSTEM_PROMPT_REWRITE = `You are a senior Databricks SQL performance engineer. Your job is to analyse slow queries and propose optimised rewrites that maintain exact semantic equivalence.
 
-You MUST respond with valid JSON matching this exact structure:
+${DATABRICKS_KNOWLEDGE}
+
+## Your task
+Analyse the provided SQL query and its execution metrics, then produce an optimised rewrite. The rewrite must return IDENTICAL results — same columns, same rows, same values, same ordering (if ORDER BY exists).
+
+## Response format
+You MUST respond with valid JSON matching this exact structure (no markdown, no explanation outside JSON):
 {
-  "summary": ["bullet1", "bullet2"],
+  "summary": ["what changed 1", "what changed 2"],
   "rootCauses": [
-    {"cause": "description", "evidence": "metric-based evidence", "severity": "high|medium|low"}
+    {"cause": "specific technical cause", "evidence": "cite exact metric values", "severity": "high|medium|low"}
   ],
-  "rewrittenSql": "SELECT ... (the optimized SQL)",
-  "rationale": "Explanation of what changed and why, mapped to observed metrics",
+  "rewrittenSql": "SELECT ... (the fully rewritten SQL, ready to execute)",
+  "rationale": "Detailed explanation of each change, why it helps, and how it addresses the observed metrics",
   "risks": [
-    {"risk": "description of semantic risk", "mitigation": "how to verify correctness"}
+    {"risk": "specific semantic risk", "mitigation": "how to verify correctness"}
   ],
-  "validationPlan": ["step 1", "step 2", "step 3"]
+  "validationPlan": ["concrete step 1", "concrete step 2"]
 }
 
-CRITICAL Rules:
-- Preserve exact semantics — the rewrite must return identical results
-- Do NOT change column names, types, or row ordering unless explicitly safe
-- Do NOT make assumptions about data distribution
-- Avoid breaking NULL handling logic
-- The "risks" section is MANDATORY — always include at least one risk
-- The "validationPlan" must include concrete steps to verify correctness
-- Use Databricks SQL-specific optimizations (Delta, Photon, Z-ORDER, OPTIMIZE, etc.)
-- If the SQL cannot be meaningfully improved, say so in summary and return the original SQL`;
+## CRITICAL rules for the rewrite
+- PRESERVE EXACT SEMANTICS — same columns, rows, values, types, and ordering
+- Do NOT change column aliases used downstream
+- Do NOT alter NULL handling (COALESCE, IFNULL, NVL semantics)
+- Do NOT assume data distribution, uniqueness, or NOT NULL constraints
+- Do NOT remove ORDER BY from final output
+- Do NOT introduce Databricks-only syntax that would break if tables don't exist
+- ALWAYS include at least one risk, even for safe rewrites
+- The validationPlan must include: (1) row count comparison, (2) value spot-check, (3) edge case check
+- If the query CANNOT be meaningfully improved via rewrite alone, say so in summary and return the original SQL with infrastructure recommendations (Z-ORDER, OPTIMIZE, warehouse sizing, etc.)
+
+## Common rewrite patterns (apply where evidence supports them)
+1. Push predicates below JOINs → reduces shuffle and scan
+2. Replace correlated subquery with JOIN or window function
+3. Use QUALIFY instead of wrapping window functions in subquery
+4. Replace NOT IN with LEFT ANTI JOIN
+5. Add broadcast hint for small tables (< ~100MB)
+6. Remove unnecessary DISTINCT (if GROUP BY already deduplicates)
+7. Replace UNION with UNION ALL where safe
+8. Reorder joins: smaller table or more-filtered table first
+9. Replace repeated CTE references with TEMPORARY VIEW
+10. Reduce SELECT * to only needed columns`;
 
 /**
  * Build a structured prompt for AI analysis.
@@ -122,82 +198,101 @@ export function buildPrompt(
     ? candidate.sampleQueryText
     : normalizeSql(candidate.sampleQueryText);
 
-  const metricsBlock = [
-    `Statement Type: ${candidate.statementType}`,
+  // ── Execution timeline breakdown ──
+  const timelineBlock = [
+    `Total Duration (p95): ${fmtMs(ws.p95Ms)}`,
+    `  ├─ Compilation:    ${fmtMs(ws.avgCompilationMs)} avg`,
+    `  ├─ Queue Wait:     ${fmtMs(ws.avgQueueWaitMs)} avg (waiting for cluster capacity)`,
+    `  ├─ Compute Wait:   ${fmtMs(ws.avgComputeWaitMs)} avg (waiting for compute to start)`,
+    `  ├─ Execution:      ${fmtMs(ws.avgExecutionMs)} avg (actual processing)`,
+    `  └─ Result Fetch:   ${fmtMs(ws.avgFetchMs)} avg`,
+  ].join("\n");
+
+  // ── I/O and data metrics ──
+  const ioBlock = [
+    `Data Read:           ${fmtBytes(ws.totalReadBytes)} (${ws.totalReadRows.toLocaleString()} rows)`,
+    `Data Written:        ${fmtBytes(ws.totalWrittenBytes)}`,
+    `Rows Produced:       ${ws.totalProducedRows.toLocaleString()}`,
+    `Spill to Disk:       ${fmtBytes(ws.totalSpilledBytes)}${ws.totalSpilledBytes > 0 ? " ⚠️ SPILL DETECTED" : ""}`,
+    `Shuffle Read:        ${fmtBytes(ws.totalShuffleBytes)}`,
+    `IO Cache Hit:        ${ws.avgIoCachePercent.toFixed(0)}%`,
+    `File Pruning:        ${(ws.avgPruningEfficiency * 100).toFixed(0)}% efficiency`,
+    `Result Cache Hits:   ${(ws.cacheHitRate * 100).toFixed(0)}%`,
+    `Task Parallelism:    ${ws.avgTaskParallelism.toFixed(1)}x`,
+  ].join("\n");
+
+  // ── Volume and frequency ──
+  const volumeBlock = [
     `Executions in Window: ${ws.count}`,
-    `p50 Latency: ${(ws.p50Ms / 1000).toFixed(2)}s`,
-    `p95 Latency: ${(ws.p95Ms / 1000).toFixed(2)}s`,
-    `Total Duration: ${(ws.totalDurationMs / 1000).toFixed(1)}s`,
-    `Avg Compilation: ${(ws.avgCompilationMs / 1000).toFixed(2)}s`,
-    `Avg Queue Wait: ${(ws.avgQueueWaitMs / 1000).toFixed(2)}s`,
-    `Avg Compute Wait: ${(ws.avgComputeWaitMs / 1000).toFixed(2)}s`,
-    `Avg Execution: ${(ws.avgExecutionMs / 1000).toFixed(2)}s`,
-    `Avg Result Fetch: ${(ws.avgFetchMs / 1000).toFixed(2)}s`,
-    `Data Read: ${formatBytesSimple(ws.totalReadBytes)}`,
-    `Data Written: ${formatBytesSimple(ws.totalWrittenBytes)}`,
-    `Rows Read: ${ws.totalReadRows.toLocaleString()}`,
-    `Rows Produced: ${ws.totalProducedRows.toLocaleString()}`,
-    `Spill to Disk: ${formatBytesSimple(ws.totalSpilledBytes)}`,
-    `Shuffle: ${formatBytesSimple(ws.totalShuffleBytes)}`,
-    `IO Cache Hit: ${ws.avgIoCachePercent.toFixed(0)}%`,
-    `Pruning Efficiency: ${(ws.avgPruningEfficiency * 100).toFixed(0)}%`,
-    `Result Cache Hit Rate: ${(ws.cacheHitRate * 100).toFixed(0)}%`,
-    `Task Parallelism: ${ws.avgTaskParallelism.toFixed(1)}x`,
-    `Impact Score: ${candidate.impactScore}/100`,
-  ];
+    `p50 Latency:          ${fmtMs(ws.p50Ms)}`,
+    `p95 Latency:          ${fmtMs(ws.p95Ms)}`,
+    `Total Wall Time:      ${fmtMs(ws.totalDurationMs)}`,
+    `Impact Score:         ${candidate.impactScore}/100`,
+  ].join("\n");
 
+  // ── Cost ──
+  let costLine = "";
   if (candidate.allocatedCostDollars > 0) {
-    metricsBlock.push(
-      `Estimated Cost: $${candidate.allocatedCostDollars.toFixed(3)}`
-    );
+    costLine = `Estimated Cost: $${candidate.allocatedCostDollars.toFixed(3)} (${candidate.allocatedDBUs.toFixed(2)} DBUs)`;
   } else if (candidate.allocatedDBUs > 0) {
-    metricsBlock.push(
-      `Estimated DBUs: ${candidate.allocatedDBUs.toFixed(2)}`
-    );
+    costLine = `Estimated DBUs: ${candidate.allocatedDBUs.toFixed(2)}`;
   }
 
-  // Performance flags
+  // ── Performance flags ──
+  let flagsBlock = "";
   if (candidate.performanceFlags.length > 0) {
-    metricsBlock.push(
-      `Performance Flags: ${candidate.performanceFlags.map((f) => f.label).join(", ")}`
-    );
+    flagsBlock = candidate.performanceFlags
+      .map((f) => `- [${f.severity.toUpperCase()}] ${f.label}: ${f.detail}`)
+      .join("\n");
   }
 
-  let contextBlock = `Warehouse: ${candidate.warehouseName} (${candidate.warehouseId})`;
-  contextBlock += `\nQuery Origin: ${candidate.queryOrigin}`;
-  contextBlock += `\nClient App: ${candidate.clientApplication}`;
-
+  // ── Warehouse context ──
+  let warehouseBlock = `Warehouse: ${candidate.warehouseName} (ID: ${candidate.warehouseId})`;
   if (warehouseConfig) {
-    contextBlock += `\nWarehouse Size: ${warehouseConfig.size}`;
-    contextBlock += `\nScaling: ${warehouseConfig.minClusters}-${warehouseConfig.maxClusters} clusters`;
-    contextBlock += `\nAuto Stop: ${warehouseConfig.autoStopMins} min`;
+    warehouseBlock += `\nSize: ${warehouseConfig.size}`;
+    warehouseBlock += `\nCluster Scaling: ${warehouseConfig.minClusters}–${warehouseConfig.maxClusters} clusters`;
+    warehouseBlock += `\nAuto-Stop: ${warehouseConfig.autoStopMins} min`;
   }
+  warehouseBlock += `\nQuery Origin: ${candidate.queryOrigin}`;
+  warehouseBlock += `\nClient App: ${candidate.clientApplication}`;
+  warehouseBlock += `\nStatement Type: ${candidate.statementType}`;
 
-  const userPrompt = `## SQL Query
-\`\`\`sql
-${sql}
-\`\`\`
-
-## Execution Metrics
-${metricsBlock.join("\n")}
-
-## Context
-${contextBlock}
-
-${mode === "diagnose" ? "Analyze this query and explain why it is performing poorly. Focus on actionable insights." : "Analyze this query and propose an optimized rewrite. Include risks and a validation plan."}`;
+  // ── Assemble user prompt ──
+  const sections = [
+    `## SQL Query\n\`\`\`sql\n${sql}\n\`\`\``,
+    `## Execution Timeline\n${timelineBlock}`,
+    `## I/O & Data Metrics\n${ioBlock}`,
+    `## Volume & Frequency\n${volumeBlock}`,
+    costLine ? `## Cost\n${costLine}` : "",
+    flagsBlock ? `## Performance Flags (auto-detected)\n${flagsBlock}` : "",
+    `## Warehouse & Context\n${warehouseBlock}`,
+    mode === "diagnose"
+      ? "## Instruction\nAnalyse this query and explain why it is performing poorly. Cite specific metrics as evidence. Focus on actionable Databricks-specific insights."
+      : "## Instruction\nAnalyse this query and propose an optimised rewrite. The rewrite must be semantically equivalent. Include risks and a concrete validation plan.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const systemPrompt =
     mode === "diagnose" ? SYSTEM_PROMPT_DIAGNOSE : SYSTEM_PROMPT_REWRITE;
 
   // Rough token estimate: ~4 chars per token
   const estimatedTokens = Math.ceil(
-    (systemPrompt.length + userPrompt.length) / 4
+    (systemPrompt.length + sections.length) / 4
   );
 
-  return { systemPrompt, userPrompt, estimatedTokens };
+  return { systemPrompt, userPrompt: sections, estimatedTokens };
 }
 
-function formatBytesSimple(bytes: number): string {
+/* ── Formatting helpers ── */
+
+function fmtMs(ms: number): string {
+  if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
+  if (ms >= 1_000) return `${(ms / 1_000).toFixed(2)}s`;
+  return `${Math.round(ms)}ms`;
+}
+
+function fmtBytes(bytes: number): string {
   if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`;
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;

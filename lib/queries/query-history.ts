@@ -116,7 +116,7 @@ export async function listRecentQueries(
       ON h.compute.warehouse_id = w.warehouse_id
     WHERE h.start_time >= '${escapeString(startTime)}'
       AND h.start_time <= '${escapeString(endTime)}'
-      AND h.execution_status = 'FINISHED'
+      AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
       AND h.statement_type IN ('SELECT', 'INSERT', 'MERGE', 'UPDATE', 'DELETE', 'COPY')
       AND h.statement_text NOT LIKE '%system.%'
       AND h.statement_text NOT LIKE '%information_schema.%'

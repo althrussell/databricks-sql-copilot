@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { WarehouseCost } from "@/lib/domain/types";
 import { RewriteWorkbenchClient } from "./rewrite-workbench-client";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 interface RewritePageProps {
   params: Promise<{ fingerprint: string }>;
@@ -86,10 +86,12 @@ export default async function RewritePage(props: RewritePageProps) {
   const { fingerprint } = await props.params;
   const searchParams = await props.searchParams;
 
+  const BILLING_LAG_MS = 6 * 60 * 60 * 1000;
   const now = new Date();
-  const start =
-    searchParams.start ?? new Date(now.getTime() - 60 * 60 * 1000).toISOString();
-  const end = searchParams.end ?? now.toISOString();
+  const lagEnd = new Date(now.getTime() - BILLING_LAG_MS);
+  const lagStart = new Date(lagEnd.getTime() - 60 * 60 * 1000);
+  const start = searchParams.start ?? lagStart.toISOString();
+  const end = searchParams.end ?? lagEnd.toISOString();
 
   return (
     <div className="space-y-6">

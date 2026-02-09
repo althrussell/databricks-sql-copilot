@@ -57,7 +57,7 @@ export async function listWarehouseAudit(
       CAST(request_params.min_num_clusters AS INTEGER) AS min_cluster_scaling,
       CAST(request_params.max_num_clusters AS INTEGER) AS max_cluster_scaling,
       request_params.auto_stop_mins AS auto_stop_mins,
-      CAST(request_params.channel.name AS STRING) AS warehouse_channel
+      CAST(request_params.channel AS STRING) AS warehouse_channel
     FROM system.access.audit
     WHERE event_date >= '${startDate}'
       AND event_date <= '${endDate}'

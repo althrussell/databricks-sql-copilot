@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { listRecommendations } from "@/lib/dbx/recommendations";
 import { RecommendationsClient } from "./recommendations-client";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 function RecommendationsSkeleton() {
   return (

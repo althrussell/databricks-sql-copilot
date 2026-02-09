@@ -59,8 +59,12 @@ import {
   CheckCircle2,
   XCircle,
   Info,
+  Sparkles,
+  Stethoscope,
+  ArrowRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
@@ -115,6 +119,14 @@ import type { WarehouseOption } from "@/lib/queries/warehouses";
 
 /* ── Constants ── */
 
+/**
+ * Billing data in system.billing.usage lags ~6 hours behind real-time.
+ * All time windows are shifted back by this amount so that every data
+ * source (queries, events, costs, audit) covers the same fully-populated
+ * period. E.g. "1 hour" = the hour from 7h ago to 6h ago.
+ */
+const BILLING_LAG_HOURS = 6;
+
 const TIME_PRESETS = [
   { label: "1 hour", value: "1h", icon: Clock },
   { label: "6 hours", value: "6h", icon: Clock },
@@ -122,16 +134,20 @@ const TIME_PRESETS = [
   { label: "7 days", value: "7d", icon: Clock },
 ] as const;
 
-/**
- * Data freshness legend — system tables have different latency characteristics.
- * Billing data lags 6-24h so we always fetch the last 48h for costs.
- */
-const DATA_FRESHNESS: { source: string; delay: string; note: string }[] = [
-  { source: "Query History", delay: "~minutes", note: "Near real-time" },
-  { source: "Warehouse Events", delay: "~minutes", note: "Near real-time" },
-  { source: "Billing / Costs", delay: "6–24 hours", note: "Always shows last 48h" },
-  { source: "Audit Trail", delay: "~minutes", note: "Near real-time" },
-];
+/** Compute the human-readable window description for the current preset */
+function describeWindow(preset: string): string {
+  const windowHours: Record<string, number> = {
+    "1h": 1, "6h": 6, "24h": 24, "7d": 168,
+  };
+  const hrs = windowHours[preset] ?? 1;
+  const endAgo = BILLING_LAG_HOURS;
+  const startAgo = endAgo + hrs;
+  if (startAgo <= 48) {
+    return `${startAgo}h ago → ${endAgo}h ago`;
+  }
+  const startDays = Math.round(startAgo / 24);
+  return `~${startDays}d ago → ${endAgo}h ago`;
+}
 
 /* ── Deep link helpers (client-side, using workspaceUrl prop) ── */
 
@@ -864,6 +880,55 @@ function DetailPanel({
               ))}
             </div>
           </div>
+
+          {/* ── Action Buttons ── */}
+          <div className="pt-2 border-t border-border space-y-2">
+            <SectionLabel>Actions</SectionLabel>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => {
+                  onOpenChange(false);
+                  window.location.href = `/queries/${candidate.fingerprint}`;
+                }}
+                className="w-full"
+              >
+                <Stethoscope className="h-4 w-4" />
+                AI Diagnose
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  onOpenChange(false);
+                  window.location.href = `/rewrite/${candidate.fingerprint}`;
+                }}
+                className="w-full"
+              >
+                <Sparkles className="h-4 w-4" />
+                AI Rewrite
+              </Button>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                onOpenChange(false);
+                window.location.href = `/queries/${candidate.fingerprint}`;
+              }}
+              className="w-full"
+            >
+              <ArrowRight className="h-4 w-4" />
+              View Full Details
+            </Button>
+            {queryProfileLink && (
+              <Button
+                variant="ghost"
+                onClick={() => window.open(queryProfileLink, "_blank")}
+                className="w-full text-muted-foreground"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open Query Profile in Databricks
+              </Button>
+            )}
+          </div>
         </div>
       </SheetContent>
     </Sheet>
@@ -1302,30 +1367,16 @@ export function Dashboard({
           )}
         </div>
 
-        {/* ── Data Freshness Notice ── */}
+        {/* ── Data Window Notice ── */}
         {!fetchError && (
-          <div className="flex items-start gap-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/30 px-4 py-3">
-            <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                Data Freshness
-              </p>
-              <div className="flex flex-wrap gap-x-5 gap-y-1">
-                {DATA_FRESHNESS.map((d) => (
-                  <span key={d.source} className="text-xs text-blue-700 dark:text-blue-300">
-                    <span className="font-medium">{d.source}</span>
-                    {" — "}
-                    <span className="text-blue-600 dark:text-blue-400">{d.note}</span>
-                    {" "}
-                    <span className="text-blue-500/70 dark:text-blue-400/60">(lag: {d.delay})</span>
-                  </span>
-                ))}
-              </div>
-              <p className="text-[11px] text-blue-500 dark:text-blue-400/70">
-                Databricks system tables update at different intervals.
-                Billing &amp; cost data is always fetched for the last 48 hours to account for ingestion delay.
-              </p>
-            </div>
+          <div className="flex items-center gap-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/30 px-4 py-2.5">
+            <Info className="h-4 w-4 text-blue-500 shrink-0" />
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              <span className="font-medium">Data window: {describeWindow(timePreset)}</span>
+              {" — "}
+              All views are shifted back {BILLING_LAG_HOURS}h to ensure billing &amp; cost data
+              is fully populated across all dimensions (queries, events, costs, audit).
+            </p>
           </div>
         )}
 
@@ -1443,7 +1494,7 @@ export function Dashboard({
               icon={DollarSign}
               label="Est. Cost"
               value={formatDollars(totalDollarCost)}
-              detail="Last 48h billing window"
+              detail="Based on list prices at time of use"
             />
           </div>
         )}
@@ -1817,6 +1868,7 @@ export function Dashboard({
                       <TableHead className="text-right">
                         Flags
                       </TableHead>
+                      <TableHead className="w-24 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1936,7 +1988,28 @@ export function Dashboard({
                                 </Tooltip>
                               </TableCell>
                               <TableCell className="text-right tabular-nums font-medium">
-                                {c.windowStats.count}
+                                <span>{c.windowStats.count}</span>
+                                {(c.failedCount > 0 || c.canceledCount > 0) && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="ml-1 text-[10px]">
+                                        {c.failedCount > 0 && (
+                                          <span className="text-red-500">{c.failedCount}F</span>
+                                        )}
+                                        {c.canceledCount > 0 && (
+                                          <span className="text-amber-500 ml-0.5">{c.canceledCount}C</span>
+                                        )}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="text-xs">
+                                        {c.windowStats.count} total runs
+                                        {c.failedCount > 0 && ` · ${c.failedCount} failed`}
+                                        {c.canceledCount > 0 && ` · ${c.canceledCount} canceled`}
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
                               </TableCell>
                               <TableCell className="text-right tabular-nums font-semibold">
                                 {formatDuration(c.windowStats.p95Ms)}
@@ -1973,6 +2046,40 @@ export function Dashboard({
                                 ) : (
                                   <span className="text-muted-foreground text-xs">\u2014</span>
                                 )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          router.push(`/queries/${c.fingerprint}`);
+                                        }}
+                                      >
+                                        <Stethoscope className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>AI Diagnose</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          router.push(`/rewrite/${c.fingerprint}`);
+                                        }}
+                                      >
+                                        <Sparkles className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>AI Rewrite</TooltipContent>
+                                  </Tooltip>
+                                </div>
                               </TableCell>
                             </TableRow>
                           </ContextMenuTrigger>

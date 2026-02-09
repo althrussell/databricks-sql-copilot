@@ -14,7 +14,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import type { Candidate, WarehouseCost } from "@/lib/domain/types";
 import { QueryDetailClient } from "./query-detail-client";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300; // cache for 5 minutes
 
 interface QueryDetailPageProps {
   params: Promise<{ fingerprint: string }>;
@@ -105,11 +105,13 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
   const { fingerprint } = await props.params;
   const searchParams = await props.searchParams;
 
-  // Default time window: last 1 hour
+  // Use same billing-lag-shifted window as dashboard (6h offset)
+  const BILLING_LAG_MS = 6 * 60 * 60 * 1000;
   const now = new Date();
-  const start =
-    searchParams.start ?? new Date(now.getTime() - 60 * 60 * 1000).toISOString();
-  const end = searchParams.end ?? now.toISOString();
+  const lagEnd = new Date(now.getTime() - BILLING_LAG_MS);
+  const lagStart = new Date(lagEnd.getTime() - 60 * 60 * 1000); // 1h window
+  const start = searchParams.start ?? lagStart.toISOString();
+  const end = searchParams.end ?? lagEnd.toISOString();
 
   return (
     <div className="space-y-6">

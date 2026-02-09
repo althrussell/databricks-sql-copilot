@@ -19,14 +19,40 @@ import type {
   QueryRun,
 } from "@/lib/domain/types";
 
-export const dynamic = "force-dynamic";
+/**
+ * Cache the page for 5 minutes. Since the data window is shifted back 6h
+ * for billing lag, a few minutes of staleness is negligible — and it means
+ * navigating back from a query detail page is instant.
+ */
+export const revalidate = 300; // seconds
 
-/** Default time window: last 1 hour */
-function defaultTimeRange(): { start: string; end: string } {
+/**
+ * Billing lag offset — system.billing.usage data arrives 6-24h behind.
+ * We shift ALL time windows back by this amount so every data source
+ * (queries, events, costs, audit) covers the same period with fully
+ * populated data. This means "1 hour" = the hour from -7h to -6h ago.
+ */
+const BILLING_LAG_HOURS = 6;
+
+function timeRangeForPreset(preset: string): { start: string; end: string } {
   const now = new Date();
-  const end = now.toISOString();
-  const start = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
-  return { start, end };
+  const lagMs = BILLING_LAG_HOURS * 60 * 60 * 1000;
+
+  // End = now minus billing lag (most recent point where billing data exists)
+  const end = new Date(now.getTime() - lagMs);
+
+  // Window size based on preset
+  const windowMs: Record<string, number> = {
+    "1h": 1 * 60 * 60 * 1000,
+    "6h": 6 * 60 * 60 * 1000,
+    "24h": 24 * 60 * 60 * 1000,
+    "7d": 7 * 24 * 60 * 60 * 1000,
+  };
+
+  const window = windowMs[preset] ?? windowMs["1h"];
+  const start = new Date(end.getTime() - window);
+
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 /** Track data source health */
@@ -57,7 +83,7 @@ function catchAndLogTracked<T>(
  * Phase 2 enrichment data streams in after.
  */
 async function CoreDashboardLoader() {
-  const { start, end } = defaultTimeRange();
+  const { start, end } = timeRangeForPreset("1h");
 
   let warehouses: WarehouseOption[] = [];
   let candidates: Candidate[] = [];
@@ -165,19 +191,13 @@ async function EnrichmentLoader({
   queryRuns: QueryRun[];
 }) {
   const enrichHealth: DataSourceHealth[] = [];
-  const TIMEOUT_MS = 180_000; // 3 minutes per enrichment query
+  const TIMEOUT_MS = 600_000; // 10 minutes per enrichment query
 
-  // Billing data in system.billing.usage lags 6-24 hours behind real-time.
-  // Always look back at least 48h for costs regardless of the dashboard time window.
-  const billingLookbackMs = 48 * 60 * 60 * 1000; // 48 hours
-  const dashboardWindowMs = new Date(end).getTime() - new Date(start).getTime();
-  const costStart = dashboardWindowMs >= billingLookbackMs
-    ? start
-    : new Date(new Date(end).getTime() - billingLookbackMs).toISOString();
-
+  // All data sources now share the same shifted window (already offset by
+  // BILLING_LAG_HOURS) so costs, events, queries, and audit all align.
   const [costResult, eventsResult, auditResult] = await Promise.all([
     withTimeout(
-      getWarehouseCosts({ startTime: costStart, endTime: end }).catch(
+      getWarehouseCosts({ startTime: start, endTime: end }).catch(
         catchAndLogTracked("billing_costs", [] as WarehouseCost[])
       ),
       TIMEOUT_MS,

@@ -118,6 +118,10 @@ export interface Candidate {
     avgFetchMs: number;
     avgIoCachePercent: number;
   };
+  /** Count of FAILED executions for this pattern */
+  failedCount: number;
+  /** Count of CANCELED executions for this pattern */
+  canceledCount: number;
   /** Cost allocation: estimated $ for this pattern in the window */
   allocatedCostDollars: number;
   /** Cost allocation: estimated DBUs for this pattern in the window */

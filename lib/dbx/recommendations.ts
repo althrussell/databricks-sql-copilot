@@ -1,14 +1,9 @@
 /**
- * Recommendations Persistence Layer
+ * Recommendations — Ephemeral In-Memory Store
  *
- * Stores recommendation drafts, AI rewrites, and validation results
- * in a Delta table via the SQL warehouse.
- *
- * Table: default.dbsql_copilot_recommendations
- * Auto-created on first write if it doesn't exist.
+ * All recommendations live in server memory only.
+ * They are lost when the app restarts — no Delta tables are created.
  */
-
-import { executeQuery } from "@/lib/dbx/sql-client";
 
 export type RecommendationStatus =
   | "draft"
@@ -40,51 +35,8 @@ export interface Recommendation {
   rowCountMatch: boolean | null;
 }
 
-const TABLE_NAME = "default.dbsql_copilot_recommendations";
-
-function escapeString(value: string): string {
-  return value.replace(/'/g, "''").replace(/\\/g, "\\\\");
-}
-
-/**
- * Ensure the recommendations table exists.
- * Safe to call multiple times — uses CREATE TABLE IF NOT EXISTS.
- */
-export async function ensureTable(): Promise<void> {
-  const sql = `
-    CREATE TABLE IF NOT EXISTS ${TABLE_NAME} (
-      id STRING NOT NULL,
-      fingerprint STRING NOT NULL,
-      original_sql STRING,
-      rewritten_sql STRING,
-      rationale STRING,
-      risks STRING,
-      validation_plan STRING,
-      status STRING NOT NULL DEFAULT 'draft',
-      impact_score INT,
-      warehouse_name STRING,
-      warehouse_id STRING,
-      created_by STRING,
-      created_at TIMESTAMP DEFAULT current_timestamp(),
-      updated_at TIMESTAMP DEFAULT current_timestamp(),
-      validation_results STRING,
-      speedup_pct DOUBLE,
-      row_count_match BOOLEAN
-    )
-    USING DELTA
-    TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
-  `;
-
-  try {
-    await executeQuery(sql);
-  } catch (err: unknown) {
-    // Table may already exist or we may not have CREATE TABLE permission
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!msg.includes("ALREADY_EXISTS")) {
-      console.error("[recommendations] ensureTable failed:", msg);
-    }
-  }
-}
+/** In-memory store — keyed by recommendation ID */
+const store = new Map<string, Recommendation>();
 
 /**
  * Save a new recommendation draft.
@@ -92,33 +44,12 @@ export async function ensureTable(): Promise<void> {
 export async function saveRecommendation(
   rec: Omit<Recommendation, "createdAt" | "updatedAt">
 ): Promise<void> {
-  await ensureTable();
-
-  const sql = `
-    INSERT INTO ${TABLE_NAME}
-    (id, fingerprint, original_sql, rewritten_sql, rationale, risks, validation_plan,
-     status, impact_score, warehouse_name, warehouse_id, created_by,
-     validation_results, speedup_pct, row_count_match)
-    VALUES (
-      '${escapeString(rec.id)}',
-      '${escapeString(rec.fingerprint)}',
-      '${escapeString(rec.originalSql)}',
-      '${escapeString(rec.rewrittenSql)}',
-      '${escapeString(rec.rationale)}',
-      '${escapeString(rec.risks)}',
-      '${escapeString(rec.validationPlan)}',
-      '${escapeString(rec.status)}',
-      ${rec.impactScore},
-      '${escapeString(rec.warehouseName)}',
-      '${escapeString(rec.warehouseId)}',
-      '${escapeString(rec.createdBy)}',
-      ${rec.validationResults ? `'${escapeString(rec.validationResults)}'` : "NULL"},
-      ${rec.speedupPct ?? "NULL"},
-      ${rec.rowCountMatch ?? "NULL"}
-    )
-  `;
-
-  await executeQuery(sql);
+  const now = new Date().toISOString();
+  store.set(rec.id, {
+    ...rec,
+    createdAt: now,
+    updatedAt: now,
+  });
 }
 
 /**
@@ -133,52 +64,33 @@ export async function updateRecommendation(
     rowCountMatch?: boolean;
   }
 ): Promise<void> {
-  const setClauses: string[] = ["updated_at = current_timestamp()"];
+  const existing = store.get(id);
+  if (!existing) return;
 
-  if (updates.status) {
-    setClauses.push(`status = '${escapeString(updates.status)}'`);
-  }
-  if (updates.validationResults) {
-    setClauses.push(
-      `validation_results = '${escapeString(updates.validationResults)}'`
-    );
-  }
-  if (updates.speedupPct !== undefined) {
-    setClauses.push(`speedup_pct = ${updates.speedupPct}`);
-  }
-  if (updates.rowCountMatch !== undefined) {
-    setClauses.push(`row_count_match = ${updates.rowCountMatch}`);
-  }
-
-  const sql = `
-    UPDATE ${TABLE_NAME}
-    SET ${setClauses.join(", ")}
-    WHERE id = '${escapeString(id)}'
-  `;
-
-  await executeQuery(sql);
+  store.set(id, {
+    ...existing,
+    ...(updates.status && { status: updates.status }),
+    ...(updates.validationResults && {
+      validationResults: updates.validationResults,
+    }),
+    ...(updates.speedupPct !== undefined && { speedupPct: updates.speedupPct }),
+    ...(updates.rowCountMatch !== undefined && {
+      rowCountMatch: updates.rowCountMatch,
+    }),
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 /**
  * List all recommendations, ordered by most recent.
  */
 export async function listRecommendations(): Promise<Recommendation[]> {
-  await ensureTable();
-
-  const sql = `
-    SELECT *
-    FROM ${TABLE_NAME}
-    ORDER BY created_at DESC
-    LIMIT 100
-  `;
-
-  try {
-    const result = await executeQuery<Record<string, unknown>>(sql);
-    return result.rows.map(mapRow);
-  } catch {
-    // Table might not exist yet
-    return [];
-  }
+  return [...store.values()]
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+    .slice(0, 100);
 }
 
 /**
@@ -187,50 +99,12 @@ export async function listRecommendations(): Promise<Recommendation[]> {
 export async function getRecommendation(
   id: string
 ): Promise<Recommendation | null> {
-  const sql = `
-    SELECT * FROM ${TABLE_NAME}
-    WHERE id = '${escapeString(id)}'
-    LIMIT 1
-  `;
-
-  try {
-    const result = await executeQuery<Record<string, unknown>>(sql);
-    if (result.rows.length === 0) return null;
-    return mapRow(result.rows[0]);
-  } catch {
-    return null;
-  }
+  return store.get(id) ?? null;
 }
 
 /**
  * Delete a recommendation.
  */
 export async function deleteRecommendation(id: string): Promise<void> {
-  const sql = `DELETE FROM ${TABLE_NAME} WHERE id = '${escapeString(id)}'`;
-  await executeQuery(sql);
-}
-
-function mapRow(row: Record<string, unknown>): Recommendation {
-  return {
-    id: String(row.id ?? ""),
-    fingerprint: String(row.fingerprint ?? ""),
-    originalSql: String(row.original_sql ?? ""),
-    rewrittenSql: String(row.rewritten_sql ?? ""),
-    rationale: String(row.rationale ?? ""),
-    risks: String(row.risks ?? "[]"),
-    validationPlan: String(row.validation_plan ?? "[]"),
-    status: (String(row.status ?? "draft")) as RecommendationStatus,
-    impactScore: Number(row.impact_score ?? 0),
-    warehouseName: String(row.warehouse_name ?? ""),
-    warehouseId: String(row.warehouse_id ?? ""),
-    createdBy: String(row.created_by ?? ""),
-    createdAt: String(row.created_at ?? ""),
-    updatedAt: String(row.updated_at ?? ""),
-    validationResults: row.validation_results
-      ? String(row.validation_results)
-      : null,
-    speedupPct: row.speedup_pct != null ? Number(row.speedup_pct) : null,
-    rowCountMatch:
-      row.row_count_match != null ? Boolean(row.row_count_match) : null,
-  };
+  store.delete(id);
 }
