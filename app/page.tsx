@@ -125,10 +125,35 @@ async function CoreDashboardLoader() {
   );
 }
 
+/** Wrap a promise with a timeout (ms). Returns fallback on timeout. */
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+  fallback: T
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) =>
+      setTimeout(() => {
+        console.warn(`[${label}] timed out after ${timeoutMs / 1000}s`);
+        failedSources.push({
+          name: label,
+          status: "error",
+          error: `Timed out after ${timeoutMs / 1000}s`,
+          rowCount: 0,
+        });
+        resolve(fallback);
+      }, timeoutMs)
+    ),
+  ]);
+}
+
 /**
  * Phase 2: Enrichment — costs, events, utilization, audit.
  * Runs in parallel, streamed to client after core dashboard.
  * Re-uses the queryRuns from Phase 1 (passed as prop) to avoid re-fetching.
+ * Each query has a 60s timeout to prevent indefinite hanging.
  */
 async function EnrichmentLoader({
   start,
@@ -140,16 +165,40 @@ async function EnrichmentLoader({
   queryRuns: QueryRun[];
 }) {
   const enrichHealth: DataSourceHealth[] = [];
+  const TIMEOUT_MS = 180_000; // 3 minutes per enrichment query
+
+  // Billing data in system.billing.usage lags 6-24 hours behind real-time.
+  // Always look back at least 48h for costs regardless of the dashboard time window.
+  const billingLookbackMs = 48 * 60 * 60 * 1000; // 48 hours
+  const dashboardWindowMs = new Date(end).getTime() - new Date(start).getTime();
+  const costStart = dashboardWindowMs >= billingLookbackMs
+    ? start
+    : new Date(new Date(end).getTime() - billingLookbackMs).toISOString();
 
   const [costResult, eventsResult, auditResult] = await Promise.all([
-    getWarehouseCosts({ startTime: start, endTime: end }).catch(
-      catchAndLogTracked("billing_costs", [] as WarehouseCost[])
+    withTimeout(
+      getWarehouseCosts({ startTime: costStart, endTime: end }).catch(
+        catchAndLogTracked("billing_costs", [] as WarehouseCost[])
+      ),
+      TIMEOUT_MS,
+      "billing_costs",
+      [] as WarehouseCost[]
     ),
-    listWarehouseEvents({ startTime: start, endTime: end }).catch(
-      catchAndLogTracked("warehouse_events", [] as WarehouseEvent[])
+    withTimeout(
+      listWarehouseEvents({ startTime: start, endTime: end }).catch(
+        catchAndLogTracked("warehouse_events", [] as WarehouseEvent[])
+      ),
+      TIMEOUT_MS,
+      "warehouse_events",
+      [] as WarehouseEvent[]
     ),
-    listWarehouseAudit({ startTime: start, endTime: end }).catch(
-      catchAndLogTracked("audit_trail", [] as WarehouseAuditEvent[])
+    withTimeout(
+      listWarehouseAudit({ startTime: start, endTime: end }).catch(
+        catchAndLogTracked("audit_trail", [] as WarehouseAuditEvent[])
+      ),
+      TIMEOUT_MS,
+      "audit_trail",
+      [] as WarehouseAuditEvent[]
     ),
   ]);
 

@@ -36,6 +36,10 @@ export async function listWarehouseEvents(
     ? `AND warehouse_id = '${escapeString(warehouseId)}'`
     : "";
 
+  // Use date cast for partition pruning on system tables
+  const startDate = startTime.slice(0, 10); // YYYY-MM-DD
+  const endDate = endTime.slice(0, 10);
+
   const sql = `
     SELECT
       warehouse_id,
@@ -43,7 +47,9 @@ export async function listWarehouseEvents(
       cluster_count,
       event_time
     FROM system.compute.warehouse_events
-    WHERE event_time >= '${escapeString(startTime)}'
+    WHERE CAST(event_time AS DATE) >= '${startDate}'
+      AND CAST(event_time AS DATE) <= '${endDate}'
+      AND event_time >= '${escapeString(startTime)}'
       AND event_time <= '${escapeString(endTime)}'
       ${warehouseFilter}
     ORDER BY event_time DESC

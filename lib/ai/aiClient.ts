@@ -21,8 +21,8 @@ import {
 
 /** Model selection based on task complexity */
 const MODELS = {
-  diagnose: "databricks-meta-llama-3-3-70b-instruct",
-  rewrite: "databricks-meta-llama-3-3-70b-instruct",
+  diagnose: "databricks-claude-opus-4-6",
+  rewrite: "databricks-claude-opus-4-6",
 } as const;
 
 /** Max input tokens per mode (guardrail) */

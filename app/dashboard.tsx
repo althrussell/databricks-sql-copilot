@@ -122,6 +122,17 @@ const TIME_PRESETS = [
   { label: "7 days", value: "7d", icon: Clock },
 ] as const;
 
+/**
+ * Data freshness legend — system tables have different latency characteristics.
+ * Billing data lags 6-24h so we always fetch the last 48h for costs.
+ */
+const DATA_FRESHNESS: { source: string; delay: string; note: string }[] = [
+  { source: "Query History", delay: "~minutes", note: "Near real-time" },
+  { source: "Warehouse Events", delay: "~minutes", note: "Near real-time" },
+  { source: "Billing / Costs", delay: "6–24 hours", note: "Always shows last 48h" },
+  { source: "Audit Trail", delay: "~minutes", note: "Near real-time" },
+];
+
 /* ── Deep link helpers (client-side, using workspaceUrl prop) ── */
 
 function buildLink(
@@ -1291,6 +1302,33 @@ export function Dashboard({
           )}
         </div>
 
+        {/* ── Data Freshness Notice ── */}
+        {!fetchError && (
+          <div className="flex items-start gap-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/30 px-4 py-3">
+            <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                Data Freshness
+              </p>
+              <div className="flex flex-wrap gap-x-5 gap-y-1">
+                {DATA_FRESHNESS.map((d) => (
+                  <span key={d.source} className="text-xs text-blue-700 dark:text-blue-300">
+                    <span className="font-medium">{d.source}</span>
+                    {" — "}
+                    <span className="text-blue-600 dark:text-blue-400">{d.note}</span>
+                    {" "}
+                    <span className="text-blue-500/70 dark:text-blue-400/60">(lag: {d.delay})</span>
+                  </span>
+                ))}
+              </div>
+              <p className="text-[11px] text-blue-500 dark:text-blue-400/70">
+                Databricks system tables update at different intervals.
+                Billing &amp; cost data is always fetched for the last 48 hours to account for ingestion delay.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ── Performance Flag Filters ── */}
         {allFlags.length > 0 && !fetchError && (
           <div className="flex flex-wrap items-center gap-2">
@@ -1377,7 +1415,7 @@ export function Dashboard({
               icon={AlertTriangle}
               label="High Impact"
               value={kpis.highImpact.toLocaleString()}
-              detail="Score \u2265 60"
+              detail="Score ≥ 60"
             />
             <KpiCard
               icon={Zap}
@@ -1405,7 +1443,7 @@ export function Dashboard({
               icon={DollarSign}
               label="Est. Cost"
               value={formatDollars(totalDollarCost)}
-              detail="Based on list prices"
+              detail="Last 48h billing window"
             />
           </div>
         )}

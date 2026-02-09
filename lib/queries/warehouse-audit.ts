@@ -38,18 +38,18 @@ export async function listWarehouseAudit(
   const { startTime, endTime, warehouseId, limit = 100 } = params;
 
   const warehouseFilter = warehouseId
-    ? `AND (CASE WHEN action_name IN ('createWarehouse', 'createEndpoint') THEN response['result'] ELSE request_params.id END) = '${escapeString(warehouseId)}'`
+    ? `AND request_params.id = '${escapeString(warehouseId)}'`
     : "";
+
+  // Derive date bounds for partition pruning on system.access.audit
+  const startDate = startTime.slice(0, 10); // YYYY-MM-DD
+  const endDate = endTime.slice(0, 10);
 
   const sql = `
     SELECT
       event_time,
       action_name,
-      CASE
-        WHEN action_name IN ('createWarehouse', 'createEndpoint')
-        THEN FROM_JSON(response['result'], 'Map<STRING, STRING>')['id']
-        ELSE request_params.id
-      END AS warehouse_id,
+      COALESCE(request_params.id, '') AS warehouse_id,
       user_identity.email AS warehouse_editor_user,
       request_params.name AS warehouse_name,
       request_params.warehouse_type AS warehouse_type,
@@ -59,7 +59,9 @@ export async function listWarehouseAudit(
       request_params.auto_stop_mins AS auto_stop_mins,
       CAST(request_params.channel.name AS STRING) AS warehouse_channel
     FROM system.access.audit
-    WHERE service_name = 'databrickssql'
+    WHERE event_date >= '${startDate}'
+      AND event_date <= '${endDate}'
+      AND service_name = 'databrickssql'
       AND action_name IN (
         'createWarehouse', 'createEndpoint',
         'editWarehouse', 'editEndpoint',
