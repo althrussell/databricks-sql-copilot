@@ -6,6 +6,22 @@ Built with **Next.js 16**, **shadcn/ui**, and the **Databricks SQL Node.js drive
 
 ---
 
+## Why this exists
+
+Every Databricks customer with SQL Warehouses has the same problem: **nobody is watching the queries**. System tables collect terabytes of execution telemetry, but platform teams don't have the time or tooling to turn that data into action. The result is runaway costs, oversized warehouses, and end users waiting on queries that could run 10x faster with a single `OPTIMIZE` or a rewritten join.
+
+**DBSQL Co-Pilot closes that gap.** It reads the system tables the customer already has, scores every query pattern by real business impact (not just runtime), and uses Databricks-hosted AI to diagnose root causes and generate production-ready rewrites — all inside a single app that deploys in minutes.
+
+### Why SAs should care
+
+- **Immediate customer value** — Deploy into any workspace and within minutes surface the top 10 queries burning the most DBUs. Customers see cost savings opportunities in their first session.
+- **Showcases the platform** — One app that demonstrates System Tables, `ai_query()` with Foundation Models, Databricks Apps, Lakebase, Unity Catalog metadata, and multi-workspace governance working together. It's a living reference architecture.
+- **Drives the right conversations** — Warehouse Health recommendations quantify the cost of doing nothing ("$2,400/month wasted on queue wait") and compare Classic vs Serverless side-by-side. This naturally leads to right-sizing, Serverless migration, and governance discussions.
+- **Zero infrastructure** — No external databases, no API keys, no Docker containers. Just `app.yaml` + a SQL Warehouse + optional Lakebase. The app authenticates via the platform's native OAuth, reads only system tables, and creates nothing in the customer's lakehouse.
+- **Extensible** — Built as clean TypeScript with a modular architecture. SAs can fork it, add customer-specific scoring rules, plug in additional system tables, or white-label it as a starting point for the customer's own internal tool.
+
+---
+
 ## What it does
 
 1. **Discovers** slow and high-impact SQL queries from `system.query.history` across all warehouses and workspaces
@@ -91,7 +107,7 @@ Optionally backed by **Lakebase** (Databricks-managed Postgres) for durable stat
 | `query_actions` | User actions (dismiss, watch, applied) per query pattern | 30 days |
 | `health_snapshots` | Warehouse health analysis history for trend comparison | 90 days |
 
-Auto-migration runs on first use. Gracefully degrades to no-op if Lakebase is not configured — the app works fully without persistence, just without caching or action state.
+Auto-migration runs on first use. When deployed, connects via platform-injected `PGHOST`/`PGUSER` with OAuth token authentication. For local dev, falls back to `LAKEBASE_CONNECTION_STRING`. Gracefully degrades to no-op if Lakebase is not configured — the app works fully without persistence, just without caching or action state.
 
 ---
 
@@ -224,6 +240,70 @@ All authentication is handled automatically via the service principal OAuth cred
 
 ---
 
+## Setting up Lakebase (optional)
+
+Lakebase enables persistence for AI rewrite caching, query actions (dismiss/watch/applied), and warehouse health trend tracking. The app works fully without it — you just lose state on restart.
+
+### Step 1: Create a Lakebase instance
+
+1. Go to **Compute > OLTP Database** in your Databricks workspace
+2. Click **Create** and provide a name (e.g. `databricks-sql-copilot-db`)
+3. Select size (XS is fine for this use case) and create
+
+### Step 2: Add the Database resource to your app
+
+1. Go to your app's **Configure** page
+2. Click **+ Add resource**
+3. Select **Database**, choose your Lakebase instance and the `databricks_postgres` database
+4. Set Permission to **Can connect**
+5. Set Resource key to `lakebase`
+
+This automatically injects `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPORT`, and `PGSSLMODE` into the app's environment and creates a Postgres role for the app's service principal.
+
+### Step 3: Grant schema permissions
+
+The app needs permission to create tables in the `public` schema. Open the **Lakebase SQL editor** (from your Lakebase instance, click **New Query**) and run:
+
+```sql
+-- Replace with your app's DATABRICKS_CLIENT_ID (visible in the app's Environment tab)
+GRANT ALL ON SCHEMA public TO "<your-app-client-id>";
+```
+
+For example:
+
+```sql
+GRANT ALL ON SCHEMA public TO "54870a07-43ed-4293-83df-3932c70c8898";
+```
+
+### Step 4: Deploy and verify
+
+Deploy or restart the app. Check the logs for:
+
+```
+[lakebase] Pool created via platform (PGHOST + OAuth)
+[lakebase] Initialised successfully
+```
+
+The app auto-creates 3 tables (`rewrite_cache`, `query_actions`, `health_snapshots`) and an index on first startup. You can verify in the Lakebase SQL editor:
+
+```sql
+SELECT table_name, table_type
+FROM information_schema.tables
+WHERE table_schema = 'public'
+ORDER BY table_name;
+```
+
+### Troubleshooting
+
+| Log message | Cause | Fix |
+|---|---|---|
+| `No Lakebase config found` | Database resource not added to app | Add it in Configure (Step 2) |
+| `Failed to get OAuth token` | Missing `https://` or bad credentials | Check `DATABRICKS_HOST` includes protocol |
+| `permission denied for schema public` | GRANT not run | Run the GRANT statement (Step 3) |
+| `Initialised successfully` | Everything works | Nothing to do |
+
+---
+
 ## Configuration
 
 ### `app.yaml`
@@ -232,9 +312,9 @@ All authentication is handled automatically via the service principal OAuth cred
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
-  - name: LAKEBASE_CONNECTION_STRING
-    valueFrom: lakebase
 ```
+
+Lakebase does **not** need an `app.yaml` entry — the platform auto-injects `PGHOST` and `PGUSER` when you add a Database resource to the app.
 
 ### Environment variables
 
@@ -245,7 +325,9 @@ env:
 | `DATABRICKS_CLIENT_SECRET` | Auto-injected | Service principal OAuth client secret |
 | `DATABRICKS_APP_PORT` | Auto-injected | Port to bind to |
 | `DATABRICKS_WAREHOUSE_ID` | Resource binding | SQL warehouse ID |
-| `LAKEBASE_CONNECTION_STRING` | Resource binding | Postgres connection string (optional) |
+| `PGHOST` | Auto-injected (Database resource) | Lakebase hostname (optional) |
+| `PGUSER` | Auto-injected (Database resource) | Lakebase Postgres role (optional) |
+| `LAKEBASE_CONNECTION_STRING` | `.env.local` only | Full Postgres URL for local dev (optional) |
 | `DATABRICKS_TOKEN` | `.env.local` only | PAT for local development |
 
 ---
@@ -255,7 +337,7 @@ env:
 - **Billing lag offset** — All time windows are shifted back 6 hours to ensure `system.billing.usage` data is fully populated. A "1 hour" window actually shows data from 7h ago to 6h ago.
 - **3-phase loading** — Core data loads first (instant dashboard), costs stream in second, AI triage third. Each phase uses Suspense for progressive rendering.
 - **Client-side router cache** — `experimental.staleTimes` keeps the dashboard cached for 5 minutes, making back-navigation instant.
-- **Lakebase persistence** — Optional Postgres backing for rewrite cache, query actions, and health snapshots. Auto-migrates tables on first use; gracefully degrades to no-op.
+- **Lakebase persistence** — Optional Postgres backing for rewrite cache, query actions, and health snapshots. Authenticates via OAuth token (platform-injected `PGHOST`/`PGUSER`). Auto-migrates tables on first use; gracefully degrades to no-op.
 - **SQL fingerprinting** — Queries are normalised (literals masked, whitespace collapsed, IN-lists deduplicated) to group identical patterns.
 - **Graceful degradation** — Each data source loads independently with timeouts. If one fails, the rest still display.
 - **System query filtering** — Queries matching `-- This is a system generated query %` are excluded from analysis.

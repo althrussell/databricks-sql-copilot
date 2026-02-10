@@ -94,7 +94,13 @@ export async function triageCandidates(
 
   const prompt = `You are a Databricks SQL performance triage expert. Below are ${top.length} slow query patterns from a SQL warehouse. For each one, provide:
 1. A concise 1-2 sentence insight explaining the root cause and what to do
-2. An action category: "rewrite" (SQL can be improved), "cluster" (table needs Liquid Clustering/Z-ORDER), "optimize" (needs OPTIMIZE/VACUUM/compaction), "resize" (warehouse sizing issue), or "investigate" (needs deeper analysis)
+2. An action category: "rewrite" (SQL can be improved), "cluster" (table needs Liquid Clustering), "optimize" (needs OPTIMIZE/VACUUM/compaction), "resize" (warehouse sizing issue), or "investigate" (needs deeper analysis)
+
+Key Databricks best practices to flag:
+- Low pruning efficiency (<50%) almost always means the table needs Liquid Clustering — recommend it explicitly.
+- Large full table scans suggest missing clustering or partitioning — recommend Liquid Clustering and Predictive Optimization.
+- If a query reads many GB with poor cache hit rates, the table likely needs OPTIMIZE and Predictive Optimization enabled.
+- Always prefer Liquid Clustering over Z-ORDER on all tables.
 
 Focus on the most impactful observation per query. Be specific — reference actual metrics.
 

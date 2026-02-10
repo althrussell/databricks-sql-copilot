@@ -71,10 +71,31 @@ export interface RewriteResponse {
 const DATABRICKS_KNOWLEDGE = `
 ## Databricks SQL & Delta Lake Optimisation Knowledge
 
+### THE THREE PILLARS — Always Check and Recommend
+
+**1. Managed Tables (Unity Catalog)**
+- If a table is EXTERNAL, STRONGLY recommend converting to a MANAGED Unity Catalog table. Managed tables get automatic governance, lineage tracking, and are eligible for Predictive Optimization.
+- External tables pointing to cloud storage (s3://, abfss://, gs://) miss out on UC-managed lifecycle, automatic compaction, and statistics collection.
+- Migration: \`CREATE TABLE catalog.schema.new_table AS SELECT * FROM old_external_table\`, then update consumers.
+
+**2. Liquid Clustering (replaces Z-ORDER and partitioning)**
+- If a Delta table has "Liquid Clustering: NONE", ALWAYS recommend enabling it. This is the single most impactful storage optimisation.
+- Liquid Clustering replaces both Z-ORDER and traditional partitioning. It auto-compacts and co-locates data based on frequently filtered columns.
+- Enable: \`ALTER TABLE t CLUSTER BY (col1, col2)\`. Choose columns used in WHERE, JOIN ON, and GROUP BY clauses.
+- If a table uses Z-ORDER or traditional partitioning, recommend migrating to Liquid Clustering.
+- If a table already has Liquid Clustering, verify the clustering columns match the query's filter patterns.
+
+**3. Predictive Optimization**
+- If a table is MANAGED Delta and does NOT have Predictive Optimization enabled, recommend enabling it.
+- Predictive Optimization automatically runs OPTIMIZE, VACUUM, and ANALYZE based on usage patterns — zero manual maintenance.
+- Enable: \`ALTER TABLE t SET TBLPROPERTIES ('delta.enableOptimizeWrite' = 'true')\` and enable Predictive Optimization at the schema or catalog level via: \`ALTER SCHEMA s ENABLE PREDICTIVE OPTIMIZATION\` or \`ALTER CATALOG c ENABLE PREDICTIVE OPTIMIZATION\`.
+- This eliminates the need for manual OPTIMIZE/VACUUM schedules. Check maintenance history — if OPTIMIZE/VACUUM/ANALYZE have NEVER run or are stale, this is a strong signal that Predictive Optimization should be enabled.
+- Predictive Optimization is only available for MANAGED Delta tables — another reason to convert external tables.
+
 ### Delta Lake storage optimisations
-- **Z-ORDER**: Co-locate related data in the same files. Best on high-cardinality columns used in WHERE / JOIN. E.g. \`OPTIMIZE table ZORDER BY (col)\`.
-- **Liquid Clustering** (preferred over Z-ORDER on newer tables): \`ALTER TABLE t CLUSTER BY (col1, col2)\`. Auto-compacts and co-locates. Recommend migrating from Z-ORDER.
-- **OPTIMIZE / VACUUM**: Compact small files. Reduce file-open overhead and improve scan speed.
+- **Z-ORDER**: Legacy co-location method. \`OPTIMIZE table ZORDER BY (col)\`. PREFER Liquid Clustering instead on all new and existing tables.
+- **Liquid Clustering** (PREFERRED — see Pillar 2 above): \`ALTER TABLE t CLUSTER BY (col1, col2)\`. Auto-compacts and co-locates. Always recommend over Z-ORDER.
+- **OPTIMIZE / VACUUM**: Compact small files. Reduce file-open overhead and improve scan speed. With Predictive Optimization enabled, these run automatically.
 - **Bloom Filters**: Speed up point-lookup WHERE clauses. Recommend for high-cardinality string columns used in equality filters.
 - **Deletion Vectors**: Enable fast deletes without rewriting data files. Check if table supports them.
 - **Data Skipping**: Delta auto-collects min/max stats on first 32 columns. Ensure filtered columns are within the first 32 or reorder columns.
@@ -104,12 +125,16 @@ const DATABRICKS_KNOWLEDGE = `
 
 ### Using the Table Metadata section (when provided)
 - If a "Table Metadata" section is included, it contains REAL information about the tables in the query
+- **ALWAYS check Table Type** — if EXTERNAL, recommend converting to MANAGED Unity Catalog table (see Pillar 1)
+- **ALWAYS check Liquid Clustering** — if NONE, recommend enabling it with appropriate columns (see Pillar 2)
+- **ALWAYS check Maintenance History** — if OPTIMIZE/VACUUM/ANALYZE have never run or are stale, recommend enabling Predictive Optimization (see Pillar 3)
 - ALWAYS check partitionColumns and clusteringColumns before recommending Z-ORDER or Liquid Clustering — the table may already be clustered
 - If a table is a Metric View, the measure definitions show the actual aggregation SQL — use this to recommend specific optimisations on the SOURCE table
 - Use numFiles and sizeInBytes to judge whether OPTIMIZE is needed (many small files = yes)
 - Use column types and comments to understand the data model
 - If a MEASURE() function is used, the metric view definition reveals the underlying expressions — recommend indexing/clustering on columns used in FILTER clauses within measures
 - Check the Maintenance History section: if OPTIMIZE has not run recently (>7 days) and pruning efficiency is poor or there are many small files, strongly recommend running OPTIMIZE. If VACUUM has never run, recommend VACUUM to clean up old files and reduce storage cost. If ANALYZE has never run, recommend ANALYZE TABLE to compute statistics — the query optimiser uses these for better join ordering and predicate pushdown.
+- If Predictive Optimization is NOT enabled and the table is Managed Delta, this should be the FIRST infrastructure recommendation — it eliminates manual maintenance entirely.
 
 ### Databricks-specific SQL features to leverage
 - **QUALIFY**: Filter window function results without wrapping in subquery. \`QUALIFY ROW_NUMBER() OVER (...) = 1\`.
@@ -148,7 +173,11 @@ You MUST respond with valid JSON matching this exact structure (no markdown, no 
 - If the query is already well-optimised, say so honestly
 - Include 1-5 root causes and 2-5 recommendations
 - Each recommendation should say WHAT to do, WHERE to do it, and WHY it will help
-- Consider the full execution timeline: compilation → queue wait → compute wait → execution → fetch`;
+- Consider the full execution timeline: compilation → queue wait → compute wait → execution → fetch
+
+## Output quality
+- Be thorough but structured — each field should be complete and actionable
+- For infrastructure recommendations (Managed Table, Liquid Clustering, Predictive Optimization), include the exact SQL command to run`;
 
 const SYSTEM_PROMPT_REWRITE = `You are a senior Databricks SQL performance engineer. Your job is to analyse slow queries and propose optimised rewrites that maintain exact semantic equivalence.
 
@@ -181,7 +210,12 @@ You MUST respond with valid JSON matching this exact structure (no markdown, no 
 - Do NOT introduce Databricks-only syntax that would break if tables don't exist
 - ALWAYS include at least one risk, even for safe rewrites
 - The validationPlan must include: (1) row count comparison, (2) value spot-check, (3) edge case check
-- If the query CANNOT be meaningfully improved via rewrite alone, say so in summary and return the original SQL with infrastructure recommendations (Z-ORDER, OPTIMIZE, warehouse sizing, etc.)
+- If the query CANNOT be meaningfully improved via rewrite alone, say so in summary and return the original SQL with infrastructure recommendations (Liquid Clustering, OPTIMIZE, Predictive Optimization, warehouse sizing, etc.)
+
+## Output quality
+- Be thorough and detailed — the model supports large outputs
+- For infrastructure recommendations (Managed Table, Liquid Clustering, Predictive Optimization), include the exact SQL command to run
+- Structure the rationale clearly with numbered steps explaining each change
 
 ## Common rewrite patterns (apply where evidence supports them)
 1. Push predicates below JOINs → reduces shuffle and scan
@@ -316,6 +350,7 @@ function renderTableMetadata(
     if (t.detail) {
       const d = t.detail;
       lines.push(`Format: ${d.format ?? "unknown"}`);
+      lines.push(`Table Type: ${d.isManaged ? "MANAGED (Unity Catalog)" : `EXTERNAL (${d.location ?? "unknown location"})`}`);
       if (d.sizeInBytes != null) {
         lines.push(`Size: ${fmtBytes(d.sizeInBytes)} (${d.numFiles ?? "?"} files)`);
       }
@@ -327,17 +362,31 @@ function renderTableMetadata(
       if (d.clusteringColumns.length > 0) {
         lines.push(`Liquid Clustering: ${d.clusteringColumns.join(", ")}`);
       } else {
-        lines.push("Liquid Clustering: NONE");
+        lines.push("Liquid Clustering: NONE — RECOMMEND ENABLING");
       }
       if (d.tableFeatures.length > 0) {
         lines.push(`Table Features: ${d.tableFeatures.join(", ")}`);
       }
+
+      // Predictive Optimization detection
+      const hasPredOpt =
+        d.properties["delta.enableOptimizeWrite"] === "true" ||
+        d.properties["delta.enablePredictiveOptimization"] === "true" ||
+        d.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
+      if (hasPredOpt) {
+        lines.push("Predictive Optimization: ENABLED");
+      } else if (d.format?.toLowerCase() === "delta" && d.isManaged) {
+        lines.push("Predictive Optimization: NOT ENABLED — STRONGLY RECOMMEND ENABLING");
+      } else if (d.format?.toLowerCase() === "delta" && !d.isManaged) {
+        lines.push("Predictive Optimization: NOT AVAILABLE (requires MANAGED table — convert from EXTERNAL first)");
+      }
+
       // Surface Z-ORDER info from properties
       const zorder = Object.entries(d.properties)
         .filter(([k]) => k.toLowerCase().includes("zorder"))
         .map(([k, v]) => `${k}=${v}`);
       if (zorder.length > 0) {
-        lines.push(`Z-ORDER: ${zorder.join(", ")}`);
+        lines.push(`Z-ORDER: ${zorder.join(", ")} — consider migrating to Liquid Clustering`);
       }
     }
 
@@ -380,7 +429,14 @@ function renderTableMetadata(
       lines.push(`  Last VACUUM: ${fmtMaintOp(mh.lastVacuum, mh.vacuumCount)}`);
       lines.push(`  Last ANALYZE: ${fmtMaintOp(mh.lastAnalyze, mh.analyzeCount)}`);
     } else {
-      lines.push("Maintenance History: unavailable (no permissions or not a Delta table)");
+      const fmt = t.detail?.format?.toLowerCase();
+      if (fmt && fmt !== "delta") {
+        lines.push(`Maintenance History: NOT AVAILABLE — table format is ${fmt.toUpperCase()}, not Delta. OPTIMIZE, VACUUM, and ANALYZE only apply to Delta tables. Consider converting to Delta for better performance.`);
+      } else if (fmt === "delta") {
+        lines.push("Maintenance History: unavailable (no permissions to run describe_history, but table IS Delta format)");
+      } else {
+        lines.push("Maintenance History: unavailable (table format unknown — could not retrieve DESCRIBE DETAIL)");
+      }
     }
 
     blocks.push(lines.join("\n"));

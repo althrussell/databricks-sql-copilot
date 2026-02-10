@@ -25,16 +25,22 @@ const MODELS = {
   rewrite: "databricks-claude-opus-4-6",
 } as const;
 
-/** Max input tokens per mode (guardrail) */
+/** Max input tokens per mode (guardrail — Claude Opus 4.6 has 200K ITPM) */
 const MAX_INPUT_TOKENS = {
-  diagnose: 4000,
-  rewrite: 6000,
+  diagnose: 30_000,
+  rewrite: 50_000,
 } as const;
 
-/** Max output tokens per mode */
+/**
+ * Max output tokens per mode.
+ * Claude Opus 4.6 OTPM = 20,000 tokens/min (pay-per-token).
+ * Pre-admission rejects if max_tokens > remaining OTPM budget,
+ * so we keep well under 20K to avoid 429 rejections.
+ * See: https://docs.databricks.com/aws/en/machine-learning/foundation-model-apis/limits
+ */
 const MAX_OUTPUT_TOKENS = {
-  diagnose: 2000,
-  rewrite: 4000,
+  diagnose: 8_192,
+  rewrite: 16_000,
 } as const;
 
 export type AiResult =
@@ -69,16 +75,21 @@ export async function callAi(
   const maxTokens = MAX_OUTPUT_TOKENS[mode];
 
   // Build the ai_query SQL
-  // ai_query(endpoint, request, modelParameters => named_struct(...))
   const combinedPrompt = `${prompt.systemPrompt}\n\n${prompt.userPrompt}`;
   const escapedPrompt = escapeForSql(combinedPrompt);
 
+  // Pass max_tokens via modelParameters (INT cast ensures correct type)
   const sql = `
     SELECT ai_query(
       '${model}',
-      '${escapedPrompt}'
+      '${escapedPrompt}',
+      modelParameters => named_struct('max_tokens', CAST(${maxTokens} AS INT))
     ) AS response
   `;
+
+  console.log(
+    `[ai] calling ${model} mode=${mode}, prompt ~${prompt.estimatedTokens} input tokens, max_tokens=${maxTokens}`
+  );
 
   try {
     const result = await executeQuery<{ response: string }>(sql);
@@ -89,12 +100,28 @@ export async function callAi(
 
     const rawResponse = result.rows[0].response;
 
+    // Log response size for debugging truncation issues
+    const responseChars = rawResponse.length;
+    const estimatedTokens = Math.ceil(responseChars / 4); // ~4 chars per token
+    console.log(
+      `[ai] ${mode} response received: ${responseChars.toLocaleString()} chars (~${estimatedTokens.toLocaleString()} tokens), max_tokens was ${maxTokens.toLocaleString()}`
+    );
+
+    // Detect likely truncation: response doesn't end with a closing brace/bracket
+    const trimmed = rawResponse.trim();
+    const lastChar = trimmed[trimmed.length - 1];
+    if (lastChar !== "}" && lastChar !== "`") {
+      console.warn(
+        `[ai] Response appears TRUNCATED — last char is '${lastChar}', last 200 chars: ...${trimmed.slice(-200)}`
+      );
+    }
+
     // Parse JSON from the response (may be wrapped in markdown code blocks)
     const parsed = parseAiJson(rawResponse, mode);
     if (!parsed) {
       return {
         status: "error",
-        message: "AI response was not valid JSON. Raw response has been logged.",
+        message: `AI response was not valid JSON (${responseChars.toLocaleString()} chars / ~${estimatedTokens.toLocaleString()} tokens received, max_tokens=${maxTokens.toLocaleString()}). The response was likely truncated by ai_query().`,
       };
     }
 
@@ -121,7 +148,75 @@ export async function callAi(
 }
 
 /**
+ * Attempt to repair truncated JSON by closing unclosed brackets/braces/strings.
+ * This handles the common case where ai_query() output is cut off mid-response.
+ */
+function repairTruncatedJson(json: string): string {
+  let repaired = json.trim();
+
+  // Track open structures
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+
+  for (let i = 0; i < repaired.length; i++) {
+    const ch = repaired[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") {
+      if (stack.length > 0 && stack[stack.length - 1] === ch) stack.pop();
+    }
+  }
+
+  // If we're inside a string, close it
+  if (inString) {
+    // Truncate back to the last clean break (comma, start of key, etc.)
+    const lastQuote = repaired.lastIndexOf('"');
+    if (lastQuote > 0) {
+      // Check if we can find a natural sentence end before the last quote
+      const lastCleanBreak = Math.max(
+        repaired.lastIndexOf('",'),
+        repaired.lastIndexOf('"]'),
+        repaired.lastIndexOf('"}')
+      );
+      if (lastCleanBreak > 0) {
+        repaired = repaired.slice(0, lastCleanBreak + 1);
+        // Recompute stack after truncation
+        return repairTruncatedJson(repaired);
+      }
+    }
+    repaired += '"';
+    // Recompute since we closed the string
+    return repairTruncatedJson(repaired);
+  }
+
+  // Remove trailing comma before closing
+  repaired = repaired.replace(/,\s*$/, "");
+
+  // Close unclosed structures in reverse order
+  while (stack.length > 0) {
+    repaired += stack.pop();
+  }
+
+  return repaired;
+}
+
+/**
  * Parse AI response, handling common JSON extraction patterns.
+ * Includes repair logic for truncated responses.
  */
 function parseAiJson(
   raw: string,
@@ -142,19 +237,60 @@ function parseAiJson(
     jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
   }
 
+  // First attempt: parse as-is
+  const result = tryParseAndValidate(jsonStr, mode);
+  if (result) return result;
+
+  // Second attempt: repair truncated JSON and retry
+  console.warn("[ai] JSON parse failed, attempting truncation repair...");
+  const rawFromBrace = firstBrace !== -1 ? raw.trim().slice(firstBrace) : jsonStr;
+  const repaired = repairTruncatedJson(rawFromBrace);
+
+  const repairedResult = tryParseAndValidate(repaired, mode);
+  if (repairedResult) {
+    console.log("[ai] Successfully repaired truncated JSON response");
+    return repairedResult;
+  }
+
+  console.error("[ai] Failed to parse AI JSON response (even after repair):", jsonStr.slice(0, 500));
+  return null;
+}
+
+function tryParseAndValidate(
+  jsonStr: string,
+  mode: AiMode
+): DiagnoseResponse | RewriteResponse | null {
   try {
     const parsed = JSON.parse(jsonStr);
 
-    // Validate minimum required fields
+    // Must have at least a summary to be useful
+    if (!parsed.summary) return null;
+
+    // Ensure summary is an array
+    if (typeof parsed.summary === "string") {
+      parsed.summary = [parsed.summary];
+    }
+
     if (mode === "diagnose") {
-      if (!parsed.summary || !parsed.rootCauses) return null;
-      return parsed as DiagnoseResponse;
+      // Fill defaults for missing fields on truncated responses
+      return {
+        summary: parsed.summary,
+        rootCauses: Array.isArray(parsed.rootCauses) ? parsed.rootCauses : [],
+        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+      } as DiagnoseResponse;
     } else {
-      if (!parsed.summary || !parsed.rewrittenSql || !parsed.risks) return null;
-      return parsed as RewriteResponse;
+      // For rewrite, fill defaults — show what we have even if truncated
+      const result: RewriteResponse = {
+        summary: parsed.summary,
+        rootCauses: Array.isArray(parsed.rootCauses) ? parsed.rootCauses : [],
+        rewrittenSql: parsed.rewrittenSql ?? "(Response truncated — rewritten SQL not available. Try re-analysing.)",
+        rationale: parsed.rationale ?? "",
+        risks: Array.isArray(parsed.risks) ? parsed.risks : [],
+        validationPlan: Array.isArray(parsed.validationPlan) ? parsed.validationPlan : [],
+      };
+      return result;
     }
   } catch {
-    console.error("[ai] Failed to parse AI JSON response:", jsonStr.slice(0, 500));
     return null;
   }
 }

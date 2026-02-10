@@ -25,6 +25,9 @@ export interface ColumnInfo {
 
 export interface TableDetail {
   format: string | null;
+  location: string | null;
+  /** true if Unity Catalog managed table (no external location) */
+  isManaged: boolean;
   numFiles: number | null;
   sizeInBytes: number | null;
   partitionColumns: string[];
@@ -175,9 +178,19 @@ async function fetchDescribeDetail(
       return {};
     };
 
+    const location = (row.location as string) ?? null;
+    // Managed tables in Unity Catalog store data under the metastore's managed storage.
+    // External tables have explicit cloud storage paths.
+    const EXTERNAL_PREFIXES = ["s3://", "abfss://", "gs://", "wasbs://", "adl://"];
+    const isManaged = location
+      ? !EXTERNAL_PREFIXES.some((p) => location.startsWith(p))
+      : true; // No location = likely managed
+
     return {
       detail: {
         format: (row.format as string) ?? null,
+        location,
+        isManaged,
         numFiles: row.numFiles != null ? Number(row.numFiles) : null,
         sizeInBytes: row.sizeInBytes != null ? Number(row.sizeInBytes) : null,
         partitionColumns: parseArray(row.partitionColumns),

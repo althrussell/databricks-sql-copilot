@@ -32,7 +32,8 @@ async function getOAuthToken(host: string, clientId: string, clientSecret: strin
     return _tokenCache.token;
   }
 
-  const tokenUrl = `${host.replace(/\/+$/, "")}/oidc/v1/token`;
+  const cleanHost = host.replace(/\/+$/, "");
+  const tokenUrl = `${cleanHost.startsWith("https://") ? cleanHost : `https://${cleanHost}`}/oidc/v1/token`;
   const body = new URLSearchParams({
     grant_type: "client_credentials",
     scope: "all-apis",
