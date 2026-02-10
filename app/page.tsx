@@ -285,7 +285,7 @@ async function AiTriageLoader({
 }: {
   candidates: Candidate[];
 }) {
-  const TRIAGE_TIMEOUT_MS = 120_000; // 2 minutes max
+  const TRIAGE_TIMEOUT_MS = 300_000; // 5 minutes max
 
   let triageMap: Record<string, { insight: string; action: string }> = {};
   try {
