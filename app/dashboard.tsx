@@ -59,6 +59,9 @@ import {
   PanelRightOpen,
   Copy,
   Check,
+  Activity,
+  Server,
+  Shield,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,6 +120,7 @@ import type {
   Candidate,
   QueryOrigin,
   WarehouseCost,
+  WarehouseRecommendation,
 } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 
@@ -409,9 +413,9 @@ function TriageCell({
 }) {
   if (loading) {
     return (
-      <div className="space-y-1 max-w-[200px]">
-        <div className="h-3 w-24 rounded bg-muted animate-pulse" />
-        <div className="h-3 w-36 rounded bg-muted/60 animate-pulse" />
+      <div className="space-y-1 max-w-[160px]">
+        <div className="h-3 w-20 rounded bg-muted animate-pulse" />
+        <div className="h-3 w-32 rounded bg-muted/60 animate-pulse" />
       </div>
     );
   }
@@ -422,7 +426,7 @@ function TriageCell({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="max-w-[200px] space-y-1 cursor-help">
+        <div className="max-w-[160px] space-y-1 cursor-help">
           <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${style}`}>
             {insight.action}
           </span>
@@ -495,18 +499,18 @@ function ExpandedRowContent({
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0 overflow-hidden">
       {/* ── Left column ── */}
-      <div className="space-y-3">
+      <div className="space-y-3 min-w-0 overflow-hidden">
         {/* AI Insight */}
         {triageInsight && (
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">AI Insight</h4>
-            <div className="flex items-start gap-2">
+            <div className="flex items-start gap-2 min-w-0">
               <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 mt-0.5 ${TRIAGE_ACTION_STYLE[triageInsight.action] ?? TRIAGE_ACTION_STYLE.investigate}`}>
                 {triageInsight.action}
               </span>
-              <p className="text-xs leading-relaxed">{triageInsight.insight}</p>
+              <p className="text-xs leading-relaxed break-words min-w-0">{triageInsight.insight}</p>
             </div>
           </div>
         )}
@@ -533,14 +537,14 @@ function ExpandedRowContent({
         )}
 
         {/* Sample SQL */}
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
           <div className="flex items-center justify-between">
             <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Sample SQL</h4>
             <Button variant="ghost" size="icon-xs" onClick={handleCopySql}>
               {sqlCopied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
             </Button>
           </div>
-          <pre className="text-[11px] font-mono bg-muted/50 rounded-md p-2 max-h-32 overflow-auto whitespace-pre-wrap break-words border border-border/50">
+          <pre className="text-[11px] font-mono bg-muted/50 rounded-md p-2 max-h-32 overflow-auto whitespace-pre-wrap break-all border border-border/50">
             {candidate.sampleQueryText.slice(0, 500)}
             {candidate.sampleQueryText.length > 500 ? "\u2026" : ""}
           </pre>
@@ -548,9 +552,9 @@ function ExpandedRowContent({
       </div>
 
       {/* ── Right column ── */}
-      <div className="space-y-3">
+      <div className="space-y-3 min-w-0 overflow-hidden">
         {/* Time Breakdown */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Avg Time Breakdown</h4>
           {totalTime > 0 && (
             <div className="flex h-2.5 rounded-full overflow-hidden bg-muted">
@@ -575,7 +579,7 @@ function ExpandedRowContent({
           )}
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
             {TIME_SEGMENT_COLORS.map((seg, i) => (
-              <span key={seg.key} className="inline-flex items-center gap-1">
+              <span key={seg.key} className="inline-flex items-center gap-1 whitespace-nowrap">
                 <span className={`inline-block h-2 w-2 rounded-full ${seg.color}`} />
                 {seg.label}: {formatDuration(timeSegments[i])}
               </span>
@@ -587,18 +591,18 @@ function ExpandedRowContent({
         <div className="space-y-1">
           <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">I/O Stats</h4>
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
-            <span className="text-muted-foreground">Read</span>
-            <span className="font-medium tabular-nums">{formatBytes(ws.totalReadBytes)}</span>
-            <span className="text-muted-foreground">Written</span>
-            <span className="font-medium tabular-nums">{formatBytes(ws.totalWrittenBytes)}</span>
-            <span className="text-muted-foreground">Spill</span>
-            <span className="font-medium tabular-nums">{formatBytes(ws.totalSpilledBytes)}</span>
-            <span className="text-muted-foreground">Shuffle</span>
-            <span className="font-medium tabular-nums">{formatBytes(ws.totalShuffleBytes)}</span>
-            <span className="text-muted-foreground">Pruning Eff.</span>
-            <span className="font-medium tabular-nums">{Math.round(ws.avgPruningEfficiency * 100)}%</span>
-            <span className="text-muted-foreground">IO Cache</span>
-            <span className="font-medium tabular-nums">{Math.round(ws.avgIoCachePercent)}%</span>
+            <span className="text-muted-foreground truncate">Read</span>
+            <span className="font-medium tabular-nums text-right">{formatBytes(ws.totalReadBytes)}</span>
+            <span className="text-muted-foreground truncate">Written</span>
+            <span className="font-medium tabular-nums text-right">{formatBytes(ws.totalWrittenBytes)}</span>
+            <span className="text-muted-foreground truncate">Spill</span>
+            <span className="font-medium tabular-nums text-right">{formatBytes(ws.totalSpilledBytes)}</span>
+            <span className="text-muted-foreground truncate">Shuffle</span>
+            <span className="font-medium tabular-nums text-right">{formatBytes(ws.totalShuffleBytes)}</span>
+            <span className="text-muted-foreground truncate">Pruning Eff.</span>
+            <span className="font-medium tabular-nums text-right">{Math.round(ws.avgPruningEfficiency * 100)}%</span>
+            <span className="text-muted-foreground truncate">IO Cache</span>
+            <span className="font-medium tabular-nums text-right">{Math.round(ws.avgIoCachePercent)}%</span>
           </div>
         </div>
 
@@ -610,7 +614,7 @@ function ExpandedRowContent({
               {reasons.map((r, i) => (
                 <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
                   <ArrowRight className="h-3 w-3 shrink-0 mt-0.5 text-primary" />
-                  {r}
+                  <span className="break-words min-w-0">{r}</span>
                 </li>
               ))}
             </ul>
@@ -1194,6 +1198,317 @@ function DetailPanel({
   );
 }
 
+/* ── Warehouse Health Card ── */
+
+function WarehouseHealthCard({
+  rec,
+  workspaceUrl,
+  onFilterWarehouse,
+  serverlessCompareId,
+  onToggleServerless,
+}: {
+  rec: WarehouseRecommendation;
+  workspaceUrl: string;
+  onFilterWarehouse: (id: string) => void;
+  serverlessCompareId: string | null;
+  onToggleServerless: (id: string) => void;
+}) {
+  const m = rec.metrics;
+  const borderColor =
+    rec.severity === "critical"
+      ? "border-l-red-500"
+      : rec.severity === "warning"
+        ? "border-l-amber-500"
+        : rec.severity === "info"
+          ? "border-l-blue-500"
+          : "border-l-emerald-500";
+
+  const severityBadge =
+    rec.severity === "critical"
+      ? { label: "CRITICAL", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" }
+      : rec.severity === "warning"
+        ? { label: "WARNING", className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" }
+        : rec.severity === "info"
+          ? { label: "INFO", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" }
+          : { label: "HEALTHY", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" };
+
+  const showServerless = serverlessCompareId === m.warehouseId;
+  const warehouseLink = buildLink(workspaceUrl, "warehouse", m.warehouseId);
+
+  // Sparkline: max value for normalisation
+  const sparkMax = Math.max(
+    ...m.dailyBreakdown.map((d) => d.spillGiB + d.capacityQueueMin + d.coldStartMin),
+    1
+  );
+
+  const confidenceBadge =
+    rec.confidence === "high"
+      ? { className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" }
+      : rec.confidence === "medium"
+        ? { className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" }
+        : { className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" };
+
+  return (
+    <Card className={`border-l-4 ${borderColor} py-0 overflow-hidden`}>
+      <CardContent className="py-4 space-y-3">
+        {/* Header */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge className={`text-[10px] px-1.5 py-0 ${severityBadge.className}`}>
+            {severityBadge.label}
+          </Badge>
+          <span className="text-sm font-semibold">{m.warehouseName}</span>
+          <span className="text-xs text-muted-foreground">
+            {m.size} {m.warehouseType} | {m.minClusters}&ndash;{m.maxClusters} clusters
+          </span>
+          {m.isServerless && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0">Serverless</Badge>
+          )}
+        </div>
+
+        {/* Headline */}
+        <p className="text-base font-bold text-foreground">{rec.headline}</p>
+
+        {/* Metrics: spill, queue, cold starts with sustained indicator */}
+        <div className="flex flex-wrap gap-4 text-xs">
+          {m.totalSpillGiB > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Flame className="h-3 w-3 text-red-500" />
+              <span className="font-medium">Spill:</span>
+              <span className="tabular-nums">{m.totalSpillGiB.toFixed(1)} GiB/wk</span>
+              <span className="text-muted-foreground">({m.daysWithSpill}/7 days)</span>
+            </span>
+          )}
+          {m.totalCapacityQueueMin > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Hourglass className="h-3 w-3 text-amber-500" />
+              <span className="font-medium">Queue:</span>
+              <span className="tabular-nums">{m.totalCapacityQueueMin.toFixed(1)} min/wk</span>
+              <span className="text-muted-foreground">({m.daysWithCapacityQueue}/7 days)</span>
+            </span>
+          )}
+          {m.totalColdStartMin > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Timer className="h-3 w-3 text-blue-500" />
+              <span className="font-medium">Cold start:</span>
+              <span className="tabular-nums">{m.totalColdStartMin.toFixed(1)} min/wk</span>
+              <span className="text-muted-foreground">({m.daysWithColdStart}/7 days)</span>
+            </span>
+          )}
+        </div>
+
+        {/* Two-column: Cost Impact + Cost of Doing Nothing */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {/* Cost of Change */}
+          <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-1.5">
+            <div className="flex items-center gap-1.5 mb-1">
+              <DollarSign className="h-3 w-3 text-muted-foreground" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Cost of Change</span>
+            </div>
+            <div className="flex items-baseline gap-2 text-xs">
+              <span className="text-muted-foreground">Current:</span>
+              <span className="font-semibold tabular-nums">{formatDollars(rec.currentWeeklyCost)}/wk</span>
+            </div>
+            <div className="flex items-baseline gap-2 text-xs">
+              <span className="text-muted-foreground">After:</span>
+              <span className="font-semibold tabular-nums">~{formatDollars(rec.estimatedNewWeeklyCost)}/wk</span>
+            </div>
+            <div className="flex items-baseline gap-2 text-xs">
+              <span className="text-muted-foreground">Delta:</span>
+              <span className={`font-bold tabular-nums ${rec.costDelta > 0 ? "text-red-600 dark:text-red-400" : rec.costDelta < 0 ? "text-emerald-600 dark:text-emerald-400" : ""}`}>
+                {rec.costDelta >= 0 ? "+" : ""}{formatDollars(Math.abs(rec.costDelta))}/wk
+                ({rec.costDelta >= 0 ? "+" : ""}{rec.costDeltaPercent.toFixed(0)}%)
+              </span>
+            </div>
+          </div>
+
+          {/* Cost of Doing Nothing */}
+          <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-1.5">
+            <div className="flex items-center gap-1.5 mb-1">
+              <AlertTriangle className="h-3 w-3 text-muted-foreground" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Cost of Doing Nothing</span>
+            </div>
+            <div className="flex items-baseline gap-2 text-xs">
+              <span className="text-muted-foreground">Queue wait:</span>
+              <span className="font-semibold tabular-nums">{rec.wastedQueueMinutes.toFixed(1)} min/wk</span>
+            </div>
+            {rec.wastedQueueCostEstimate > 0 && (
+              <div className="flex items-baseline gap-2 text-xs">
+                <span className="text-muted-foreground">Wasted compute:</span>
+                <span className="font-bold tabular-nums text-amber-600 dark:text-amber-400">~{formatDollars(rec.wastedQueueCostEstimate)}/wk</span>
+              </div>
+            )}
+            <div className="flex items-baseline gap-2 text-xs">
+              <span className="text-muted-foreground">Users impacted:</span>
+              <span className="font-semibold tabular-nums">{m.uniqueUsers}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Who's Affected */}
+        {(m.topUsers.length > 0 || m.topSources.length > 0) && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <Users className="h-3 w-3 text-muted-foreground" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Who&apos;s Affected</span>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              {m.topUsers.length > 0 && (
+                <span>
+                  <span className="text-muted-foreground">Top users: </span>
+                  {m.topUsers.slice(0, 3).map((u, i) => (
+                    <span key={u.name}>
+                      {i > 0 && ", "}
+                      <span className="font-medium">{u.name.split("@")[0]}</span>
+                      <span className="text-muted-foreground"> ({u.queryCount})</span>
+                    </span>
+                  ))}
+                </span>
+              )}
+              {m.topSources.length > 0 && (
+                <span>
+                  <span className="text-muted-foreground">Top sources: </span>
+                  {m.topSources.slice(0, 2).map((s, i) => (
+                    <span key={s.sourceId}>
+                      {i > 0 && ", "}
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 mr-0.5">{s.sourceType}</Badge>
+                      <span className="font-medium truncate">{s.sourceId.slice(0, 12)}</span>
+                      <span className="text-muted-foreground"> ({s.queryCount})</span>
+                    </span>
+                  ))}
+                </span>
+              )}
+              <span className="text-muted-foreground">
+                Total: {m.totalQueries.toLocaleString()} queries from {m.uniqueUsers} users
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Confidence + 7-day sparkline */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge className={`text-[10px] px-1.5 py-0 cursor-help ${confidenceBadge.className}`}>
+                <Shield className="h-2.5 w-2.5 mr-0.5" />
+                {rec.confidence.toUpperCase()} confidence
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              {rec.confidenceReason}
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Mini 7-day sparkline */}
+          {m.dailyBreakdown.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-end gap-px h-6 cursor-help">
+                  {m.dailyBreakdown.map((d) => {
+                    const total = d.spillGiB + d.capacityQueueMin + d.coldStartMin;
+                    const pct = sparkMax > 0 ? (total / sparkMax) * 100 : 0;
+                    const barColor =
+                      total > sparkMax * 0.7
+                        ? "bg-red-500"
+                        : total > sparkMax * 0.3
+                          ? "bg-amber-500"
+                          : "bg-emerald-500";
+                    return (
+                      <div
+                        key={d.date}
+                        className={`w-3 rounded-t-sm ${barColor} transition-all`}
+                        style={{ height: `${Math.max(pct, 5)}%` }}
+                      />
+                    );
+                  })}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                7-day trend: spill + queue + cold starts per day
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+
+        {/* Rationale */}
+        <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line border-t border-border pt-2">
+          {rec.rationale}
+        </div>
+
+        {/* Serverless comparison (expandable) */}
+        {rec.serverlessCostEstimate != null && !m.isServerless && (
+          <>
+            {showServerless && (
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 space-y-1.5 text-xs">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Server className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">Serverless Comparison</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground">Current cost:</span>
+                  <span className="font-semibold tabular-nums">{formatDollars(rec.currentWeeklyCost)}/wk</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground">Serverless est.:</span>
+                  <span className="font-semibold tabular-nums">{formatDollars(rec.serverlessCostEstimate)}/wk</span>
+                </div>
+                {rec.serverlessSavings != null && (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-muted-foreground">Savings:</span>
+                    <span className={`font-bold tabular-nums ${rec.serverlessSavings > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                      {rec.serverlessSavings > 0 ? "" : "+"}{formatDollars(Math.abs(rec.serverlessSavings))}/wk
+                    </span>
+                  </div>
+                )}
+                {rec.coldStartMinutesSaved != null && rec.coldStartMinutesSaved > 0 && (
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-muted-foreground">Cold starts eliminated:</span>
+                    <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{rec.coldStartMinutesSaved.toFixed(1)} min/wk</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1.5"
+            onClick={() => onFilterWarehouse(m.warehouseId)}
+          >
+            <Search className="h-3 w-3" />
+            View Queries
+          </Button>
+          {warehouseLink && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5"
+              onClick={() => window.open(warehouseLink, "_blank", "noopener,noreferrer")}
+            >
+              <ExternalLink className="h-3 w-3" />
+              Open in Databricks
+            </Button>
+          )}
+          {rec.serverlessCostEstimate != null && !m.isServerless && (
+            <Button
+              variant={showServerless ? "secondary" : "outline"}
+              size="sm"
+              className="h-7 text-xs gap-1.5"
+              onClick={() => onToggleServerless(m.warehouseId)}
+            >
+              <Server className="h-3 w-3" />
+              {showServerless ? "Hide" : "Compare"} Serverless
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 /* ── Main Dashboard ── */
 
 export interface DataSourceHealth {
@@ -1287,6 +1602,34 @@ export function Dashboard({
       if (check()) clearInterval(interval);
     }, 500);
     return () => clearInterval(interval);
+  }, []);
+
+  // ── Warehouse Health Report (on-demand) ──
+  const [healthRecommendations, setHealthRecommendations] = useState<WarehouseRecommendation[] | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const [healthElapsed, setHealthElapsed] = useState<number | null>(null);
+  const [showHealthReport, setShowHealthReport] = useState(false);
+  const [serverlessCompareId, setServerlessCompareId] = useState<string | null>(null);
+
+  const fetchWarehouseHealth = useCallback(async () => {
+    setHealthLoading(true);
+    setHealthError(null);
+    setShowHealthReport(true);
+    try {
+      const res = await fetch("/api/warehouse-health", { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setHealthRecommendations(data.recommendations ?? []);
+      setHealthElapsed(data.elapsed ?? null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setHealthError(msg);
+      setHealthRecommendations(null);
+    } finally {
+      setHealthLoading(false);
+    }
   }, []);
 
   // Combine health info — enrichment entries override initial ones (dedup by name)
@@ -1663,6 +2006,30 @@ export function Dashboard({
             </Select>
           )}
 
+          <div className="h-6 w-px bg-border hidden md:block" />
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={showHealthReport ? "default" : "outline"}
+                size="sm"
+                className="h-9 gap-2 text-xs"
+                onClick={fetchWarehouseHealth}
+                disabled={healthLoading}
+              >
+                {healthLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Activity className="h-3.5 w-3.5" />
+                )}
+                Warehouse Health
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              Analyse 7 days of warehouse performance to find sizing, scaling, and cost optimisation opportunities.
+            </TooltipContent>
+          </Tooltip>
+
           {isPending && (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-primary ml-2" />
           )}
@@ -1809,6 +2176,118 @@ export function Dashboard({
                 </div>
                 <p className="text-sm font-bold text-muted-foreground leading-tight">{"\u2014"}</p>
               </Card>
+            )}
+          </div>
+        )}
+
+        {/* ── Warehouse Health Report ── */}
+        {showHealthReport && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary" />
+                <h2 className="text-sm font-semibold">Warehouse Health Report</h2>
+                <Badge variant="outline" className="text-[10px]">7-day analysis</Badge>
+                {healthElapsed != null && !healthLoading && (
+                  <span className="text-[10px] text-muted-foreground">({(healthElapsed / 1000).toFixed(1)}s)</span>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={() => setShowHealthReport(false)}
+              >
+                <XCircle className="h-3 w-3 mr-1" /> Close
+              </Button>
+            </div>
+
+            {healthLoading && (
+              <Card className="py-8">
+                <CardContent className="flex flex-col items-center gap-3">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Analysing 7 days of warehouse performance...</p>
+                  <p className="text-[11px] text-muted-foreground">Checking spill, queue wait, cold starts, and costs across all warehouses</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {healthError && (
+              <Card className="border-red-200 dark:border-red-800">
+                <CardContent className="flex items-center gap-3 py-3">
+                  <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                  <p className="text-xs text-red-600 dark:text-red-400">{healthError}</p>
+                  <Button variant="outline" size="sm" className="ml-auto h-7 text-xs" onClick={fetchWarehouseHealth}>
+                    Retry
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {healthRecommendations && !healthLoading && (
+              <>
+                {/* Summary */}
+                {(() => {
+                  const actionable = healthRecommendations.filter((r) => r.action !== "no_change");
+                  const healthy = healthRecommendations.filter((r) => r.action === "no_change");
+                  const criticalCount = actionable.filter((r) => r.severity === "critical").length;
+                  const warningCount = actionable.filter((r) => r.severity === "warning").length;
+                  const infoCount = actionable.filter((r) => r.severity === "info").length;
+                  return (
+                    <div className="flex items-center gap-4 text-xs">
+                      {criticalCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">
+                          <AlertTriangle className="h-3 w-3" /> {criticalCount} critical
+                        </span>
+                      )}
+                      {warningCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+                          <AlertTriangle className="h-3 w-3" /> {warningCount} warning
+                        </span>
+                      )}
+                      {infoCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
+                          <Info className="h-3 w-3" /> {infoCount} optimisation
+                        </span>
+                      )}
+                      {healthy.length > 0 && (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="h-3 w-3" /> {healthy.length} healthy
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Recommendation Cards */}
+                <div className="space-y-3">
+                  {healthRecommendations.filter((r) => r.action !== "no_change").map((rec) => (
+                    <WarehouseHealthCard
+                      key={rec.metrics.warehouseId}
+                      rec={rec}
+                      workspaceUrl={workspaceUrl}
+                      onFilterWarehouse={(id) => setWarehouseFilter(id)}
+                      serverlessCompareId={serverlessCompareId}
+                      onToggleServerless={(id) => setServerlessCompareId((prev) => (prev === id ? null : id))}
+                    />
+                  ))}
+                </div>
+
+                {/* Healthy warehouses summary */}
+                {healthRecommendations.filter((r) => r.action === "no_change").length > 0 && (
+                  <Card className="border-l-2 border-l-emerald-500 py-3 px-4">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      <span className="text-sm font-medium">
+                        {healthRecommendations.filter((r) => r.action === "no_change").length} warehouse{healthRecommendations.filter((r) => r.action === "no_change").length !== 1 ? "s" : ""} healthy
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {"\u2014"} no action needed
+                      </span>
+                    </div>
+                  </Card>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1971,21 +2450,21 @@ export function Dashboard({
             )}
 
             {filtered.length > 0 && (<Card>
-              <div className="rounded-xl overflow-hidden">
-                <Table>
+              <div className="rounded-xl overflow-x-auto">
+                <Table className="min-w-[1100px]">
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="w-10">#</TableHead>
-                      <TableHead className="w-24">
+                      <TableHead className="w-20">
                         <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors" onClick={() => handleSort("impact")}>
                           Impact <SortIcon col="impact" />
                         </button>
                       </TableHead>
-                      <TableHead>Query</TableHead>
-                      <TableHead className="min-w-[180px]">AI Insight</TableHead>
-                      <TableHead className="w-14 text-center">Source</TableHead>
-                      <TableHead>Warehouse</TableHead>
-                      <TableHead>User / Source</TableHead>
+                      <TableHead className="max-w-[200px]">Query</TableHead>
+                      <TableHead className="max-w-[180px]">AI Insight</TableHead>
+                      <TableHead className="w-12 text-center">Source</TableHead>
+                      <TableHead className="max-w-[130px]">Warehouse</TableHead>
+                      <TableHead className="max-w-[120px]">User / Source</TableHead>
                       <TableHead className="text-right">
                         <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("runs")}>
                           Runs <SortIcon col="runs" />
@@ -2057,12 +2536,12 @@ export function Dashboard({
                               <TableCell>
                                 <ScoreBar score={c.impactScore} />
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="max-w-[200px]">
                                 <div className="space-y-1 min-w-0">
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <p className="font-mono text-xs truncate max-w-[300px] cursor-help">
-                                        {truncateQuery(c.sampleQueryText)}
+                                      <p className="font-mono text-xs truncate cursor-help">
+                                        {truncateQuery(c.sampleQueryText, 45)}
                                       </p>
                                     </TooltipTrigger>
                                     <TooltipContent
@@ -2096,7 +2575,7 @@ export function Dashboard({
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="max-w-[180px]">
                                 <TriageCell
                                   insight={triageInsights[c.fingerprint] ?? null}
                                   loading={!triageLoaded}
@@ -2114,9 +2593,9 @@ export function Dashboard({
                                   </TooltipContent>
                                 </Tooltip>
                               </TableCell>
-                              <TableCell>
-                                <div className="min-w-0 max-w-[140px]">
-                                  <span className="text-sm truncate block">
+                              <TableCell className="max-w-[130px]">
+                                <div className="min-w-0">
+                                  <span className="text-xs truncate block">
                                     {c.warehouseName}
                                   </span>
                                   {c.workspaceName && c.workspaceName !== "Unknown" && (
@@ -2126,11 +2605,11 @@ export function Dashboard({
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="max-w-[120px]">
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <div className="max-w-[120px] cursor-help">
-                                      <span className="text-sm truncate block">
+                                    <div className="min-w-0 cursor-help">
+                                      <span className="text-xs truncate block">
                                         {c.topUsers[0]?.split("@")[0] ?? "\u2014"}
                                       </span>
                                       <span className="text-[10px] text-muted-foreground truncate block">

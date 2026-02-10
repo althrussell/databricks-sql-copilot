@@ -195,3 +195,93 @@ export interface AnalysisScope {
   warehouseId?: string; // optional — all warehouses if omitted
   timeWindow: TimeWindow;
 }
+
+/* ── Warehouse Health Report types ── */
+
+/** Per-day breakdown for the 7-day sparkline */
+export interface DailyBreakdown {
+  date: string; // YYYY-MM-DD
+  queries: number;
+  spillGiB: number;
+  capacityQueueMin: number;
+  coldStartMin: number;
+}
+
+/** Aggregated health metrics for one warehouse over 7 days */
+export interface WarehouseHealthMetrics {
+  warehouseId: string;
+  warehouseName: string;
+  // Config
+  size: string;
+  warehouseType: string;
+  minClusters: number;
+  maxClusters: number;
+  autoStopMinutes: number;
+  isServerless: boolean;
+  // 7-day totals
+  totalQueries: number;
+  uniqueUsers: number;
+  totalSpillGiB: number;
+  totalCapacityQueueMin: number;
+  totalColdStartMin: number;
+  avgRuntimeSec: number;
+  p95Sec: number;
+  // Cost
+  weeklyDBUs: number;
+  weeklyCostDollars: number;
+  // Sustained-pressure: how many of 7 days exceeded thresholds
+  daysWithSpill: number;
+  daysWithCapacityQueue: number;
+  daysWithColdStart: number;
+  activeDays: number;
+  // Per-day breakdown (for sparkline/trend)
+  dailyBreakdown: DailyBreakdown[];
+  // Who's affected
+  topUsers: Array<{ name: string; queryCount: number }>;
+  topSources: Array<{ sourceId: string; sourceType: string; queryCount: number }>;
+}
+
+/** Action the recommendation engine can suggest */
+export type WarehouseAction =
+  | "upsize"
+  | "downsize"
+  | "add_clusters"
+  | "upsize_and_scale"
+  | "serverless"
+  | "increase_autostop"
+  | "decrease_autostop"
+  | "no_change";
+
+/** Confidence level based on sustained-pressure analysis */
+export type ConfidenceLevel = "high" | "medium" | "low";
+
+/** Severity indicating urgency */
+export type RecommendationSeverity = "critical" | "warning" | "info" | "healthy";
+
+/** Full recommendation for a single warehouse */
+export interface WarehouseRecommendation {
+  metrics: WarehouseHealthMetrics;
+  // The recommendation
+  action: WarehouseAction;
+  severity: RecommendationSeverity;
+  headline: string; // "Upsize to LARGE"
+  rationale: string; // multi-line explanation
+  confidence: ConfidenceLevel;
+  confidenceReason: string; // "Sustained pattern: spill on 6/7 days, 1247 queries"
+  // Cost impact
+  currentWeeklyCost: number;
+  estimatedNewWeeklyCost: number;
+  costDelta: number; // positive = more expensive
+  costDeltaPercent: number;
+  // Waste: what doing nothing costs
+  wastedQueueMinutes: number;
+  wastedQueueCostEstimate: number;
+  // Target config
+  targetSize?: string;
+  targetMaxClusters?: number;
+  targetAutoStop?: number;
+  // Serverless comparison (for Classic/Pro warehouses)
+  serverlessCostEstimate?: number;
+  serverlessSavings?: number;
+  coldStartMinutesSaved?: number;
+}
