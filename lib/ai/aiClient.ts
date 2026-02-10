@@ -78,12 +78,16 @@ export async function callAi(
   const combinedPrompt = `${prompt.systemPrompt}\n\n${prompt.userPrompt}`;
   const escapedPrompt = escapeForSql(combinedPrompt);
 
-  // Pass max_tokens via modelParameters (INT cast ensures correct type)
+  // NOTE: We intentionally do NOT pass max_tokens via modelParameters.
+  // Claude Opus 4.6 uses adaptive thinking that counts against max_tokens.
+  // Setting a high max_tokens (e.g. 16K) lets the model allocate most of it
+  // to thinking, leaving very little for the visible response (~2.3K tokens).
+  // By omitting max_tokens, Databricks uses its default which may give us a
+  // better thinking-to-output ratio. The prompt instructs the model to be concise.
   const sql = `
     SELECT ai_query(
       '${model}',
-      '${escapedPrompt}',
-      modelParameters => named_struct('max_tokens', CAST(${maxTokens} AS INT))
+      '${escapedPrompt}'
     ) AS response
   `;
 

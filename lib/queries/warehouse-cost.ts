@@ -42,15 +42,17 @@ export async function getWarehouseCosts(
     (new Date(startTime).getTime() + new Date(endTime).getTime()) / 2;
   const midpoint = new Date(midpointMs).toISOString();
 
-  // ── Query 1: DBU totals per warehouse + SKU (fast, no join) ──
+  // ── Query 1: DBU totals per warehouse + SKU ──
+  // Uses usage_date (DATE column) for partition pruning — NOT CAST(usage_start_time AS DATE).
+  // The schema says: "usage_date: this field can be used for faster aggregation by date"
   const dbuSql = `
     SELECT
       u.usage_metadata.warehouse_id AS warehouse_id,
       u.sku_name,
       SUM(u.usage_quantity) AS total_dbus
     FROM system.billing.usage u
-    WHERE CAST(u.usage_start_time AS DATE) >= '${startDate}'
-      AND CAST(u.usage_start_time AS DATE) <= '${endDate}'
+    WHERE u.usage_date >= '${startDate}'
+      AND u.usage_date <= '${endDate}'
       AND u.usage_unit = 'DBU'
       AND u.sku_name LIKE '%SQL_COMPUTE%'
       AND u.usage_metadata.warehouse_id IS NOT NULL

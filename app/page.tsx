@@ -30,12 +30,26 @@ export const revalidate = 300; // seconds
  */
 const BILLING_LAG_HOURS = 6;
 
+/**
+ * Quantize a timestamp to a fixed interval. This ensures that server-component
+ * re-renders within the same interval produce identical SQL parameters, letting
+ * Next.js's `revalidate` cache serve the same result without hitting the DB.
+ *
+ * Example: with QUANTIZE_MS = 300_000 (5 min), timestamps at 12:02 and 12:04
+ * both round to 12:00, producing the same start/end → same cache key.
+ */
+const QUANTIZE_MS = 300_000; // 5 minutes — matches revalidate = 300
+
 function timeRangeForPreset(preset: string): { start: string; end: string } {
   const now = new Date();
   const lagMs = BILLING_LAG_HOURS * 60 * 60 * 1000;
 
-  // End = now minus billing lag (most recent point where billing data exists)
-  const end = new Date(now.getTime() - lagMs);
+  // Quantize "now" to a 5-minute boundary so re-renders reuse the same time range
+  const quantizedNow = Math.floor(now.getTime() / QUANTIZE_MS) * QUANTIZE_MS;
+
+  // End = quantized now minus billing lag
+  const endMs = quantizedNow - lagMs;
+  const end = new Date(endMs);
 
   // Window size based on preset — supports "1h", "6h", "24h", "7d", and custom "Nh"
   const knownMs: Record<string, number> = {
@@ -52,7 +66,7 @@ function timeRangeForPreset(preset: string): { start: string; end: string } {
     windowMs = match ? parseInt(match[1], 10) * 60 * 60 * 1000 : knownMs["1h"];
   }
 
-  const start = new Date(end.getTime() - windowMs);
+  const start = new Date(endMs - windowMs);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
