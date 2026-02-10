@@ -1,3 +1,5 @@
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
+  - name: LAKEBASE_CONNECTION_STRING
+    valueFrom: lakebase

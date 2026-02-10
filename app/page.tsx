@@ -7,6 +7,7 @@ import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
 import { triageCandidates } from "@/lib/ai/triage";
+import { getQueryActions } from "@/lib/dbx/actions-store";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import type {
   Candidate,
@@ -131,6 +132,23 @@ async function CoreDashboardLoader({
   }
 
   const workspaceUrl = getWorkspaceBaseUrl();
+
+  // Fetch query actions from Lakebase (non-blocking — empty map on failure)
+  let queryActionsObj: Record<string, { action: "dismiss" | "watch" | "applied"; note: string | null; actedBy: string | null; actedAt: string }> = {};
+  try {
+    const actionsMap = await getQueryActions();
+    for (const [fp, act] of actionsMap) {
+      queryActionsObj[fp] = {
+        action: act.action,
+        note: act.note,
+        actedBy: act.actedBy,
+        actedAt: act.actedAt,
+      };
+    }
+  } catch (err) {
+    console.error("[page] query actions fetch failed:", err);
+  }
+
   // Merge with any failed sources tracked by catchAndLogTracked (dedup by name)
   const coreFailedEntries = failedSources.splice(0);
   const coreHealthMap = new Map<string, DataSourceHealth>();
@@ -149,6 +167,7 @@ async function CoreDashboardLoader({
       workspaceUrl={workspaceUrl}
       fetchError={fetchError}
       dataSourceHealth={allCoreHealth}
+      initialQueryActions={queryActionsObj}
     >
       {/* Phase 2 enrichment streams in via nested Suspense */}
       <Suspense fallback={null}>

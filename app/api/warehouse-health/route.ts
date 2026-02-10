@@ -11,6 +11,7 @@ import {
   aggregateByWarehouse,
   generateRecommendations,
 } from "@/lib/domain/warehouse-recommendations";
+import { saveHealthSnapshot, getLastSnapshot } from "@/lib/dbx/health-store";
 import type { WarehouseRecommendation } from "@/lib/domain/types";
 
 /**
@@ -93,6 +94,35 @@ export async function POST(): Promise<NextResponse> {
         b.metrics.weeklyCostDollars - a.metrics.weeklyCostDollars
     );
 
+    // Save snapshots to Lakebase and look up previous severity for trend indicators
+    const metricsMap = new Map(metrics.map((m) => [m.warehouseId, m]));
+    const previousSeverities: Record<string, { severity: string; snapshotAt: string } | null> = {};
+
+    await Promise.all(
+      recommendations.map(async (rec) => {
+        const whId = rec.metrics.warehouseId;
+        // Fetch previous snapshot BEFORE saving the new one
+        try {
+          const prev = await getLastSnapshot(whId);
+          previousSeverities[whId] = prev
+            ? { severity: prev.severity, snapshotAt: prev.snapshotAt }
+            : null;
+        } catch {
+          previousSeverities[whId] = null;
+        }
+
+        // Save the new snapshot
+        const m = metricsMap.get(whId);
+        if (m) {
+          try {
+            await saveHealthSnapshot(whId, rec, m);
+          } catch (err) {
+            console.error(`[warehouse-health] snapshot save failed for ${whId}:`, err);
+          }
+        }
+      })
+    );
+
     const elapsed = Date.now() - start;
     console.log(
       `[warehouse-health] done: ${recommendations.length} recommendations in ${(elapsed / 1000).toFixed(1)}s`
@@ -100,6 +130,7 @@ export async function POST(): Promise<NextResponse> {
 
     return NextResponse.json({
       recommendations,
+      previousSeverities,
       elapsed,
     });
   } catch (err: unknown) {

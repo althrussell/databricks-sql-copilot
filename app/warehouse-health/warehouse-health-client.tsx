@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
   Clock,
   Cpu,
@@ -15,10 +17,12 @@ import {
   Info,
   Layers,
   Loader2,
+  Minus,
   Search,
   Server,
   Settings2,
   Shield,
+  Sparkles,
   Timer,
   Users,
   XCircle,
@@ -166,11 +170,13 @@ function WarehouseHealthCard({
   workspaceUrl,
   serverlessCompareId,
   onToggleServerless,
+  previousSeverity,
 }: {
   rec: WarehouseRecommendation;
   workspaceUrl: string;
   serverlessCompareId: string | null;
   onToggleServerless: (id: string) => void;
+  previousSeverity: { severity: string; snapshotAt: string } | null;
 }) {
   const router = useRouter();
   const m = rec.metrics;
@@ -216,6 +222,45 @@ function WarehouseHealthCard({
           <Badge className={`text-[10px] px-1.5 py-0 ${severityBadge.className}`}>
             {severityBadge.label}
           </Badge>
+          {/* Trend indicator */}
+          {previousSeverity ? (() => {
+            const severityRank: Record<string, number> = { healthy: 0, info: 1, warning: 2, critical: 3 };
+            const prevRank = severityRank[previousSeverity.severity] ?? 0;
+            const curRank = severityRank[rec.severity] ?? 0;
+            if (curRank > prevRank) {
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-red-600 dark:text-red-400 font-medium cursor-help">
+                      <ArrowUp className="h-3 w-3" /> Worsened
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Was {previousSeverity.severity} on {new Date(previousSeverity.snapshotAt).toLocaleDateString()}</TooltipContent>
+                </Tooltip>
+              );
+            } else if (curRank < prevRank) {
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium cursor-help">
+                      <ArrowDown className="h-3 w-3" /> Improved
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Was {previousSeverity.severity} on {new Date(previousSeverity.snapshotAt).toLocaleDateString()}</TooltipContent>
+                </Tooltip>
+              );
+            } else {
+              return (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                  <Minus className="h-3 w-3" /> Unchanged
+                </span>
+              );
+            }
+          })() : (
+            <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+              <Sparkles className="h-3 w-3" /> First analysis
+            </span>
+          )}
           <span className="text-sm font-semibold">{m.warehouseName}</span>
           {m.isServerless && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0">Serverless</Badge>
@@ -528,6 +573,7 @@ function WarehouseHealthCard({
 
 export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }) {
   const [recommendations, setRecommendations] = useState<WarehouseRecommendation[] | null>(null);
+  const [previousSeverities, setPreviousSeverities] = useState<Record<string, { severity: string; snapshotAt: string } | null>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
@@ -543,6 +589,7 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setRecommendations(data.recommendations ?? []);
+      setPreviousSeverities(data.previousSeverities ?? {});
       setElapsed(data.elapsed ?? null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -660,6 +707,7 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
                     workspaceUrl={workspaceUrl}
                     serverlessCompareId={serverlessCompareId}
                     onToggleServerless={(id) => setServerlessCompareId((prev) => (prev === id ? null : id))}
+                    previousSeverity={previousSeverities[rec.metrics.warehouseId] ?? null}
                   />
                 ))}
               </div>

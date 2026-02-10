@@ -59,9 +59,10 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { explainScore } from "@/lib/domain/scoring";
-import { rewriteQuery } from "@/lib/ai/actions";
+import { rewriteQuery, type AiResultWithCache } from "@/lib/ai/actions";
 import type { Candidate, QueryOrigin } from "@/lib/domain/types";
 import type { DiagnoseResponse, RewriteResponse } from "@/lib/ai/promptBuilder";
+// AiResult imported via aiClient for AiResultsPanel type compat
 import type { AiResult } from "@/lib/ai/aiClient";
 
 /* ── Helpers ── */
@@ -417,7 +418,7 @@ export function QueryDetailClient({
 }: QueryDetailClientProps) {
   const [copied, setCopied] = useState(false);
   const [analysing, startAnalyse] = useTransition();
-  const [aiResult, setAiResult] = useState<AiResult | null>(null);
+  const [aiResult, setAiResult] = useState<AiResultWithCache | null>(null);
   const [activeAiTab, setActiveAiTab] = useState("summary");
   const autoTriggered = useRef(false);
   const ws = candidate.windowStats;
@@ -480,9 +481,9 @@ export function QueryDetailClient({
       : null;
 
   /** Run a full AI analysis (rewrite mode gives diagnosis + rewrite in one shot) */
-  function runAnalysis() {
+  function runAnalysis(forceRefresh = false) {
     startAnalyse(async () => {
-      const result = await rewriteQuery(candidate);
+      const result = await rewriteQuery(candidate, forceRefresh);
       setAiResult(result);
       setActiveAiTab("summary");
     });
@@ -545,7 +546,7 @@ export function QueryDetailClient({
                       size="sm"
                       className="gap-1.5"
                       disabled={analysing}
-                      onClick={runAnalysis}
+                      onClick={() => runAnalysis(!!aiResult?.cached)}
                     >
                       {analysing ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -615,6 +616,7 @@ export function QueryDetailClient({
             fingerprint={candidate.fingerprint}
             originalSql={candidate.sampleQueryText}
             sqlEditorLink={sqlEditorLink}
+            cached={aiResult.cached}
           />
         )}
 
@@ -795,6 +797,7 @@ function AiResultsPanel({
   fingerprint,
   originalSql,
   sqlEditorLink,
+  cached,
 }: {
   result: AiResult;
   activeTab: string;
@@ -802,6 +805,7 @@ function AiResultsPanel({
   fingerprint: string;
   originalSql: string;
   sqlEditorLink: string | null;
+  cached?: boolean;
 }) {
   const [rewriteCopied, setRewriteCopied] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -863,6 +867,11 @@ function AiResultsPanel({
           <CardTitle className="text-sm flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" />
             AI Analysis
+            {cached && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400">
+                Cached
+              </Badge>
+            )}
           </CardTitle>
         </div>
       </CardHeader>

@@ -61,6 +61,11 @@ import {
   Copy,
   Check,
   Activity,
+  Eye,
+  EyeOff,
+  Ban,
+  Bookmark,
+  CheckCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -472,10 +477,16 @@ function ExpandedRowContent({
   candidate,
   triageInsight,
   reasons,
+  currentAction,
+  onSetAction,
+  onClearAction,
 }: {
   candidate: Candidate;
   triageInsight: { insight: string; action: string } | null;
   reasons: string[];
+  currentAction?: QueryActionType | null;
+  onSetAction: (fp: string, action: QueryActionType) => void;
+  onClearAction: (fp: string) => void;
 }) {
   const ws = candidate.windowStats;
   const [sqlCopied, setSqlCopied] = useState(false);
@@ -621,6 +632,38 @@ function ExpandedRowContent({
             </ul>
           </div>
         )}
+
+        {/* ── Actions ── */}
+        <div className="flex items-center gap-1.5 pt-2 border-t border-border">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Actions:</span>
+          {currentAction === "dismiss" ? (
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-muted-foreground" onClick={() => onClearAction(candidate.fingerprint)}>
+              <Eye className="h-3 w-3" /> Undismiss
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-muted-foreground" onClick={() => onSetAction(candidate.fingerprint, "dismiss")}>
+              <Ban className="h-3 w-3" /> Dismiss
+            </Button>
+          )}
+          {currentAction === "watch" ? (
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-amber-600 dark:text-amber-400" onClick={() => onClearAction(candidate.fingerprint)}>
+              <Bookmark className="h-3 w-3 fill-current" /> Watching
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-muted-foreground" onClick={() => onSetAction(candidate.fingerprint, "watch")}>
+              <Bookmark className="h-3 w-3" /> Watch
+            </Button>
+          )}
+          {currentAction === "applied" ? (
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-emerald-600 dark:text-emerald-400" onClick={() => onClearAction(candidate.fingerprint)}>
+              <CheckCheck className="h-3 w-3" /> Applied
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-muted-foreground" onClick={() => onSetAction(candidate.fingerprint, "applied")}>
+              <CheckCheck className="h-3 w-3" /> Mark Applied
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -849,11 +892,17 @@ function DetailPanel({
   open,
   onOpenChange,
   workspaceUrl,
+  currentAction,
+  onSetAction,
+  onClearAction,
 }: {
   candidate: Candidate | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceUrl: string;
+  currentAction?: QueryActionType | null;
+  onSetAction: (fp: string, action: QueryActionType) => void;
+  onClearAction: (fp: string) => void;
 }) {
   if (!candidate) return null;
   const reasons = explainScore(candidate.scoreBreakdown);
@@ -966,6 +1015,37 @@ function DetailPanel({
               <ArrowRight className="h-3.5 w-3.5" />
               Details
             </Button>
+          </div>
+
+          {/* ── Actions ── */}
+          <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-border">
+            {currentAction === "dismiss" ? (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={() => onClearAction(candidate.fingerprint)}>
+                <Eye className="h-3 w-3" /> Undismiss
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "dismiss")}>
+                <Ban className="h-3 w-3" /> Dismiss
+              </Button>
+            )}
+            {currentAction === "watch" ? (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-amber-600 dark:text-amber-400" onClick={() => onClearAction(candidate.fingerprint)}>
+                <Bookmark className="h-3 w-3 fill-current" /> Watching
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "watch")}>
+                <Bookmark className="h-3 w-3" /> Watch
+              </Button>
+            )}
+            {currentAction === "applied" ? (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-emerald-600 dark:text-emerald-400" onClick={() => onClearAction(candidate.fingerprint)}>
+                <CheckCheck className="h-3 w-3" /> Applied
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "applied")}>
+                <CheckCheck className="h-3 w-3" /> Mark Applied
+              </Button>
+            )}
           </div>
         </SheetHeader>
 
@@ -1210,6 +1290,14 @@ export interface DataSourceHealth {
   rowCount: number;
 }
 
+export type QueryActionType = "dismiss" | "watch" | "applied";
+export interface QueryActionEntry {
+  action: QueryActionType;
+  note: string | null;
+  actedBy: string | null;
+  actedAt: string;
+}
+
 interface DashboardProps {
   warehouses: WarehouseOption[];
   initialCandidates: Candidate[];
@@ -1221,6 +1309,8 @@ interface DashboardProps {
   workspaceUrl: string;
   fetchError: string | null;
   dataSourceHealth?: DataSourceHealth[];
+  /** Pre-loaded query actions from Lakebase */
+  initialQueryActions?: Record<string, QueryActionEntry>;
   children?: React.ReactNode;
 }
 
@@ -1234,6 +1324,7 @@ export function Dashboard({
   workspaceUrl,
   fetchError,
   dataSourceHealth: initialHealth = [],
+  initialQueryActions = {},
   children,
 }: DashboardProps) {
   // ── Enrichment data (streamed in from Phase 2) ──
@@ -1326,6 +1417,53 @@ export function Dashboard({
   const [flagFilter, setFlagFilter] = useState<string | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
+  // ── Query Actions (Lakebase persistence) ──
+  const [queryActions, setQueryActions] = useState<Record<string, QueryActionEntry>>(initialQueryActions);
+  const [showDismissed, setShowDismissed] = useState(false);
+
+  const setAction = useCallback(async (fingerprint: string, action: QueryActionType) => {
+    // Optimistic update
+    setQueryActions((prev) => ({
+      ...prev,
+      [fingerprint]: { action, note: null, actedBy: null, actedAt: new Date().toISOString() },
+    }));
+    try {
+      await fetch("/api/query-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fingerprint, action }),
+      });
+    } catch (err) {
+      console.error("[query-actions] set failed:", err);
+    }
+  }, []);
+
+  const clearAction = useCallback(async (fingerprint: string) => {
+    setQueryActions((prev) => {
+      const next = { ...prev };
+      delete next[fingerprint];
+      return next;
+    });
+    try {
+      await fetch("/api/query-actions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fingerprint }),
+      });
+    } catch (err) {
+      console.error("[query-actions] clear failed:", err);
+    }
+  }, []);
+
+  const dismissedCount = useMemo(
+    () => Object.values(queryActions).filter((a) => a.action === "dismiss").length,
+    [queryActions]
+  );
+  const appliedCount = useMemo(
+    () => Object.values(queryActions).filter((a) => a.action === "applied").length,
+    [queryActions]
+  );
+
   // ── Expandable rows ──
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   function toggleExpand(fingerprint: string) {
@@ -1360,9 +1498,13 @@ export function Dashboard({
     return relevantCosts.reduce((s, c) => s + c.totalDollars, 0);
   }, [warehouseCosts, warehouseFilter]);
 
-  // Client-side filter by warehouse, flags, search text, and min duration
+  // Client-side filter by warehouse, flags, search text, min duration, and dismissed
   const filtered = useMemo(() => {
     let result = candidates;
+    // Filter dismissed unless toggled on
+    if (!showDismissed) {
+      result = result.filter((c) => queryActions[c.fingerprint]?.action !== "dismiss");
+    }
     // Min p95 duration filter
     if (minDurationSec > 0) {
       const minMs = minDurationSec * 1000;
@@ -1390,7 +1532,7 @@ export function Dashboard({
       );
     }
     return result;
-  }, [candidates, warehouseFilter, workspaceFilter, flagFilter, tableSearch, minDurationSec]);
+  }, [candidates, warehouseFilter, workspaceFilter, flagFilter, tableSearch, minDurationSec, showDismissed, queryActions]);
 
   // Sorted view
   const sorted = useMemo(() => {
@@ -1748,7 +1890,7 @@ export function Dashboard({
 
         {/* ── KPI tiles ── */}
         {!fetchError && (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
             {/* Runs */}
             <Card className="border-l-2 border-l-blue-500 py-3 px-4">
               <div className="flex items-center gap-1.5 mb-1">
@@ -1820,6 +1962,17 @@ export function Dashboard({
                 <p className="text-sm font-bold text-muted-foreground leading-tight">{"\u2014"}</p>
               </Card>
             )}
+
+            {/* Applied */}
+            <Card className={`border-l-2 py-3 px-4 ${appliedCount > 0 ? "border-l-emerald-500" : "border-l-muted"}`}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <CheckCheck className={`h-3.5 w-3.5 ${appliedCount > 0 ? "text-emerald-500" : "text-muted-foreground"}`} />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Applied</span>
+              </div>
+              <p className={`text-xl font-bold tabular-nums leading-tight ${appliedCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                {appliedCount}
+              </p>
+            </Card>
           </div>
         )}
 
@@ -1977,6 +2130,17 @@ export function Dashboard({
                   </SelectContent>
                 </Select>
               )}
+              {dismissedCount > 0 && (
+                <Button
+                  variant={showDismissed ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8 text-xs gap-1"
+                  onClick={() => setShowDismissed(!showDismissed)}
+                >
+                  {showDismissed ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                  {showDismissed ? "Hide" : "Show"} dismissed ({dismissedCount})
+                </Button>
+              )}
               <span className="text-[11px] text-muted-foreground tabular-nums ml-auto">
                 {sorted.length} patterns
               </span>
@@ -2099,7 +2263,18 @@ export function Dashboard({
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <ScoreBar score={c.impactScore} />
+                                <div className="flex items-center gap-1">
+                                  <ScoreBar score={c.impactScore} />
+                                  {queryActions[c.fingerprint]?.action === "watch" && (
+                                    <Bookmark className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0" />
+                                  )}
+                                  {queryActions[c.fingerprint]?.action === "applied" && (
+                                    <CheckCheck className="h-3 w-3 text-emerald-500 shrink-0" />
+                                  )}
+                                  {queryActions[c.fingerprint]?.action === "dismiss" && (
+                                    <Ban className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="whitespace-normal overflow-hidden">
                                 <div className="space-y-1 min-w-0">
@@ -2354,6 +2529,9 @@ export function Dashboard({
                                 candidate={c}
                                 triageInsight={triageInsights[c.fingerprint] ?? null}
                                 reasons={rowReasons}
+                                currentAction={queryActions[c.fingerprint]?.action ?? null}
+                                onSetAction={setAction}
+                                onClearAction={clearAction}
                               />
                             </TableCell>
                           </TableRow>
@@ -2409,6 +2587,9 @@ export function Dashboard({
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           workspaceUrl={workspaceUrl}
+          currentAction={selectedCandidate ? queryActions[selectedCandidate.fingerprint]?.action ?? null : null}
+          onSetAction={setAction}
+          onClearAction={clearAction}
         />
 
         {/* Enrichment loading indicator */}
