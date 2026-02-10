@@ -8,7 +8,7 @@
  * and sustained-pressure analysis.
  */
 
-import type { WarehouseHealthRow, WarehouseUserRow } from "@/lib/queries/warehouse-health";
+import type { WarehouseHealthRow, WarehouseUserRow, WarehouseHourlyRow } from "@/lib/queries/warehouse-health";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import type { WarehouseCost } from "@/lib/domain/types";
 import type {
@@ -18,6 +18,7 @@ import type {
   ConfidenceLevel,
   RecommendationSeverity,
   DailyBreakdown,
+  HourlyActivity,
 } from "@/lib/domain/types";
 
 /* ── Configurable Thresholds ── */
@@ -98,7 +99,8 @@ export function aggregateByWarehouse(
   healthRows: WarehouseHealthRow[],
   userRows: WarehouseUserRow[],
   warehouses: WarehouseOption[],
-  costs: WarehouseCost[]
+  costs: WarehouseCost[],
+  hourlyRows: WarehouseHourlyRow[] = []
 ): WarehouseHealthMetrics[] {
   // Group health rows by warehouse
   const byWarehouse = new Map<string, WarehouseHealthRow[]>();
@@ -124,6 +126,14 @@ export function aggregateByWarehouse(
     costMap.set(c.warehouseId, existing);
   }
 
+  // Hourly rows: group by warehouse
+  const hourlyByWarehouse = new Map<string, WarehouseHourlyRow[]>();
+  for (const h of hourlyRows) {
+    const arr = hourlyByWarehouse.get(h.warehouseId) ?? [];
+    arr.push(h);
+    hourlyByWarehouse.set(h.warehouseId, arr);
+  }
+
   // User rows: top users per warehouse
   const usersByWarehouse = new Map<string, WarehouseUserRow[]>();
   for (const u of userRows) {
@@ -147,6 +157,24 @@ export function aggregateByWarehouse(
       capacityQueueMin: r.capacityQueueMin,
       coldStartMin: r.coldStartMin,
     }));
+
+    // Hourly activity (fill 0-23 so chart always has all hours)
+    const hourlyRows = hourlyByWarehouse.get(warehouseId) ?? [];
+    const hourlyMap = new Map<number, HourlyActivity>();
+    for (let h = 0; h < 24; h++) {
+      hourlyMap.set(h, { hour: h, queries: 0, capacityQueueMin: 0, coldStartMin: 0, spillGiB: 0, avgRuntimeSec: 0 });
+    }
+    for (const hr of hourlyRows) {
+      hourlyMap.set(hr.hourOfDay, {
+        hour: hr.hourOfDay,
+        queries: hr.queries,
+        capacityQueueMin: hr.capacityQueueMin,
+        coldStartMin: hr.coldStartMin,
+        spillGiB: hr.spillGiB,
+        avgRuntimeSec: hr.avgRuntimeSec,
+      });
+    }
+    const hourlyActivity = [...hourlyMap.values()].sort((a, b) => a.hour - b.hour);
 
     // 7-day totals
     const totalQueries = rows.reduce((s, r) => s + r.queries, 0);
@@ -216,6 +244,7 @@ export function aggregateByWarehouse(
       daysWithColdStart,
       activeDays,
       dailyBreakdown,
+      hourlyActivity,
       topUsers,
       topSources,
     });
@@ -357,47 +386,108 @@ export function generateRecommendations(
     // Rule 2: High spill + high capacity queue → upsize AND add clusters
     else if (highSpill && highCapacityQueue) {
       const next = nextSize(m.size);
-      targetSize = next ?? m.size;
-      targetMaxClusters = Math.min(m.maxClusters + 2, 10);
-      action = "upsize_and_scale";
-      severity = confidence === "high" ? "critical" : "warning";
-      headline = next
-        ? `Upsize to ${next} + scale to ${targetMaxClusters} clusters`
-        : `Increase max clusters to ${targetMaxClusters}`;
-      rationale = [
-        `Spill: ${m.totalSpillGiB.toFixed(1)} GiB over 7 days (${m.daysWithSpill}/7 days) — queries exceed available memory.`,
-        `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait (${m.daysWithCapacityQueue}/7 days) — not enough compute slots.`,
-        `Recommend both a larger size for memory and more clusters for concurrency.`,
-      ].join("\n");
-      const sizeCost = next ? estimateCostForSize(m.weeklyCostDollars, m.size, next) : m.weeklyCostDollars;
-      estimatedNewWeeklyCost = estimateCostForClusters(sizeCost, m.maxClusters, targetMaxClusters);
+      const canUpsize = next != null;
+      const proposedClusters = Math.min(m.maxClusters + 2, 10);
+      const canAddClusters = proposedClusters > m.maxClusters;
+
+      if (canUpsize && canAddClusters) {
+        targetSize = next;
+        targetMaxClusters = proposedClusters;
+        action = "upsize_and_scale";
+        severity = confidence === "high" ? "critical" : "warning";
+        headline = `Upsize to ${next} + scale to ${targetMaxClusters} clusters`;
+        rationale = [
+          `Spill: ${m.totalSpillGiB.toFixed(1)} GiB over 7 days (${m.daysWithSpill}/7 days) — queries exceed available memory.`,
+          `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait (${m.daysWithCapacityQueue}/7 days) — not enough compute slots.`,
+          `Recommend both a larger size for memory and more clusters for concurrency.`,
+        ].join("\n");
+        const sizeCost = estimateCostForSize(m.weeklyCostDollars, m.size, next);
+        estimatedNewWeeklyCost = estimateCostForClusters(sizeCost, m.maxClusters, targetMaxClusters);
+      } else if (canUpsize) {
+        targetSize = next;
+        action = "upsize";
+        severity = confidence === "high" ? "critical" : "warning";
+        headline = `Upsize to ${next}`;
+        rationale = [
+          `Spill: ${m.totalSpillGiB.toFixed(1)} GiB over 7 days (${m.daysWithSpill}/7 days) — queries exceed available memory.`,
+          `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait (${m.daysWithCapacityQueue}/7 days).`,
+          `Clusters already at max (${m.maxClusters}). Upsizing doubles memory which may also reduce queue pressure.`,
+        ].join("\n");
+        estimatedNewWeeklyCost = estimateCostForSize(m.weeklyCostDollars, m.size, next);
+      } else if (canAddClusters) {
+        targetMaxClusters = proposedClusters;
+        action = "add_clusters";
+        severity = confidence === "high" ? "critical" : "warning";
+        headline = `Increase max clusters to ${proposedClusters}`;
+        rationale = [
+          `Spill: ${m.totalSpillGiB.toFixed(1)} GiB over 7 days (${m.daysWithSpill}/7 days).`,
+          `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait (${m.daysWithCapacityQueue}/7 days).`,
+          `Already at max size — adding clusters improves concurrency. Consider query-level optimisation for spill.`,
+        ].join("\n");
+        estimatedNewWeeklyCost = estimateCostForClusters(m.weeklyCostDollars, m.maxClusters, proposedClusters);
+      } else {
+        // Already maxed out on both size and clusters
+        action = "upsize_and_scale";
+        severity = confidence === "high" ? "critical" : "warning";
+        headline = "At max config — optimise queries or switch to Serverless";
+        rationale = [
+          `Spill: ${m.totalSpillGiB.toFixed(1)} GiB over 7 days (${m.daysWithSpill}/7 days) — queries exceed available memory.`,
+          `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait (${m.daysWithCapacityQueue}/7 days).`,
+          `Warehouse is already at maximum size (${m.size}) and max clusters (${m.maxClusters}).`,
+          `Consider: query-level optimisation to reduce spill, scheduling heavy workloads off-peak, or migrating to Serverless SQL.`,
+        ].join("\n");
+      }
     }
     // Rule 3: High spill alone → upsize
     else if (highSpill) {
       const next = nextSize(m.size);
-      targetSize = next ?? m.size;
-      action = "upsize";
-      severity = confidence === "high" ? "critical" : "warning";
-      headline = next ? `Upsize to ${next}` : `Already max size — optimise queries`;
-      rationale = [
-        `Spill: ${m.totalSpillGiB.toFixed(1)} GiB over 7 days (${m.daysWithSpill}/7 days).`,
-        `Queries are spilling to disk because the warehouse memory is insufficient.`,
-        next ? `A ${next} warehouse provides double the memory, reducing or eliminating spill.` : `Consider query-level optimisation since the warehouse is already at maximum size.`,
-      ].join("\n");
-      estimatedNewWeeklyCost = next ? estimateCostForSize(m.weeklyCostDollars, m.size, next) : m.weeklyCostDollars;
+      if (next) {
+        targetSize = next;
+        action = "upsize";
+        severity = confidence === "high" ? "critical" : "warning";
+        headline = `Upsize to ${next}`;
+        rationale = [
+          `Spill: ${m.totalSpillGiB.toFixed(1)} GiB over 7 days (${m.daysWithSpill}/7 days).`,
+          `Queries are spilling to disk because the warehouse memory is insufficient.`,
+          `A ${next} warehouse provides double the memory, reducing or eliminating spill.`,
+        ].join("\n");
+        estimatedNewWeeklyCost = estimateCostForSize(m.weeklyCostDollars, m.size, next);
+      } else {
+        action = "upsize";
+        severity = confidence === "high" ? "critical" : "warning";
+        headline = "Already max size — optimise queries";
+        rationale = [
+          `Spill: ${m.totalSpillGiB.toFixed(1)} GiB over 7 days (${m.daysWithSpill}/7 days).`,
+          `Queries are spilling to disk but the warehouse is already at maximum size (${m.size}).`,
+          `Focus on query-level optimisation: add Liquid Clustering, reduce data scanned, or materialise intermediate results.`,
+        ].join("\n");
+      }
     }
     // Rule 4: High capacity queue alone → add clusters
     else if (highCapacityQueue) {
-      targetMaxClusters = Math.min(m.maxClusters + 2, 10);
-      action = "add_clusters";
-      severity = confidence === "high" ? "critical" : "warning";
-      headline = `Increase max clusters to ${targetMaxClusters}`;
-      rationale = [
-        `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait over 7 days (${m.daysWithCapacityQueue}/7 days).`,
-        `Queries are waiting for available compute slots.`,
-        `Adding clusters increases concurrency and reduces queue time.`,
-      ].join("\n");
-      estimatedNewWeeklyCost = estimateCostForClusters(m.weeklyCostDollars, m.maxClusters, targetMaxClusters);
+      const proposedClusters = Math.min(m.maxClusters + 2, 10);
+      if (proposedClusters > m.maxClusters) {
+        targetMaxClusters = proposedClusters;
+        action = "add_clusters";
+        severity = confidence === "high" ? "critical" : "warning";
+        headline = `Increase max clusters to ${proposedClusters}`;
+        rationale = [
+          `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait over 7 days (${m.daysWithCapacityQueue}/7 days).`,
+          `Queries are waiting for available compute slots.`,
+          `Adding clusters increases concurrency and reduces queue time.`,
+        ].join("\n");
+        estimatedNewWeeklyCost = estimateCostForClusters(m.weeklyCostDollars, m.maxClusters, proposedClusters);
+      } else {
+        // Already at max clusters
+        action = "add_clusters";
+        severity = confidence === "high" ? "critical" : "warning";
+        headline = "At max clusters — optimise queries or stagger workloads";
+        rationale = [
+          `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait over 7 days (${m.daysWithCapacityQueue}/7 days).`,
+          `Queries are waiting for compute slots but clusters are already at maximum (${m.maxClusters}).`,
+          `Consider: optimising slow queries to free slots faster, scheduling heavy workloads off-peak, or migrating to Serverless SQL for elastic scaling.`,
+        ].join("\n");
+      }
     }
     // Rule 5: Low pressure → downsize
     else if (lowPressure && m.activeDays >= 3 && m.totalQueries >= 50) {

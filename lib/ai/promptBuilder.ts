@@ -109,6 +109,7 @@ const DATABRICKS_KNOWLEDGE = `
 - Use numFiles and sizeInBytes to judge whether OPTIMIZE is needed (many small files = yes)
 - Use column types and comments to understand the data model
 - If a MEASURE() function is used, the metric view definition reveals the underlying expressions — recommend indexing/clustering on columns used in FILTER clauses within measures
+- Check the Maintenance History section: if OPTIMIZE has not run recently (>7 days) and pruning efficiency is poor or there are many small files, strongly recommend running OPTIMIZE. If VACUUM has never run, recommend VACUUM to clean up old files and reduce storage cost. If ANALYZE has never run, recommend ANALYZE TABLE to compute statistics — the query optimiser uses these for better join ordering and predicate pushdown.
 
 ### Databricks-specific SQL features to leverage
 - **QUALIFY**: Filter window function results without wrapping in subquery. \`QUALIFY ROW_NUMBER() OVER (...) = 1\`.
@@ -362,6 +363,24 @@ function renderTableMetadata(
           ? t.extendedDescription.slice(0, 2000) + "\n  ... (truncated)"
           : t.extendedDescription;
       lines.push(`Metric View Definition:\n${defn}`);
+    }
+
+    // Maintenance history (OPTIMIZE, VACUUM, ANALYZE)
+    if (t.maintenanceHistory) {
+      const mh = t.maintenanceHistory;
+      const fmtMaintOp = (last: string | null, count: number): string => {
+        if (count === 0 || !last) return "NEVER";
+        const d = new Date(last);
+        const daysAgo = Math.round((Date.now() - d.getTime()) / 86_400_000);
+        const when = daysAgo === 0 ? "today" : daysAgo === 1 ? "1 day ago" : `${daysAgo} days ago`;
+        return `${d.toISOString().slice(0, 10)} (${when}) — ${count} total run${count !== 1 ? "s" : ""}`;
+      };
+      lines.push("Maintenance History:");
+      lines.push(`  Last OPTIMIZE: ${fmtMaintOp(mh.lastOptimize, mh.optimizeCount)}`);
+      lines.push(`  Last VACUUM: ${fmtMaintOp(mh.lastVacuum, mh.vacuumCount)}`);
+      lines.push(`  Last ANALYZE: ${fmtMaintOp(mh.lastAnalyze, mh.analyzeCount)}`);
+    } else {
+      lines.push("Maintenance History: unavailable (no permissions or not a Delta table)");
     }
 
     blocks.push(lines.join("\n"));

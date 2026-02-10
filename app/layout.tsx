@@ -71,6 +71,12 @@ export default function RootLayout({
                 >
                   Dashboard
                 </Link>
+                <Link
+                  href="/warehouse-health"
+                  className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                >
+                  Warehouse Health
+                </Link>
                 <div className="h-5 w-px bg-border mx-1" />
                 <ThemeToggle />
               </nav>

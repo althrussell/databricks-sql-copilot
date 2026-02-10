@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   fetchWarehouseHealthMetrics,
   fetchWarehouseTopUsers,
+  fetchWarehouseHourlyActivity,
   fetchServerlessPrice,
 } from "@/lib/queries/warehouse-health";
 import { listWarehouses } from "@/lib/queries/warehouses";
@@ -37,8 +38,8 @@ export async function POST(): Promise<NextResponse> {
 
     console.log("[warehouse-health] starting analysis...");
 
-    // Run all 4 queries in parallel
-    const [healthRows, userRows, warehouses, costs, serverlessPrice] =
+    // Run all 5 queries in parallel
+    const [healthRows, userRows, hourlyRows, warehouses, costs, serverlessPrice] =
       await Promise.all([
         fetchWarehouseHealthMetrics().catch((err) => {
           console.error("[warehouse-health] metrics failed:", err);
@@ -46,6 +47,10 @@ export async function POST(): Promise<NextResponse> {
         }),
         fetchWarehouseTopUsers().catch((err) => {
           console.error("[warehouse-health] users failed:", err);
+          return [];
+        }),
+        fetchWarehouseHourlyActivity().catch((err) => {
+          console.error("[warehouse-health] hourly failed:", err);
           return [];
         }),
         listWarehouses().catch((err) => {
@@ -60,7 +65,7 @@ export async function POST(): Promise<NextResponse> {
       ]);
 
     console.log(
-      `[warehouse-health] data fetched: healthRows=${healthRows.length} userRows=${userRows.length} warehouses=${warehouses.length} costs=${costs.length}`
+      `[warehouse-health] data fetched: healthRows=${healthRows.length} userRows=${userRows.length} hourlyRows=${hourlyRows.length} warehouses=${warehouses.length} costs=${costs.length}`
     );
 
     if (healthRows.length === 0) {
@@ -72,7 +77,7 @@ export async function POST(): Promise<NextResponse> {
     }
 
     // Aggregate and generate recommendations
-    const metrics = aggregateByWarehouse(healthRows, userRows, warehouses, costs);
+    const metrics = aggregateByWarehouse(healthRows, userRows, warehouses, costs, hourlyRows);
     const recommendations = generateRecommendations(metrics, serverlessPrice);
 
     // Sort: critical first, then warning, info, healthy

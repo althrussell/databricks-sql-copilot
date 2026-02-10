@@ -207,6 +207,16 @@ export interface DailyBreakdown {
   coldStartMin: number;
 }
 
+/** Per hour-of-day activity aggregated across the 7-day window */
+export interface HourlyActivity {
+  hour: number; // 0-23
+  queries: number;
+  capacityQueueMin: number;
+  coldStartMin: number;
+  spillGiB: number;
+  avgRuntimeSec: number;
+}
+
 /** Aggregated health metrics for one warehouse over 7 days */
 export interface WarehouseHealthMetrics {
   warehouseId: string;
@@ -236,6 +246,8 @@ export interface WarehouseHealthMetrics {
   activeDays: number;
   // Per-day breakdown (for sparkline/trend)
   dailyBreakdown: DailyBreakdown[];
+  // Per hour-of-day activity (for busy-times chart)
+  hourlyActivity: HourlyActivity[];
   // Who's affected
   topUsers: Array<{ name: string; queryCount: number }>;
   topSources: Array<{ sourceId: string; sourceType: string; queryCount: number }>;

@@ -33,6 +33,15 @@ export interface TableDetail {
   tableFeatures: string[];
 }
 
+export interface MaintenanceHistory {
+  lastOptimize: string | null;   // ISO timestamp
+  lastVacuum: string | null;
+  lastAnalyze: string | null;
+  optimizeCount: number;
+  vacuumCount: number;
+  analyzeCount: number;
+}
+
 export interface TableMetadata {
   tableName: string; // fully qualified: catalog.schema.table
   columns: ColumnInfo[] | null;
@@ -41,6 +50,8 @@ export interface TableMetadata {
   extendedDescription: string | null;
   /** Whether this appears to be a metric view (has WITH METRICS / measure definitions) */
   isMetricView: boolean;
+  /** Delta table maintenance history (OPTIMIZE, VACUUM, ANALYZE) */
+  maintenanceHistory: MaintenanceHistory | null;
   /** Errors encountered (for debugging, not shown to user) */
   errors: string[];
 }
@@ -304,6 +315,85 @@ async function fetchExtendedDescription(
   }
 }
 
+/**
+ * describe_history — maintenance operations (OPTIMIZE, VACUUM, ANALYZE).
+ * Only works on Delta tables. Fails gracefully for views/external tables.
+ */
+async function fetchMaintenanceHistory(
+  tableName: string
+): Promise<{ history: MaintenanceHistory | null; error: string | null }> {
+  try {
+    const sql = `
+      SELECT timestamp, operation
+      FROM TABLE(describe_history('${escape(tableName)}'))
+      WHERE operation IN ('OPTIMIZE', 'VACUUM', 'VACUUM START', 'VACUUM END', 'ANALYZE')
+      ORDER BY timestamp DESC
+      LIMIT 20
+    `;
+
+    const result = await executeQuery<{
+      timestamp: string;
+      operation: string;
+    }>(sql);
+
+    if (result.rows.length === 0) {
+      // Table exists but has never had maintenance
+      return {
+        history: {
+          lastOptimize: null,
+          lastVacuum: null,
+          lastAnalyze: null,
+          optimizeCount: 0,
+          vacuumCount: 0,
+          analyzeCount: 0,
+        },
+        error: null,
+      };
+    }
+
+    let lastOptimize: string | null = null;
+    let lastVacuum: string | null = null;
+    let lastAnalyze: string | null = null;
+    let optimizeCount = 0;
+    let vacuumCount = 0;
+    let analyzeCount = 0;
+
+    for (const row of result.rows) {
+      const op = (row.operation ?? "").toUpperCase();
+      const ts = String(row.timestamp ?? "");
+
+      if (op === "OPTIMIZE") {
+        optimizeCount++;
+        if (!lastOptimize) lastOptimize = ts;
+      } else if (op === "VACUUM" || op === "VACUUM START" || op === "VACUUM END") {
+        // Count VACUUM START as one vacuum run (avoid double-counting with VACUUM END)
+        if (op === "VACUUM" || op === "VACUUM END") vacuumCount++;
+        if (!lastVacuum && (op === "VACUUM" || op === "VACUUM END")) lastVacuum = ts;
+      } else if (op === "ANALYZE") {
+        analyzeCount++;
+        if (!lastAnalyze) lastAnalyze = ts;
+      }
+    }
+
+    return {
+      history: {
+        lastOptimize,
+        lastVacuum,
+        lastAnalyze,
+        optimizeCount,
+        vacuumCount,
+        analyzeCount,
+      },
+      error: null,
+    };
+  } catch (err) {
+    return {
+      history: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /* ── Orchestrator ── */
 
 /**
@@ -317,16 +407,18 @@ async function fetchTableMetadata(tableName: string): Promise<TableMetadata> {
 
   const errors: string[] = [];
 
-  // Run all three queries in parallel
-  const [detailResult, columnsResult, extResult] = await Promise.all([
+  // Run all four queries in parallel
+  const [detailResult, columnsResult, extResult, maintResult] = await Promise.all([
     fetchDescribeDetail(tableName),
     fetchColumns(tableName),
     fetchExtendedDescription(tableName),
+    fetchMaintenanceHistory(tableName),
   ]);
 
   if (detailResult.error) errors.push(`DESCRIBE DETAIL: ${detailResult.error}`);
   if (columnsResult.error) errors.push(`COLUMNS: ${columnsResult.error}`);
   if (extResult.error) errors.push(`EXTENDED: ${extResult.error}`);
+  if (maintResult.error) errors.push(`MAINTENANCE HISTORY: ${maintResult.error}`);
 
   const metadata: TableMetadata = {
     tableName,
@@ -334,6 +426,7 @@ async function fetchTableMetadata(tableName: string): Promise<TableMetadata> {
     detail: detailResult.detail,
     extendedDescription: extResult.description,
     isMetricView: extResult.isMetricView,
+    maintenanceHistory: maintResult.history,
     errors,
   };
 
@@ -371,6 +464,7 @@ export async function fetchAllTableMetadata(
       r.detail ? `detail:ok` : "detail:miss",
       r.columns ? `cols:${r.columns.length}` : "cols:miss",
       r.isMetricView ? "metric_view:yes" : "metric_view:no",
+      r.maintenanceHistory ? `maint:ok` : "maint:miss",
     ];
     console.log(`[table-metadata] ${r.tableName} → ${parts.join(", ")}`);
   }

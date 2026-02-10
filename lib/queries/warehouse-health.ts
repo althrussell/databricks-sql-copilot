@@ -132,6 +132,63 @@ export async function fetchWarehouseTopUsers(): Promise<WarehouseUserRow[]> {
   }));
 }
 
+/** One row per warehouse per hour-of-day from the hourly activity query */
+export interface WarehouseHourlyRow {
+  warehouseId: string;
+  hourOfDay: number; // 0-23
+  queries: number;
+  capacityQueueMin: number;
+  coldStartMin: number;
+  spillGiB: number;
+  avgRuntimeSec: number;
+}
+
+/**
+ * Fetch per-warehouse, per-hour-of-day activity for the last 7 days.
+ * Aggregates across all 7 days for each hour bucket to show busy patterns.
+ */
+export async function fetchWarehouseHourlyActivity(): Promise<WarehouseHourlyRow[]> {
+  const sql = `
+    SELECT
+      h.compute.warehouse_id AS warehouse_id,
+      HOUR(h.start_time) AS hour_of_day,
+      COUNT(*) AS queries,
+      SUM(COALESCE(h.waiting_at_capacity_duration_ms, 0)) / 60000.0 AS capacity_queue_min,
+      SUM(COALESCE(h.waiting_for_compute_duration_ms, 0)) / 60000.0 AS coldstart_min,
+      SUM(COALESCE(h.spilled_local_bytes, 0)) / POWER(1024, 3) AS spill_gib,
+      AVG(h.total_duration_ms) / 1000.0 AS avg_runtime_sec
+    FROM system.query.history h
+    WHERE h.start_time >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())
+      AND h.compute.warehouse_id IS NOT NULL
+      AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
+      AND h.statement_text NOT LIKE '-- This is a system generated query %'
+      AND h.statement_type NOT IN ('REFRESH STREAMING TABLE', 'REFRESH MATERIALIZED VIEW')
+    GROUP BY h.compute.warehouse_id, HOUR(h.start_time)
+    ORDER BY warehouse_id, hour_of_day
+  `;
+
+  interface RawRow {
+    warehouse_id: string;
+    hour_of_day: number;
+    queries: number;
+    capacity_queue_min: number;
+    coldstart_min: number;
+    spill_gib: number;
+    avg_runtime_sec: number;
+  }
+
+  const result = await executeQuery<RawRow>(sql);
+  return result.rows.map((r) => ({
+    warehouseId: r.warehouse_id ?? "unknown",
+    hourOfDay: Number(r.hour_of_day) || 0,
+    queries: Number(r.queries) || 0,
+    capacityQueueMin: Number(r.capacity_queue_min) || 0,
+    coldStartMin: Number(r.coldstart_min) || 0,
+    spillGiB: Number(r.spill_gib) || 0,
+    avgRuntimeSec: Number(r.avg_runtime_sec) || 0,
+  }));
+}
+
 /**
  * Fetch the serverless SQL compute price (for comparison).
  * Returns the price per DBU, or null if not available.
