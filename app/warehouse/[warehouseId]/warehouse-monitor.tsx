@@ -563,6 +563,15 @@ export function WarehouseMonitor({
     };
   }, [queries]);
 
+  // ── Active clusters — best-effort from multiple sources ──────
+  // The /stats endpoint may return 0 for serverless warehouses or if
+  // the service principal lacks permission.  Fall back to num_clusters
+  // from the warehouse detail API, which reflects currently running clusters.
+  const activeClusters = Math.max(
+    liveStats?.numActiveClusters ?? 0,
+    warehouse?.numClusters ?? 0
+  );
+
   // ── Metrics chart data ────────────────────────────────────────
 
   const metricsChartData = useMemo(() => {
@@ -676,8 +685,8 @@ export function WarehouseMonitor({
                 <span className="h-3 w-px bg-border" />
                 <span className="flex items-center gap-1 tabular-nums">
                   <Server className="h-3 w-3 text-muted-foreground" />
-                  <span className={liveStats && liveStats.numActiveClusters > 0 ? "text-foreground font-medium" : "text-muted-foreground"}>
-                    {liveStats ? liveStats.numActiveClusters : (warehouse?.numClusters ?? 0)}
+                  <span className={activeClusters > 0 ? "text-foreground font-medium" : "text-muted-foreground"}>
+                    {activeClusters}
                   </span>
                   <span className="text-muted-foreground text-[10px]">
                     / {warehouse?.maxNumClusters ?? "?"} clusters
@@ -775,6 +784,7 @@ export function WarehouseMonitor({
                 initialRange={timelineRange}
                 onRangeChange={handleTimelineRangeChange}
                 onQueryClick={handleQueryClick}
+                laneHeight={8}
                 maxLanes={80}
                 maxHeight={250}
               />
