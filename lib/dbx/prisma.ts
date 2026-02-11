@@ -5,26 +5,36 @@
  * Schema: dbsql_copilot (not public).
  * Connection: pooler URL from DATABASE_URL env var.
  *
+ * The client is created lazily on first use (not at import time) so that
+ * `next build` can import the module without DATABASE_URL being set.
+ *
  * In development, the client is cached on globalThis to survive
  * Next.js hot-reloads without exhausting the connection pool.
  */
 
-import { neonConfig } from "@neondatabase/serverless";
-import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../generated/prisma/client";
-import ws from "ws";
-
-// Required for Node.js environments (non-edge) — provide a WebSocket impl
-neonConfig.webSocketConstructor = ws;
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  _prisma: PrismaClient | undefined;
 };
 
 function createClient(): PrismaClient {
+  // Lazily import ws + neon only when actually creating the client
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { neonConfig } = require("@neondatabase/serverless");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { PrismaNeon } = require("@prisma/adapter-neon");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ws = require("ws");
+
+  neonConfig.webSocketConstructor = ws;
+
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error("[prisma] DATABASE_URL is not set");
+    throw new Error(
+      "[prisma] DATABASE_URL is not set. " +
+      "Set it in .env for local dev or via the inspire-secrets scope for deployment."
+    );
   }
 
   const adapter = new PrismaNeon({ connectionString });
@@ -38,9 +48,15 @@ function createClient(): PrismaClient {
   });
 }
 
-export const prisma: PrismaClient =
-  globalForPrisma.prisma ?? createClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+/**
+ * Lazy Prisma client — only instantiated on first property access,
+ * not at module import time. Safe for `next build` without DATABASE_URL.
+ */
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    if (!globalForPrisma._prisma) {
+      globalForPrisma._prisma = createClient();
+    }
+    return Reflect.get(globalForPrisma._prisma, prop);
+  },
+});
