@@ -227,12 +227,21 @@ export function WarehouseMonitor({
 
   // ── Fetch AI insights ──────────────────────────────────────────
 
+  const [insightsMessage, setInsightsMessage] = useState<string | null>(null);
+
   const handleFetchInsights = useCallback(async () => {
     if (isLoadingInsights || queries.length === 0) return;
     setIsLoadingInsights(true);
+    setInsightsMessage(null);
     try {
+      // Only send queries that have SQL text (required for AI triage)
+      const withText = queries.filter((q) => q.queryText);
+      if (withText.length === 0) {
+        setInsightsMessage("No SQL text available for analysis");
+        return;
+      }
       // Only send the minimal fields needed for AI triage (reduces serialization)
-      const slim = queries.map((q) => ({
+      const slim = withText.map((q) => ({
         id: q.id,
         queryText: q.queryText,
         statementType: q.statementType,
@@ -242,12 +251,23 @@ export function WarehouseMonitor({
         cacheHitPercent: q.cacheHitPercent,
         userName: q.userName,
       }));
+      console.log(`[warehouse-monitor] requesting insights for ${slim.length} queries with SQL text`);
       const result = await fetchMonitorInsights(slim);
+      const count = Object.keys(result).length;
       setInsights(result);
+      if (count > 0) {
+        setInsightsMessage(`${count} insights generated`);
+      } else {
+        setInsightsMessage("AI returned no actionable insights");
+      }
     } catch (err) {
-      console.error("[warehouse-monitor] insights failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[warehouse-monitor] insights failed:", msg);
+      setInsightsMessage(`Error: ${msg.slice(0, 100)}`);
     } finally {
       setIsLoadingInsights(false);
+      // Auto-clear message after 5s
+      setTimeout(() => setInsightsMessage(null), 5000);
     }
   }, [queries, isLoadingInsights]);
 
@@ -545,33 +565,37 @@ export function WarehouseMonitor({
                 )}
               </div>
 
-              {/* Center: live counters */}
-              {liveStats && (
-                <div className="hidden md:flex items-center gap-3 text-xs shrink-0">
+              {/* Center: live counters from actual query data */}
+              <div className="hidden md:flex items-center gap-3 text-xs shrink-0">
+                {(summaryStats.statusCounts["RUNNING"] ?? 0) > 0 && (
                   <span className="flex items-center gap-1 tabular-nums">
-                    <span className="h-1.5 w-1.5 rounded-full bg-chart-3" />
-                    {liveStats.numRunningCommands} running
+                    <span className="h-1.5 w-1.5 rounded-full bg-chart-2 animate-pulse" />
+                    {summaryStats.statusCounts["RUNNING"]} running
                   </span>
+                )}
+                {(summaryStats.statusCounts["QUEUED"] ?? 0) > 0 && (
                   <span className="flex items-center gap-1 tabular-nums">
                     <span className="h-1.5 w-1.5 rounded-full bg-chart-4" />
-                    {liveStats.numQueuedCommands} queued
+                    {summaryStats.statusCounts["QUEUED"]} queued
                   </span>
+                )}
+                <span className="flex items-center gap-1 tabular-nums">
+                  <span className="h-1.5 w-1.5 rounded-full bg-chart-3" />
+                  {summaryStats.statusCounts["FINISHED"] ?? 0} finished
+                </span>
+                {(summaryStats.statusCounts["FAILED"] ?? 0) > 0 && (
                   <span className="flex items-center gap-1 tabular-nums">
-                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    {Math.max(
-                      queries.length -
-                        liveStats.numRunningCommands -
-                        liveStats.numQueuedCommands,
-                      0
-                    )}{" "}
-                    completed
+                    <span className="h-1.5 w-1.5 rounded-full bg-chart-1" />
+                    {summaryStats.statusCounts["FAILED"]} failed
                   </span>
-                  <span className="flex items-center gap-1 tabular-nums">
-                    <Server className="h-3 w-3 text-muted-foreground" />
+                )}
+                {liveStats && liveStats.numActiveClusters > 0 && (
+                  <span className="flex items-center gap-1 tabular-nums text-muted-foreground">
+                    <Server className="h-3 w-3" />
                     {liveStats.numActiveClusters}
                   </span>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Right: range presets + auto-refresh */}
               <div className="flex items-center gap-1.5 shrink-0">
@@ -625,19 +649,19 @@ export function WarehouseMonitor({
                   </span>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-3">
                 <div>
                   <div className="text-[10px] text-muted-foreground mb-1">Running / Queued Slots</div>
                   <StackedBarsChart
                     data={metricsChartData.stackedData}
                     colors={["var(--chart-3)", "var(--chart-4)"]}
                     labels={["Running", "Queued"]}
-                    height={80}
+                    height={120}
                   />
                 </div>
                 <div>
                   <div className="text-[10px] text-muted-foreground mb-1">Throughput (queries/interval)</div>
-                  <StepAreaChart data={metricsChartData.throughputData} height={80} strokeColor="var(--chart-2)" />
+                  <StepAreaChart data={metricsChartData.throughputData} height={100} strokeColor="var(--chart-2)" />
                 </div>
               </div>
             </CardContent>
@@ -702,6 +726,11 @@ export function WarehouseMonitor({
                       ? "Refresh Insights"
                       : "AI Insights"}
                 </Button>
+                {insightsMessage && (
+                  <span className="text-[10px] text-muted-foreground animate-in fade-in">
+                    {insightsMessage}
+                  </span>
+                )}
               </div>
               <div className="border border-border rounded-md overflow-x-auto">
                 <Table>
