@@ -1,12 +1,11 @@
 /**
- * Query Actions — Lakebase persistence for user actions on query patterns.
+ * Query Actions — Prisma persistence for user actions on query patterns.
  *
  * Actions: dismiss, watch, applied
  * Each action has a 30-day TTL that refreshes on update.
- * Falls back gracefully when Lakebase is unavailable.
  */
 
-import { lakebaseQuery } from "./lakebase-client";
+import { prisma } from "./prisma";
 
 export type QueryActionType = "dismiss" | "watch" | "applied";
 
@@ -23,32 +22,28 @@ export interface QueryAction {
  * Get all active (non-expired) query actions.
  */
 export async function getQueryActions(): Promise<Map<string, QueryAction>> {
-  const result = await lakebaseQuery<{
-    fingerprint: string;
-    action: string;
-    note: string | null;
-    acted_by: string | null;
-    acted_at: Date;
-    updated_at: Date;
-  }>(
-    `SELECT fingerprint, action, note, acted_by, acted_at, updated_at
-     FROM query_actions
-     WHERE expires_at > NOW()
-     ORDER BY updated_at DESC`
-  );
-
   const map = new Map<string, QueryAction>();
-  if (!result) return map;
 
-  for (const row of result.rows) {
-    map.set(row.fingerprint, {
-      fingerprint: row.fingerprint,
-      action: row.action as QueryActionType,
-      note: row.note,
-      actedBy: row.acted_by,
-      actedAt: row.acted_at?.toISOString() ?? new Date().toISOString(),
-      updatedAt: row.updated_at?.toISOString() ?? new Date().toISOString(),
+  try {
+    const rows = await prisma.queryAction.findMany({
+      where: {
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { updatedAt: "desc" },
     });
+
+    for (const row of rows) {
+      map.set(row.fingerprint, {
+        fingerprint: row.fingerprint,
+        action: row.action as QueryActionType,
+        note: row.note,
+        actedBy: row.actedBy,
+        actedAt: row.actedAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      });
+    }
+  } catch (err) {
+    console.error("[actions-store] Failed to fetch query actions:", err);
   }
 
   return map;
@@ -64,25 +59,47 @@ export async function setQueryAction(
   actedBy?: string,
   note?: string
 ): Promise<void> {
-  await lakebaseQuery(
-    `INSERT INTO query_actions (fingerprint, action, note, acted_by, acted_at, updated_at, expires_at)
-     VALUES ($1, $2, $3, $4, NOW(), NOW(), NOW() + INTERVAL '30 days')
-     ON CONFLICT (fingerprint) DO UPDATE SET
-       action = EXCLUDED.action,
-       note = EXCLUDED.note,
-       acted_by = EXCLUDED.acted_by,
-       updated_at = EXCLUDED.updated_at,
-       expires_at = EXCLUDED.expires_at`,
-    [fingerprint, action, note ?? null, actedBy ?? null]
-  );
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  try {
+    await prisma.queryAction.upsert({
+      where: { fingerprint },
+      create: {
+        fingerprint,
+        action,
+        note: note ?? null,
+        actedBy: actedBy ?? null,
+        actedAt: now,
+        updatedAt: now,
+        expiresAt,
+      },
+      update: {
+        action,
+        note: note ?? null,
+        actedBy: actedBy ?? null,
+        updatedAt: now,
+        expiresAt,
+      },
+    });
+  } catch (err) {
+    console.error("[actions-store] Failed to set query action:", err);
+  }
 }
 
 /**
  * Remove an action from a query fingerprint.
  */
 export async function removeQueryAction(fingerprint: string): Promise<void> {
-  await lakebaseQuery(
-    `DELETE FROM query_actions WHERE fingerprint = $1`,
-    [fingerprint]
-  );
+  try {
+    await prisma.queryAction.delete({
+      where: { fingerprint },
+    });
+  } catch (err) {
+    // Ignore "record not found" errors
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes("Record to delete does not exist")) {
+      console.error("[actions-store] Failed to remove query action:", err);
+    }
+  }
 }

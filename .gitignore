@@ -38,7 +38,12 @@ Thumbs.db
 *.swp
 *.swo
 
+# prisma generated
+lib/generated/
+
 #agent Docs
 docs
 AGENTS.md
 .cursor
+dbsql-monitor-main
+/lib/generated/prisma

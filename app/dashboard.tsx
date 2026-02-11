@@ -120,10 +120,12 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { explainScore } from "@/lib/domain/scoring";
+import { MiniStepChart } from "@/components/charts/mini-step-chart";
 import type {
   Candidate,
   QueryOrigin,
   WarehouseCost,
+  WarehouseActivity,
 } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 
@@ -733,13 +735,13 @@ function originLabel(origin: QueryOrigin): string {
 
 function ScoreBar({ score }: { score: number }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5 min-w-0">
       <span
-        className={`text-sm font-bold tabular-nums w-7 text-right ${scoreTextColor(score)}`}
+        className={`text-xs font-bold tabular-nums w-6 text-right shrink-0 ${scoreTextColor(score)}`}
       >
         {score}
       </span>
-      <div className="h-2 w-14 rounded-full bg-muted overflow-hidden">
+      <div className="h-1.5 flex-1 min-w-6 max-w-12 rounded-full bg-muted overflow-hidden">
         <div
           className={`h-full rounded-full transition-all ${scoreColor(score)}`}
           style={{ width: `${score}%` }}
@@ -1306,6 +1308,8 @@ interface DashboardProps {
   /** Absolute custom range (from/to ISO strings). Null = use preset. */
   initialCustomRange?: { from: string; to: string } | null;
   warehouseCosts: WarehouseCost[];
+  /** Per-warehouse activity sparkline data */
+  warehouseActivity?: WarehouseActivity[];
   workspaceUrl: string;
   fetchError: string | null;
   dataSourceHealth?: DataSourceHealth[];
@@ -1321,6 +1325,7 @@ export function Dashboard({
   initialTimePreset,
   initialCustomRange = null,
   warehouseCosts: initialCosts,
+  warehouseActivity = [],
   workspaceUrl,
   fetchError,
   dataSourceHealth: initialHealth = [],
@@ -1740,6 +1745,15 @@ export function Dashboard({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [candidates, warehouses]);
 
+  // Activity sparkline data lookup (warehouseId → counts array)
+  const activityByWarehouse = useMemo(() => {
+    const map = new Map<string, number[]>();
+    for (const wa of warehouseActivity) {
+      map.set(wa.warehouseId, wa.buckets.map((b) => b.count));
+    }
+    return map;
+  }, [warehouseActivity]);
+
   // Unique workspace list from candidates
   const workspaceOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -1788,13 +1802,37 @@ export function Dashboard({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All warehouses</SelectItem>
-              {warehouseOptions.map((w) => (
-                <SelectItem key={w.id} value={w.id}>
-                  {w.name}
-                </SelectItem>
-              ))}
+              {warehouseOptions.map((w) => {
+                const sparkData = activityByWarehouse.get(w.id);
+                return (
+                  <SelectItem key={w.id} value={w.id}>
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="truncate">{w.name}</span>
+                      {sparkData && sparkData.length > 1 && (
+                        <MiniStepChart
+                          data={sparkData}
+                          width={48}
+                          height={16}
+                          showEndDot={false}
+                          className="opacity-60"
+                        />
+                      )}
+                    </div>
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
+
+          {/* Monitor link — visible when a specific warehouse is selected */}
+          {warehouseFilter !== "all" && (
+            <Link href={`/warehouse/${warehouseFilter}`}>
+              <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs">
+                <Activity className="h-3.5 w-3.5" />
+                Monitor
+              </Button>
+            </Link>
+          )}
 
           {workspaceOptions.length > 1 && (
             <Select value={workspaceFilter} onValueChange={setWorkspaceFilter}>
@@ -1892,8 +1930,8 @@ export function Dashboard({
         {!fetchError && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
             {/* Runs */}
-            <Card className="border-l-2 border-l-blue-500 py-3 px-4">
-              <div className="flex items-center gap-1.5 mb-1">
+            <Card className="border-l-2 border-l-blue-500 gap-1 py-3 px-4">
+              <div className="flex items-center gap-1.5">
                 <BarChart3 className="h-3.5 w-3.5 text-blue-500" />
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Runs</span>
               </div>
@@ -1903,8 +1941,8 @@ export function Dashboard({
             </Card>
 
             {/* Critical */}
-            <Card className={`border-l-2 py-3 px-4 ${kpis.highImpact > 0 ? "border-l-red-500" : "border-l-muted"}`}>
-              <div className="flex items-center gap-1.5 mb-1">
+            <Card className={`border-l-2 gap-1 py-3 px-4 ${kpis.highImpact > 0 ? "border-l-red-500" : "border-l-muted"}`}>
+              <div className="flex items-center gap-1.5">
                 <AlertTriangle className={`h-3.5 w-3.5 ${kpis.highImpact > 0 ? "text-red-500" : "text-muted-foreground"}`} />
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Critical</span>
               </div>
@@ -1914,8 +1952,8 @@ export function Dashboard({
             </Card>
 
             {/* Compute */}
-            <Card className="border-l-2 border-l-amber-500 py-3 px-4">
-              <div className="flex items-center gap-1.5 mb-1">
+            <Card className="border-l-2 border-l-amber-500 gap-1 py-3 px-4">
+              <div className="flex items-center gap-1.5">
                 <Cpu className="h-3.5 w-3.5 text-amber-500" />
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Compute</span>
               </div>
@@ -1925,8 +1963,8 @@ export function Dashboard({
             </Card>
 
             {/* Est. Cost */}
-            <Card className="border-l-2 border-l-emerald-500 py-3 px-4">
-              <div className="flex items-center gap-1.5 mb-1">
+            <Card className="border-l-2 border-l-emerald-500 gap-1 py-3 px-4">
+              <div className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Est. Cost</span>
               </div>
@@ -1943,8 +1981,8 @@ export function Dashboard({
             {topInsight ? (() => {
               const InsightIcon = topInsight.icon;
               return (
-                <Card className={`border-l-2 ${topInsight.color} py-3 px-4`}>
-                  <div className="flex items-center gap-1.5 mb-1">
+                <Card className={`border-l-2 ${topInsight.color} gap-1 py-3 px-4`}>
+                  <div className="flex items-center gap-1.5">
                     <InsightIcon className="h-3.5 w-3.5 text-muted-foreground" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{topInsight.label}</span>
                   </div>
@@ -1954,8 +1992,8 @@ export function Dashboard({
                 </Card>
               );
             })() : (
-              <Card className="border-l-2 border-l-muted py-3 px-4">
-                <div className="flex items-center gap-1.5 mb-1">
+              <Card className="border-l-2 border-l-muted gap-1 py-3 px-4">
+                <div className="flex items-center gap-1.5">
                   <Lightbulb className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Insight</span>
                 </div>
@@ -1964,8 +2002,8 @@ export function Dashboard({
             )}
 
             {/* Applied */}
-            <Card className={`border-l-2 py-3 px-4 ${appliedCount > 0 ? "border-l-emerald-500" : "border-l-muted"}`}>
-              <div className="flex items-center gap-1.5 mb-1">
+            <Card className={`border-l-2 gap-1 py-3 px-4 ${appliedCount > 0 ? "border-l-emerald-500" : "border-l-muted"}`}>
+              <div className="flex items-center gap-1.5">
                 <CheckCheck className={`h-3.5 w-3.5 ${appliedCount > 0 ? "text-emerald-500" : "text-muted-foreground"}`} />
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Applied</span>
               </div>
@@ -2169,9 +2207,9 @@ export function Dashboard({
                 <Table className="table-fixed">
                   <colgroup>
                     <col style={{ width: "3.5%" }} />  {/* # */}
-                    <col style={{ width: "5.5%" }} />  {/* Impact */}
-                    <col style={{ width: "20%" }} />   {/* Query */}
-                    <col style={{ width: "20%" }} />   {/* AI Insight */}
+                    <col style={{ width: "7%" }} />    {/* Impact */}
+                    <col style={{ width: "19%" }} />   {/* Query */}
+                    <col style={{ width: "19%" }} />   {/* AI Insight */}
                     <col style={{ width: "4%" }} />    {/* Source */}
                     <col style={{ width: "11%" }} />   {/* Warehouse */}
                     <col style={{ width: "9%" }} />    {/* User / Source */}
@@ -2179,7 +2217,7 @@ export function Dashboard({
                     <col style={{ width: "5%" }} />    {/* p95 */}
                     <col style={{ width: "5%" }} />    {/* Cost */}
                     <col style={{ width: "4.5%" }} />  {/* Flags */}
-                    <col style={{ width: "8%" }} />    {/* Actions */}
+                    <col style={{ width: "8.5%" }} />  {/* Actions */}
                   </colgroup>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">

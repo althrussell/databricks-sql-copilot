@@ -2,6 +2,61 @@
  * Core domain types — matches docs/04_DATA_MODEL.md
  */
 
+// ── Warehouse Monitor types (from REST API) ───────────────────────
+
+/** Real-time warehouse stats from the REST stats endpoint */
+export interface WarehouseLiveStats {
+  numActiveClusters: number;
+  numRunningCommands: number;
+  numQueuedCommands: number;
+  numRunningMetadataRpcs: number;
+}
+
+/** Endpoint metrics data point (throughput, slots over time) */
+export interface EndpointMetric {
+  startTimeMs: number;
+  endTimeMs: number;
+  maxRunningSlots: number;
+  maxQueuedSlots: number;
+  throughput: number;
+}
+
+/** A single query for the timeline visualization (from REST API) */
+export interface TimelineQuery {
+  id: string;
+  status: string;
+  startTimeMs: number;
+  endTimeMs: number;
+  queuedStartTimeMs: number | null;
+  queuedEndTimeMs: number | null;
+  userName: string;
+  source: string;
+  sourceName: string;
+  statementType: string;
+  durationMs: number;
+  fetchTimeMs: number;
+  cacheHitPercent: number;
+  filesRead: number;
+  bytesScanned: number;
+  spillBytes: number;
+}
+
+/** Time-bucketed activity data for sparklines */
+export interface WarehouseActivity {
+  warehouseId: string;
+  buckets: Array<{ time: number; count: number }>;
+}
+
+/** Color mode options for the query timeline */
+export type TimelineColorMode =
+  | "status"
+  | "source"
+  | "user"
+  | "bytes"
+  | "spill";
+
+// ── Core domain types ──────────────────────────────────────────────
+
 /** Source of a query execution (from query_source struct) */
 export interface QuerySource {
   dashboardId: string | null;

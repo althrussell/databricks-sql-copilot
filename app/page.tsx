@@ -8,10 +8,12 @@ import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
 import { triageCandidates } from "@/lib/ai/triage";
 import { getQueryActions } from "@/lib/dbx/actions-store";
+import { getWarehouseActivityBuckets } from "@/lib/queries/warehouse-activity";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import type {
   Candidate,
   WarehouseCost,
+  WarehouseActivity,
   QueryRun,
 } from "@/lib/domain/types";
 
@@ -147,6 +149,17 @@ async function CoreDashboardLoader({
 
   const workspaceUrl = getWorkspaceBaseUrl();
 
+  // Fetch warehouse activity sparkline data (non-blocking)
+  let warehouseActivity: WarehouseActivity[] = [];
+  try {
+    warehouseActivity = await getWarehouseActivityBuckets({
+      startTime: start,
+      endTime: end,
+    });
+  } catch (err) {
+    console.error("[page] warehouse activity fetch failed:", err);
+  }
+
   // Fetch query actions from Lakebase (non-blocking — empty map on failure)
   let queryActionsObj: Record<string, { action: "dismiss" | "watch" | "applied"; note: string | null; actedBy: string | null; actedAt: string }> = {};
   try {
@@ -178,6 +191,7 @@ async function CoreDashboardLoader({
       initialTimePreset={preset}
       initialCustomRange={customRange}
       warehouseCosts={[]}
+      warehouseActivity={warehouseActivity}
       workspaceUrl={workspaceUrl}
       fetchError={fetchError}
       dataSourceHealth={allCoreHealth}

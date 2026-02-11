@@ -97,9 +97,9 @@ All queries use **date partition pruning** on system tables for performance. Sys
 
 ---
 
-## Persistence (Lakebase)
+## Persistence (Lakebase + Prisma)
 
-Optionally backed by **Lakebase** (Databricks-managed Postgres) for durable state:
+Backed by **Databricks Lakebase** (Neon-compatible Postgres) via **Prisma ORM** in the `dbsql_copilot` schema:
 
 | Table | Purpose | TTL |
 |---|---|---|
@@ -107,7 +107,11 @@ Optionally backed by **Lakebase** (Databricks-managed Postgres) for durable stat
 | `query_actions` | User actions (dismiss, watch, applied) per query pattern | 30 days |
 | `health_snapshots` | Warehouse health analysis history for trend comparison | 90 days |
 
-Auto-migration runs on first use. When deployed, connects via platform-injected `PGHOST`/`PGUSER` with OAuth token authentication. For local dev, falls back to `LAKEBASE_CONNECTION_STRING`. Gracefully degrades to no-op if Lakebase is not configured — the app works fully without persistence, just without caching or action state.
+Schema is managed via `prisma db push` (use the direct/non-pooler URL). Runtime queries use the pooler URL. Secrets are stored in the `inspire-secrets` scope:
+```bash
+databricks secrets put-secret inspire-secrets DATABASE_URL
+databricks secrets put-secret inspire-secrets DIRECT_DATABASE_URL
+```
 
 ---
 
@@ -126,9 +130,9 @@ app/                              Next.js App Router pages
 lib/
 ├── dbx/
 │   ├── sql-client.ts             Databricks SQL connection (OAuth + PAT)
-│   ├── lakebase-client.ts        Lakebase (Postgres) connection pool + migrations
-│   ├── rewrite-store.ts          AI rewrite cache (Lakebase)
-│   ├── actions-store.ts          Query actions CRUD (Lakebase)
+│   ├── prisma.ts                 Prisma client singleton (Lakebase)
+│   ├── rewrite-store.ts          AI rewrite cache (Prisma)
+│   ├── actions-store.ts          Query actions CRUD (Prisma)
 │   └── health-store.ts           Health snapshot CRUD (Lakebase)
 ├── queries/
 │   ├── query-history.ts          system.query.history (filtered, workspace-aware)
@@ -195,8 +199,10 @@ DATABRICKS_TOKEN=dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # SQL warehouse ID (the hex ID, not the name)
 DATABRICKS_WAREHOUSE_ID=abcdef1234567890
 
-# Lakebase connection string (optional)
-LAKEBASE_CONNECTION_STRING=postgresql://user@host/databricks_postgres?sslmode=require
+# Prisma — Lakebase pooler URL (runtime):
+DATABASE_URL=postgresql://USER:PASSWORD@HOST-pooler.database.REGION.cloud.databricks.com/databricks_postgres?sslmode=require&schema=dbsql_copilot
+# Prisma — Lakebase direct URL (migrations):
+DIRECT_DATABASE_URL=postgresql://USER:PASSWORD@HOST.database.REGION.cloud.databricks.com/databricks_postgres?sslmode=require&schema=dbsql_copilot
 ```
 
 3. **Run the dev server:**
@@ -217,7 +223,7 @@ Open [http://localhost:3000](http://localhost:3000).
 2. Name the app (e.g. `databricks-sql-copilot`)
 3. In **Configure**, add resources:
    - **SQL Warehouse** — Key: `sql-warehouse`, Permission: **Can use**
-   - **Database** (Lakebase) — Key: `lakebase`, Permission: **Can connect** (optional)
+   - **Database** (Lakebase) — Key: `lakebase`, Permission: **Can connect**
 4. Grant the app's service principal `SELECT` on the required system tables
 
 ### Deploy
@@ -258,7 +264,7 @@ Lakebase enables persistence for AI rewrite caching, query actions (dismiss/watc
 4. Set Permission to **Can connect**
 5. Set Resource key to `lakebase`
 
-This automatically injects `PGHOST`, `PGUSER`, `PGDATABASE`, `PGPORT`, and `PGSSLMODE` into the app's environment and creates a Postgres role for the app's service principal.
+For Lakebase autoscaling, the connection uses the pooler URL (`DATABASE_URL`) at runtime and the direct URL (`DIRECT_DATABASE_URL`) for schema migrations. Both are stored in the `inspire-secrets` scope.
 
 ### Step 3: Grant schema permissions
 
@@ -279,10 +285,7 @@ GRANT ALL ON SCHEMA public TO "54870a07-43ed-4293-83df-3932c70c8898";
 
 Deploy or restart the app. Check the logs for:
 
-```
-[lakebase] Pool created via platform (PGHOST + OAuth)
-[lakebase] Initialised successfully
-```
+Prisma client connects automatically via `DATABASE_URL` on first query.
 
 The app auto-creates 3 tables (`rewrite_cache`, `query_actions`, `health_snapshots`) and an index on first startup. You can verify in the Lakebase SQL editor:
 
@@ -325,9 +328,8 @@ Lakebase does **not** need an `app.yaml` entry — the platform auto-injects `PG
 | `DATABRICKS_CLIENT_SECRET` | Auto-injected | Service principal OAuth client secret |
 | `DATABRICKS_APP_PORT` | Auto-injected | Port to bind to |
 | `DATABRICKS_WAREHOUSE_ID` | Resource binding | SQL warehouse ID |
-| `PGHOST` | Auto-injected (Database resource) | Lakebase hostname (optional) |
-| `PGUSER` | Auto-injected (Database resource) | Lakebase Postgres role (optional) |
-| `LAKEBASE_CONNECTION_STRING` | `.env.local` only | Full Postgres URL for local dev (optional) |
+| `DATABASE_URL` | `inspire-secrets` scope | Lakebase pooler URL (runtime) |
+| `DIRECT_DATABASE_URL` | `inspire-secrets` scope | Lakebase direct URL (migrations) |
 | `DATABRICKS_TOKEN` | `.env.local` only | PAT for local development |
 
 ---

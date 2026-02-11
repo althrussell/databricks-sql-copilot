@@ -77,6 +77,12 @@ export default function RootLayout({
                 >
                   Warehouse Health
                 </Link>
+                <Link
+                  href="/warehouse-monitor"
+                  className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                >
+                  Warehouse Monitor
+                </Link>
                 <div className="h-5 w-px bg-border mx-1" />
                 <ThemeToggle />
               </nav>
