@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
+import { LayoutDashboard, HeartPulse, Monitor } from "lucide-react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import "./globals.css";
@@ -67,20 +68,23 @@ export default function RootLayout({
               <nav className="ml-auto flex items-center gap-1">
                 <Link
                   href="/"
-                  className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                 >
+                  <LayoutDashboard className="h-3.5 w-3.5" />
                   Dashboard
                 </Link>
                 <Link
                   href="/warehouse-health"
-                  className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                 >
+                  <HeartPulse className="h-3.5 w-3.5" />
                   Warehouse Health
                 </Link>
                 <Link
                   href="/warehouse-monitor"
-                  className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                 >
+                  <Monitor className="h-3.5 w-3.5" />
                   Warehouse Monitor
                 </Link>
                 <div className="h-5 w-px bg-border mx-1" />

@@ -34,6 +34,8 @@ interface QueryTimelineProps {
   laneHeight?: number;
   /** Maximum number of visible lanes */
   maxLanes?: number;
+  /** Fixed maximum pixel height for the lane area (overrides maxLanes * laneHeight) */
+  maxHeight?: number;
 }
 
 /**
@@ -54,6 +56,7 @@ export function QueryTimeline({
   onQueryClick,
   laneHeight = 22,
   maxLanes = 100,
+  maxHeight,
 }: QueryTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [colorMode, setColorMode] = useState<TimelineColorMode>("status");
@@ -234,7 +237,7 @@ export function QueryTimeline({
         {/* Lanes */}
         <div
           className="relative w-full overflow-y-auto"
-          style={{ maxHeight: maxLanes * laneHeight }}
+          style={{ maxHeight: maxHeight ?? maxLanes * laneHeight }}
         >
           {lanes.length === 0 ? (
             <div className="flex items-center justify-center h-20 text-sm text-muted-foreground">

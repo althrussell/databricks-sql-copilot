@@ -673,12 +673,16 @@ export function WarehouseMonitor({
                     {summaryStats.statusCounts["FAILED"]} failed
                   </span>
                 )}
-                {liveStats && liveStats.numActiveClusters > 0 && (
-                  <span className="flex items-center gap-1 tabular-nums text-muted-foreground">
-                    <Server className="h-3 w-3" />
-                    {liveStats.numActiveClusters}
+                <span className="h-3 w-px bg-border" />
+                <span className="flex items-center gap-1 tabular-nums">
+                  <Server className="h-3 w-3 text-muted-foreground" />
+                  <span className={liveStats && liveStats.numActiveClusters > 0 ? "text-foreground font-medium" : "text-muted-foreground"}>
+                    {liveStats ? liveStats.numActiveClusters : (warehouse?.numClusters ?? 0)}
                   </span>
-                )}
+                  <span className="text-muted-foreground text-[10px]">
+                    / {warehouse?.maxNumClusters ?? "?"} clusters
+                  </span>
+                </span>
               </div>
 
               {/* Right: range presets + auto-refresh */}
@@ -733,21 +737,21 @@ export function WarehouseMonitor({
                   </span>
                 </div>
               </div>
-              <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="text-[10px] text-muted-foreground mb-1">Running / Queued Slots</div>
                   <StackedBarsChart
                     data={metricsChartData.stackedData}
                     colors={["var(--chart-3)", "var(--chart-4)"]}
                     labels={["Running", "Queued"]}
-                    height={120}
+                    height={60}
                   />
                 </div>
                 <div>
                   <div className="text-[10px] text-muted-foreground mb-1">Throughput (queries/interval)</div>
                   <StepAreaChart
                     data={metricsChartData.throughputData}
-                    height={100}
+                    height={60}
                     strokeColor="var(--chart-2)"
                     valueLabel="Queries"
                     formatValue={(v) => String(Math.round(v))}
@@ -772,6 +776,7 @@ export function WarehouseMonitor({
                 onRangeChange={handleTimelineRangeChange}
                 onQueryClick={handleQueryClick}
                 maxLanes={80}
+                maxHeight={250}
               />
             </CardContent>
           </Card>
