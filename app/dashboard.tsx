@@ -1770,7 +1770,7 @@ export function Dashboard({
 
   return (
     <TooltipProvider>
-      <div className="space-y-3">
+      <div className="space-y-6">
         {/* ── Toolbar ── */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Time range: quick presets + custom range picker */}
