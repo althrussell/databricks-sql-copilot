@@ -161,6 +161,13 @@ export function useTimelineZoom(
 
   const onPointerUp = useCallback(
     (e: React.PointerEvent<HTMLElement>) => {
+      // Release capture immediately so click events fire on the correct target
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore if capture was already released
+      }
+
       const drag = dragRef.current;
       if (!drag.isDragging || !drag.containerRect) {
         dragRef.current.isDragging = false;
@@ -168,6 +175,13 @@ export function useTimelineZoom(
       }
 
       dragRef.current.isDragging = false;
+
+      // Tiny movement = click, not a drag — let native click propagate
+      const dragDistance = Math.abs(e.clientX - drag.startX);
+      if (dragDistance < 5) {
+        setSelectionRect(null);
+        return;
+      }
 
       if (drag.isPanning) {
         // Pan complete — fire range change

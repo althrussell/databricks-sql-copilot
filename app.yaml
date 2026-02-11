@@ -2,6 +2,4 @@ env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
   - name: DATABASE_URL
-    valueFrom: inspire-secrets.DATABASE_URL
-  - name: DIRECT_DATABASE_URL
-    valueFrom: inspire-secrets.DIRECT_DATABASE_URL
+    valueFrom: db-secret

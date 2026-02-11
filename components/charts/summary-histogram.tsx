@@ -26,6 +26,10 @@ interface SummaryHistogramProps {
   className?: string;
   /** Bar color — defaults to chart-2 CSS variable */
   barColor?: string;
+  /** Called when a bucket bar is clicked */
+  onBucketClick?: (bucketLabel: string) => void;
+  /** The currently active/selected bucket label */
+  activeBucket?: string | null;
 }
 
 /**
@@ -37,6 +41,8 @@ export function SummaryHistogram({
   buckets = DEFAULT_BUCKETS,
   className,
   barColor,
+  onBucketClick,
+  activeBucket,
 }: SummaryHistogramProps) {
   const counts = useMemo(() => {
     const result = buckets.map((bucket) => ({
@@ -66,8 +72,20 @@ export function SummaryHistogram({
         const widthPercent = (bucket.count / maxCount) * 100;
         const pct = total > 0 ? Math.round((bucket.count / total) * 100) : 0;
 
+        const isActive = activeBucket === bucket.label;
+
         return (
-          <div key={bucket.label} className="flex items-center gap-2">
+          <div
+            key={bucket.label}
+            className={cn(
+              "flex items-center gap-2 rounded-sm px-1 py-0.5 -mx-1 transition-colors",
+              onBucketClick && "cursor-pointer",
+              isActive
+                ? "bg-primary/10 ring-1 ring-primary/20"
+                : onBucketClick && "hover:bg-muted/50"
+            )}
+            onClick={() => onBucketClick?.(bucket.label)}
+          >
             <span className="text-xs text-muted-foreground w-12 text-right shrink-0 tabular-nums">
               {bucket.label}
             </span>
@@ -77,7 +95,7 @@ export function SummaryHistogram({
                 style={{
                   width: `${widthPercent}%`,
                   backgroundColor: color,
-                  opacity: 0.8,
+                  opacity: isActive ? 1 : 0.8,
                 }}
               />
             </div>

@@ -50,7 +50,16 @@ export function TimelineSpan({
         backgroundColor: color,
         opacity: isHighlighted ? 1 : 0.85,
       }}
-      onClick={() => onClick(query.id)}
+      data-query-id={query.id}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(query.id);
+      }}
+      onPointerUp={(e) => {
+        // Also handle click via pointerup as a fallback when pointer capture
+        // redirects events away from the span (e.g. during zoom interactions)
+        e.stopPropagation();
+      }}
       onMouseEnter={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         onMouseEnter(query, rect);

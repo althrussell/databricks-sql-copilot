@@ -39,6 +39,8 @@ export interface TimelineQuery {
   filesRead: number;
   bytesScanned: number;
   spillBytes: number;
+  /** Raw SQL text (may be truncated). Used for AI triage. */
+  queryText?: string;
 }
 
 /** Time-bucketed activity data for sparklines */

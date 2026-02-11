@@ -467,6 +467,7 @@ function mapApiQueryToTimeline(q: QueryHistoryApiQuery): TimelineQuery {
     filesRead: metrics.read_files_count ?? 0,
     bytesScanned: readBytes,
     spillBytes: metrics.spill_to_disk_bytes ?? 0,
+    queryText: q.query_text ?? undefined,
   };
 }
 

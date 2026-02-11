@@ -220,10 +220,14 @@ function withTimeout<T>(
   label: string,
   fallback: T
 ): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
-    promise,
-    new Promise<T>((resolve) =>
-      setTimeout(() => {
+    promise.then((v) => {
+      clearTimeout(timer);
+      return v;
+    }),
+    new Promise<T>((resolve) => {
+      timer = setTimeout(() => {
         console.warn(`[${label}] timed out after ${timeoutMs / 1000}s`);
         failedSources.push({
           name: label,
@@ -232,8 +236,8 @@ function withTimeout<T>(
           rowCount: 0,
         });
         resolve(fallback);
-      }, timeoutMs)
-    ),
+      }, timeoutMs);
+    }),
   ]);
 }
 
@@ -313,7 +317,7 @@ async function AiTriageLoader({
 }: {
   candidates: Candidate[];
 }) {
-  const TRIAGE_TIMEOUT_MS = 300_000; // 5 minutes max
+  const TRIAGE_TIMEOUT_MS = 60_000; // 60 seconds max
 
   let triageMap: Record<string, { insight: string; action: string }> = {};
   try {

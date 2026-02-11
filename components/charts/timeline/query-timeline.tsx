@@ -151,6 +151,22 @@ export function QueryTimeline({
     setTooltipRect(null);
   }, []);
 
+  // Fallback click detection: when pointer capture redirects events to the
+  // container, the span's native onClick may not fire. Detect clicks on spans
+  // via the data-query-id attribute after pointerup releases capture.
+  const handleContainerClick = useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      const target = e.target as HTMLElement;
+      const queryId =
+        target.dataset?.queryId ??
+        target.closest<HTMLElement>("[data-query-id]")?.dataset?.queryId;
+      if (queryId) {
+        handleQueryClick(queryId);
+      }
+    },
+    [handleQueryClick]
+  );
+
   return (
     <div className={cn("space-y-0", className)}>
       {/* Toolbar */}
@@ -206,6 +222,7 @@ export function QueryTimeline({
         ref={containerRef}
         className="relative w-full border border-border rounded-md overflow-hidden bg-card select-none touch-none"
         {...handlers}
+        onClick={handleContainerClick}
       >
         {/* Time axis */}
         <TimelineAxis startMs={range.start} endMs={range.end} />

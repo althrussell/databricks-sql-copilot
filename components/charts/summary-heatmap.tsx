@@ -23,6 +23,10 @@ interface SummaryHeatmapProps {
   className?: string;
   /** Color for the heatmap — defaults to chart-1 CSS variable */
   color?: string;
+  /** Called when a heatmap cell is clicked with the file and byte ranges and cell key */
+  onCellClick?: (filesRange: [number, number], bytesRange: [number, number], cellKey: string) => void;
+  /** Active cell key for highlighting (format: "row-col") */
+  activeCell?: string | null;
 }
 
 /**
@@ -34,14 +38,18 @@ export function SummaryHeatmap({
   bins = 6,
   className,
   color,
+  onCellClick,
+  activeCell,
 }: SummaryHeatmapProps) {
-  const { grid, xLabels, yLabels, maxCount } = useMemo(() => {
+  const { grid, xLabels, yLabels, maxCount, xRanges, yRanges } = useMemo(() => {
     if (data.length === 0) {
       return {
         grid: [] as number[][],
         xLabels: [] as string[],
         yLabels: [] as string[],
         maxCount: 0,
+        xRanges: [] as [number, number][],
+        yRanges: [] as [number, number][],
       };
     }
 
@@ -80,7 +88,21 @@ export function SummaryHeatmap({
       return formatBytes(val);
     });
 
-    return { grid: g, xLabels: xl, yLabels: yl, maxCount: mc };
+    // Ranges for filtering (col index → files range, row index → bytes range)
+    const xr: [number, number][] = Array.from({ length: bins }, (_, i) => [
+      Math.round((i / bins) * maxFiles),
+      i === bins - 1 ? maxFiles + 1 : Math.round(((i + 1) / bins) * maxFiles),
+    ]);
+    // yRanges: row 0 is the top (highest bytes), row bins-1 is the bottom (lowest bytes)
+    const yr: [number, number][] = Array.from({ length: bins }, (_, i) => {
+      const topBinIdx = bins - 1 - i; // original y bin index (0=lowest)
+      return [
+        Math.round((topBinIdx / bins) * maxBytes),
+        topBinIdx === bins - 1 ? maxBytes + 1 : Math.round(((topBinIdx + 1) / bins) * maxBytes),
+      ] as [number, number];
+    });
+
+    return { grid: g, xLabels: xl, yLabels: yl, maxCount: mc, xRanges: xr, yRanges: yr };
   }, [data, bins]);
 
   if (data.length === 0) {
@@ -126,14 +148,23 @@ export function SummaryHeatmap({
               const opacity = count > 0 ? 0.15 + (count / maxCount) * 0.85 : 0.04;
               const row = Math.floor(i / bins);
               const col = i % bins;
+              const cellKey = `${row}-${col}`;
+              const isActive = activeCell === cellKey;
               return (
                 <Tooltip key={i}>
                   <TooltipTrigger asChild>
                     <div
-                      className="rounded-[2px] cursor-default transition-opacity"
+                      className={`rounded-[2px] transition-all ${
+                        onCellClick ? "cursor-pointer" : "cursor-default"
+                      } ${isActive ? "ring-2 ring-primary ring-offset-1" : ""}`}
                       style={{
                         backgroundColor: heatColor,
-                        opacity,
+                        opacity: isActive ? 1 : opacity,
+                      }}
+                      onClick={() => {
+                        if (onCellClick && count > 0 && xRanges[col] && yRanges[row]) {
+                          onCellClick(xRanges[col], yRanges[row], cellKey);
+                        }
                       }}
                     />
                   </TooltipTrigger>
@@ -143,6 +174,12 @@ export function SummaryHeatmap({
                     <span className="text-muted-foreground">
                       Files: {xLabels[col]}, Bytes: {yLabels[row]}
                     </span>
+                    {onCellClick && count > 0 && (
+                      <>
+                        <br />
+                        <span className="text-primary">Click to filter</span>
+                      </>
+                    )}
                   </TooltipContent>
                 </Tooltip>
               );

@@ -16,6 +16,7 @@ import type { Candidate } from "@/lib/domain/types";
 
 const TRIAGE_MODEL = "databricks-llama-4-maverick";
 const MAX_CANDIDATES = 15;
+const TRIAGE_TIMEOUT_MS = 60_000; // 60s max for AI call
 
 export interface TriageInsight {
   /** 1-2 sentence actionable insight */
@@ -116,18 +117,29 @@ ${candidateLines}`;
   const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}') AS response`;
 
   try {
+    const t0 = Date.now();
     console.log(`[ai-triage] calling ${TRIAGE_MODEL} for ${top.length} candidates`);
-    const result = await executeQuery<{ response: string }>(sql);
+
+    // Race the query against a timeout
+    const resultPromise = executeQuery<{ response: string }>(sql);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`AI triage timed out after ${TRIAGE_TIMEOUT_MS / 1000}s`)),
+        TRIAGE_TIMEOUT_MS
+      )
+    );
+    const result = await Promise.race([resultPromise, timeoutPromise]);
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
     if (!result.rows.length || !result.rows[0].response) {
-      console.warn("[ai-triage] empty response");
+      console.warn(`[ai-triage] empty response (${elapsed}s)`);
       return {};
     }
 
     const raw = result.rows[0].response;
     const parsed = parseTriageResponse(raw, top);
     console.log(
-      `[ai-triage] got insights for ${Object.keys(parsed).length}/${top.length} candidates`
+      `[ai-triage] got insights for ${Object.keys(parsed).length}/${top.length} candidates in ${elapsed}s`
     );
     return parsed;
   } catch (err: unknown) {

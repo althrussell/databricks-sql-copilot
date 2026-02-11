@@ -20,6 +20,8 @@ import {
   Loader2,
   RefreshCw,
   Server,
+  Sparkles,
+  X,
   ZoomIn,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +57,28 @@ import {
   fetchWarehouseStats,
   fetchEndpointMetrics,
   fetchWarehouseQueries,
+  fetchMonitorInsights,
 } from "@/lib/dbx/rest-actions";
+import type { TriageInsight } from "@/lib/ai/triage";
+
+// ── Query filter types ─────────────────────────────────────────────
+
+interface QueryFilter {
+  type: "status" | "source" | "user" | "duration" | "io";
+  label: string;
+  /** Predicate to test a query against this filter */
+  test: (q: TimelineQuery) => boolean;
+}
+
+// Duration bucket ranges matching the SummaryHistogram defaults
+const DURATION_BUCKETS = [
+  { label: "<1s", min: 0, max: 1000 },
+  { label: "1-5s", min: 1000, max: 5000 },
+  { label: "5-30s", min: 5000, max: 30000 },
+  { label: "30s-2m", min: 30000, max: 120000 },
+  { label: "2-10m", min: 120000, max: 600000 },
+  { label: "10m+", min: 600000, max: Infinity },
+] as const;
 
 // ── Range presets ──────────────────────────────────────────────────
 
@@ -110,6 +133,8 @@ export function WarehouseMonitor({
   );
   const [hasNextPage, setHasNextPage] = useState(initialHasNextPage);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [insights, setInsights] = useState<Record<string, TriageInsight>>({});
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [highlightedQueryId, setHighlightedQueryId] = useState<string | null>(
     null
@@ -118,6 +143,8 @@ export function WarehouseMonitor({
     "duration"
   );
   const [sortAsc, setSortAsc] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<QueryFilter | null>(null);
+  const [activeHeatmapCell, setActiveHeatmapCell] = useState<string | null>(null);
 
   const tableRef = useRef<HTMLDivElement>(null);
 
@@ -191,6 +218,110 @@ export function WarehouseMonitor({
     }
   }, [warehouseId, rangeHours, nextPageToken, isLoadingMore]);
 
+  // ── Fetch AI insights ──────────────────────────────────────────
+
+  const handleFetchInsights = useCallback(async () => {
+    if (isLoadingInsights || queries.length === 0) return;
+    setIsLoadingInsights(true);
+    try {
+      // Only send the minimal fields needed for AI triage (reduces serialization)
+      const slim = queries.map((q) => ({
+        id: q.id,
+        queryText: q.queryText,
+        statementType: q.statementType,
+        durationMs: q.durationMs,
+        bytesScanned: q.bytesScanned,
+        spillBytes: q.spillBytes,
+        cacheHitPercent: q.cacheHitPercent,
+        userName: q.userName,
+      }));
+      const result = await fetchMonitorInsights(slim);
+      setInsights(result);
+    } catch (err) {
+      console.error("[warehouse-monitor] insights failed:", err);
+    } finally {
+      setIsLoadingInsights(false);
+    }
+  }, [queries, isLoadingInsights]);
+
+  // ── Filter helpers ──────────────────────────────────────────────
+
+  const toggleFilter = useCallback((filter: QueryFilter) => {
+    setActiveFilter((prev) => {
+      const clearing = prev?.type === filter.type && prev?.label === filter.label;
+      if (clearing) {
+        setActiveHeatmapCell(null);
+        return null;
+      }
+      // Clear heatmap cell when switching to non-IO filter
+      if (filter.type !== "io") setActiveHeatmapCell(null);
+      return filter;
+    });
+  }, []);
+
+  const filterByStatus = useCallback(
+    (status: string) => {
+      toggleFilter({
+        type: "status",
+        label: status,
+        test: (q) => q.status === status,
+      });
+    },
+    [toggleFilter]
+  );
+
+  const filterBySource = useCallback(
+    (source: string) => {
+      toggleFilter({
+        type: "source",
+        label: source,
+        test: (q) => q.sourceName === source,
+      });
+    },
+    [toggleFilter]
+  );
+
+  const filterByUser = useCallback(
+    (user: string) => {
+      toggleFilter({
+        type: "user",
+        label: user,
+        test: (q) => q.userName === user,
+      });
+    },
+    [toggleFilter]
+  );
+
+  const filterByDuration = useCallback(
+    (bucketLabel: string) => {
+      const bucket = DURATION_BUCKETS.find((b) => b.label === bucketLabel);
+      if (!bucket) return;
+      toggleFilter({
+        type: "duration",
+        label: bucketLabel,
+        test: (q) => q.durationMs >= bucket.min && q.durationMs < bucket.max,
+      });
+    },
+    [toggleFilter]
+  );
+
+  const filterByIO = useCallback(
+    (filesRange: [number, number], bytesRange: [number, number], cellKey: string) => {
+      const label = `Files ≤${filesRange[1]}, Bytes ≤${formatBytesShort(bytesRange[1])}`;
+      setActiveHeatmapCell((prev) => prev === cellKey ? null : cellKey);
+      toggleFilter({
+        type: "io",
+        label,
+        test: (q) =>
+          q.filesRead >= filesRange[0] &&
+          q.filesRead < filesRange[1] &&
+          q.bytesScanned >= bytesRange[0] &&
+          q.bytesScanned < bytesRange[1],
+      });
+    },
+    [toggleFilter]
+  );
+
   // Auto-refresh every 15 seconds
   useEffect(() => {
     if (!autoRefresh) return;
@@ -205,6 +336,8 @@ export function WarehouseMonitor({
   const handlePresetChange = useCallback(
     (hours: number) => {
       setRangeHours(hours);
+      setActiveFilter(null);
+      setActiveHeatmapCell(null);
       refreshData(hours);
       router.replace(`/warehouse/${warehouseId}?range=${hours}h`, {
         scroll: false,
@@ -248,7 +381,8 @@ export function WarehouseMonitor({
   // ── Sorted queries for the table ──────────────────────────────
 
   const sortedTableQueries = useMemo(() => {
-    const sorted = [...queries];
+    let filtered = activeFilter ? queries.filter(activeFilter.test) : queries;
+    const sorted = [...filtered];
     sorted.sort((a, b) => {
       let diff = 0;
       switch (sortColumn) {
@@ -265,7 +399,7 @@ export function WarehouseMonitor({
       return sortAsc ? diff : -diff;
     });
     return sorted;
-  }, [queries, sortColumn, sortAsc]);
+  }, [queries, sortColumn, sortAsc, activeFilter]);
 
   // ── Summary stats ─────────────────────────────────────────────
 
@@ -338,6 +472,7 @@ export function WarehouseMonitor({
       <div className="min-h-screen bg-background">
         {/* ── Header ─────────────────────────────────────────── */}
         <div className="border-b border-border bg-card px-6 py-4">
+          <div className="max-w-screen-xl mx-auto">
           {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-2">
             <Link
@@ -407,9 +542,11 @@ export function WarehouseMonitor({
               </Button>
             ))}
           </div>
+          </div>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6">
+          <div className="max-w-screen-xl mx-auto space-y-6">
           {/* ── Live status bars ──────────────────────────────── */}
           {liveStats && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -530,9 +667,42 @@ export function WarehouseMonitor({
               <Card>
                 <CardContent className="pt-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-medium">
-                      Queries ({queries.length})
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium">
+                        Queries
+                        {activeFilter
+                          ? ` (${sortedTableQueries.length} of ${queries.length})`
+                          : ` (${queries.length})`}
+                      </h3>
+                      {activeFilter && (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] gap-1 cursor-pointer hover:bg-destructive/20 transition-colors"
+                          onClick={() => setActiveFilter(null)}
+                        >
+                          {activeFilter.type}: {activeFilter.label}
+                          <X className="h-2.5 w-2.5" />
+                        </Badge>
+                      )}
+                    </div>
+                    <Button
+                      variant={Object.keys(insights).length > 0 ? "outline" : "default"}
+                      size="sm"
+                      className="h-7 text-xs gap-1.5"
+                      onClick={handleFetchInsights}
+                      disabled={isLoadingInsights || queries.length === 0}
+                    >
+                      {isLoadingInsights ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      {isLoadingInsights
+                        ? "Analyzing…"
+                        : Object.keys(insights).length > 0
+                          ? "Refresh Insights"
+                          : "AI Insights"}
+                    </Button>
                   </div>
                   <div className="border border-border rounded-md overflow-auto max-h-[500px]">
                     <Table>
@@ -595,6 +765,9 @@ export function WarehouseMonitor({
                               </span>
                             )}
                           </TableHead>
+                          {Object.keys(insights).length > 0 && (
+                            <TableHead className="min-w-[180px]">AI Insight</TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -612,10 +785,16 @@ export function WarehouseMonitor({
                             <TableCell>
                               <QueryStatusDot status={q.status} />
                             </TableCell>
-                            <TableCell className="text-xs truncate max-w-[100px]">
+                            <TableCell
+                              className="text-xs truncate max-w-[100px] cursor-pointer hover:text-primary transition-colors"
+                              onClick={(e) => { e.stopPropagation(); filterByUser(q.userName); }}
+                            >
                               {q.userName}
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell
+                              className="text-xs cursor-pointer hover:text-primary transition-colors"
+                              onClick={(e) => { e.stopPropagation(); filterBySource(q.sourceName); }}
+                            >
                               {q.sourceName}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
@@ -644,15 +823,22 @@ export function WarehouseMonitor({
                             <TableCell className="text-xs tabular-nums text-muted-foreground">
                               {formatTime(q.startTimeMs)}
                             </TableCell>
+                            {Object.keys(insights).length > 0 && (
+                              <TableCell className="text-xs">
+                                <InsightCell insight={insights[q.id] ?? null} />
+                              </TableCell>
+                            )}
                           </TableRow>
                         ))}
                         {sortedTableQueries.length === 0 && (
                           <TableRow>
                             <TableCell
-                              colSpan={9}
+                              colSpan={Object.keys(insights).length > 0 ? 10 : 9}
                               className="text-center text-sm text-muted-foreground h-20"
                             >
-                              No queries in this time range
+                              {activeFilter
+                                ? "No queries match the current filter"
+                                : "No queries in this time range"}
                             </TableCell>
                           </TableRow>
                         )}
@@ -697,7 +883,12 @@ export function WarehouseMonitor({
                       ([status, count]) => (
                         <div
                           key={status}
-                          className="flex items-center justify-between text-xs"
+                          className={`flex items-center justify-between text-xs cursor-pointer rounded-sm px-1.5 py-1 -mx-1.5 transition-colors ${
+                            activeFilter?.type === "status" && activeFilter.label === status
+                              ? "bg-primary/10 ring-1 ring-primary/20"
+                              : "hover:bg-muted/50"
+                          }`}
+                          onClick={() => filterByStatus(status)}
                         >
                           <div className="flex items-center gap-2">
                             <QueryStatusDot status={status} />
@@ -722,8 +913,15 @@ export function WarehouseMonitor({
                   <div className="space-y-1.5">
                     {summaryStats.topSources.map(([source, count]) => {
                       const pct = queries.length > 0 ? Math.round((count / queries.length) * 100) : 0;
+                      const isActive = activeFilter?.type === "source" && activeFilter.label === source;
                       return (
-                        <div key={source} className="space-y-0.5">
+                        <div
+                          key={source}
+                          className={`space-y-0.5 cursor-pointer rounded-sm px-1.5 py-1 -mx-1.5 transition-colors ${
+                            isActive ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
+                          }`}
+                          onClick={() => filterBySource(source)}
+                        >
                           <div className="flex items-center justify-between text-xs">
                             <span className="truncate max-w-[140px]">{source}</span>
                             <span className="tabular-nums text-muted-foreground">{pct}%</span>
@@ -752,6 +950,8 @@ export function WarehouseMonitor({
                   </h4>
                   <SummaryHistogram
                     durations={queries.map((q) => q.durationMs)}
+                    onBucketClick={filterByDuration}
+                    activeBucket={activeFilter?.type === "duration" ? activeFilter.label : null}
                   />
                 </CardContent>
               </Card>
@@ -764,8 +964,15 @@ export function WarehouseMonitor({
                     {summaryStats.topUsers.map(([user, count]) => {
                       const maxCount = summaryStats.topUsers[0]?.[1] ?? 1;
                       const pct = Math.round((count / maxCount) * 100);
+                      const isActive = activeFilter?.type === "user" && activeFilter.label === user;
                       return (
-                        <div key={user} className="space-y-0.5">
+                        <div
+                          key={user}
+                          className={`space-y-0.5 cursor-pointer rounded-sm px-1.5 py-1 -mx-1.5 transition-colors ${
+                            isActive ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
+                          }`}
+                          onClick={() => filterByUser(user)}
+                        >
                           <div className="flex items-center justify-between text-xs">
                             <span className="truncate max-w-[140px]">{user}</span>
                             <span className="tabular-nums text-muted-foreground">
@@ -799,10 +1006,13 @@ export function WarehouseMonitor({
                       filesRead: q.filesRead,
                       bytesScanned: q.bytesScanned,
                     }))}
+                    onCellClick={filterByIO}
+                    activeCell={activeFilter?.type === "io" ? activeHeatmapCell : null}
                   />
                 </CardContent>
               </Card>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -893,6 +1103,36 @@ function QueryStatusDot({ status }: { status: string }) {
   );
 }
 
+// ── Insight cell ──────────────────────────────────────────────────
+
+const ACTION_COLORS: Record<string, string> = {
+  rewrite: "bg-chart-5/15 text-chart-5 border-chart-5/25",
+  cluster: "bg-chart-2/15 text-chart-2 border-chart-2/25",
+  optimize: "bg-chart-3/15 text-chart-3 border-chart-3/25",
+  resize: "bg-chart-4/15 text-chart-4 border-chart-4/25",
+  investigate: "bg-muted text-muted-foreground border-border",
+};
+
+function InsightCell({ insight }: { insight: TriageInsight | null }) {
+  if (!insight) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <div className="space-y-1">
+      <Badge
+        variant="outline"
+        className={`text-[10px] font-medium ${ACTION_COLORS[insight.action] ?? ACTION_COLORS.investigate}`}
+      >
+        {insight.action}
+      </Badge>
+      <p className="text-[11px] leading-tight text-muted-foreground line-clamp-2">
+        {insight.insight}
+      </p>
+    </div>
+  );
+}
+
 // ── Formatters ─────────────────────────────────────────────────────
 
 function formatDuration(ms: number): string {
@@ -910,6 +1150,14 @@ function formatBytes(bytes: number): string {
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
   if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)} KB`;
   return `${bytes} B`;
+}
+
+function formatBytesShort(bytes: number): string {
+  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)}TB`;
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)}GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)}MB`;
+  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)}KB`;
+  return `${bytes}B`;
 }
 
 function formatTime(ms: number): string {

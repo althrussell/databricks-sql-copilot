@@ -18,6 +18,12 @@ import type {
   EndpointMetric,
   TimelineQuery,
 } from "@/lib/domain/types";
+import {
+  triageMonitorQueries,
+  buildQueryFingerprintMap,
+  type MonitorTriageMap,
+} from "@/lib/ai/triage-monitor";
+import type { TriageInsight } from "@/lib/ai/triage";
 
 /**
  * Fetch live stats for a warehouse (running/queued commands, active clusters).
@@ -69,4 +75,66 @@ export async function fetchWarehouseDetail(
  */
 export async function fetchAllWarehouses(): Promise<WarehouseInfo[]> {
   return listWarehousesRest();
+}
+
+/** Minimal shape passed from client → server to reduce serialization cost */
+interface MonitorQuerySlim {
+  id: string;
+  queryText?: string;
+  statementType: string;
+  durationMs: number;
+  bytesScanned: number;
+  spillBytes: number;
+  cacheHitPercent: number;
+  userName: string;
+}
+
+/**
+ * Run AI triage on warehouse monitor queries.
+ * Accepts a slim subset of fields to avoid serializing the full TimelineQuery[].
+ * Groups by fingerprint, picks top N patterns, calls the model,
+ * and returns a map of query ID → TriageInsight.
+ */
+export async function fetchMonitorInsights(
+  slimQueries: MonitorQuerySlim[]
+): Promise<Record<string, TriageInsight>> {
+  // Convert slim queries to the shape triageMonitorQueries expects
+  const queries: TimelineQuery[] = slimQueries.map((q) => ({
+    id: q.id,
+    queryText: q.queryText,
+    statementType: q.statementType,
+    durationMs: q.durationMs,
+    bytesScanned: q.bytesScanned,
+    spillBytes: q.spillBytes,
+    cacheHitPercent: q.cacheHitPercent,
+    userName: q.userName,
+    // Fields not needed for triage — zero/empty defaults
+    status: "",
+    startTimeMs: 0,
+    endTimeMs: 0,
+    queuedStartTimeMs: null,
+    queuedEndTimeMs: null,
+    source: "",
+    sourceName: "",
+    filesRead: 0,
+    fetchTimeMs: 0,
+  }));
+
+  // Get fingerprint → insight map from the AI model
+  const triageMap: MonitorTriageMap = await triageMonitorQueries(queries);
+  if (Object.keys(triageMap).length === 0) return {};
+
+  // Build query ID → fingerprint lookup
+  const fpMap = buildQueryFingerprintMap(queries);
+
+  // Map each query ID to its fingerprint's insight
+  const result: Record<string, TriageInsight> = {};
+  for (const [queryId, fp] of fpMap) {
+    const insight = triageMap[fp];
+    if (insight) {
+      result[queryId] = insight;
+    }
+  }
+
+  return result;
 }
