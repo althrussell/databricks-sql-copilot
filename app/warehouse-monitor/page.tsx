@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Activity, Server, ArrowRight, Gauge } from "lucide-react";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 300;
 
 function LoadingSkeleton() {

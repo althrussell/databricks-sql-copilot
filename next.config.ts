@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["@databricks/sql", "@prisma/client"],
+  serverExternalPackages: ["@databricks/sql", "@prisma/client", "@neondatabase/serverless", "ws"],
   experimental: {
     /**
      * Client-side router cache — keeps the RSC payload in browser memory
