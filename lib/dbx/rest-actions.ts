@@ -117,7 +117,12 @@ export async function fetchMonitorInsights(
     source: "",
     sourceName: "",
     filesRead: 0,
+    compilationTimeMs: 0,
+    executionTimeMs: 0,
     fetchTimeMs: 0,
+    queueWaitMs: 0,
+    rowsProduced: 0,
+    clientApplication: "",
   }));
 
   // Get fingerprint → insight map from the AI model

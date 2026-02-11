@@ -34,11 +34,18 @@ export interface TimelineQuery {
   sourceName: string;
   statementType: string;
   durationMs: number;
+  compilationTimeMs: number;
+  executionTimeMs: number;
   fetchTimeMs: number;
+  /** Queue wait in ms (derived from queue timestamps) */
+  queueWaitMs: number;
   cacheHitPercent: number;
   filesRead: number;
   bytesScanned: number;
+  rowsProduced: number;
   spillBytes: number;
+  /** Client application (e.g. Tableau, Power BI, dbt) */
+  clientApplication: string;
   /** Raw SQL text (may be truncated). Used for AI triage. */
   queryText?: string;
   /** Normalized SQL fingerprint for deduplication / linking to query details. */

@@ -7,6 +7,7 @@ import {
   getWarehouseQueries,
   getWarehouseLiveStats,
 } from "@/lib/dbx/rest-client";
+import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
 import type { WarehouseInfo } from "@/lib/dbx/rest-client";
 import type {
   EndpointMetric,
@@ -90,6 +91,8 @@ async function WarehouseMonitorLoader({
       err instanceof Error ? err.message : "Failed to load warehouse data";
   }
 
+  const workspaceUrl = getWorkspaceBaseUrl();
+
   return (
     <WarehouseMonitor
       warehouseId={warehouseId}
@@ -102,6 +105,7 @@ async function WarehouseMonitorLoader({
       initialRangeMs={{ start: startMs, end: endMs }}
       rangeHours={rangeHours}
       fetchError={fetchError}
+      workspaceUrl={workspaceUrl}
     />
   );
 }

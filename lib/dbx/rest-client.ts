@@ -486,6 +486,12 @@ function mapApiQueryToTimeline(q: QueryHistoryApiQuery): TimelineQuery {
   // Duration
   const durationMs = metrics.total_time_ms ?? (endMs - startMs);
 
+  // Queue wait
+  const queueWaitMs =
+    queuedStartTimeMs != null && queuedEndTimeMs != null
+      ? Math.max(queuedEndTimeMs - queuedStartTimeMs, 0)
+      : 0;
+
   return {
     id: q.query_id,
     status: (q.status ?? "UNKNOWN").toUpperCase(),
@@ -498,11 +504,16 @@ function mapApiQueryToTimeline(q: QueryHistoryApiQuery): TimelineQuery {
     sourceName,
     statementType: q.statement_type ?? "UNKNOWN",
     durationMs,
+    compilationTimeMs: metrics.compilation_time_ms ?? 0,
+    executionTimeMs: metrics.execution_time_ms ?? 0,
     fetchTimeMs: metrics.result_fetch_time_ms ?? 0,
+    queueWaitMs,
     cacheHitPercent,
     filesRead: metrics.read_files_count ?? 0,
     bytesScanned: readBytes,
+    rowsProduced: metrics.rows_produced_count ?? 0,
     spillBytes: metrics.spill_to_disk_bytes ?? 0,
+    clientApplication: source?.client_application ?? "",
     queryText: q.query_text ?? undefined,
     fingerprint: q.query_text ? computeFingerprint(q.query_text) : undefined,
   };
