@@ -125,7 +125,7 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
   const autoAnalyse = searchParams.action === "analyse";
 
   return (
-    <div className="container mx-auto px-6 py-8 space-y-6">
+    <div className="px-6 py-8 space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href="/" className="hover:text-foreground transition-colors">

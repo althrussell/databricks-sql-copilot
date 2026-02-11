@@ -371,7 +371,7 @@ export default async function HomePage({
   }
 
   return (
-    <div className="container mx-auto px-6 py-8">
+    <div className="px-6 py-8">
       <Suspense fallback={<DashboardSkeleton />}>
         <CoreDashboardLoader preset={preset} customRange={customRange} />
       </Suspense>

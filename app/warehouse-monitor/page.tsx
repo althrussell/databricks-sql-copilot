@@ -54,7 +54,7 @@ async function WarehouseListLoader() {
 
 export default function WarehouseMonitorPage() {
   return (
-    <div className="container mx-auto px-6 py-8 space-y-6">
+    <div className="px-6 py-8 space-y-6">
       <div>
         <div className="flex items-center gap-2 mb-1">
           <Gauge className="h-6 w-6 text-primary" />
