@@ -52,7 +52,7 @@
     "lib/dbx/health-store.ts": "2026-02-10T14:47:02.417412131+10:00",
     "lib/dbx/lakebase-client.ts": "2026-02-10T15:06:44.098131011+10:00",
     "lib/dbx/rewrite-store.ts": "2026-02-10T14:11:09.909883082+10:00",
-    "lib/dbx/sql-client.ts": "2026-02-09T16:30:49.102508795+10:00",
+    "lib/dbx/sql-client.ts": "2026-02-11T11:46:30.525536184+10:00",
     "lib/domain/__tests__/scoring.test.ts": "2026-02-09T16:42:30.608507038+10:00",
     "lib/domain/__tests__/sql-fingerprint.test.ts": "2026-02-09T16:42:14.856557758+10:00",
     "lib/domain/candidate-builder.ts": "2026-02-09T21:51:16.553339551+10:00",
