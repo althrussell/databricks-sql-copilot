@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "prisma generate && next build",
+    "postinstall": "prisma generate",
     "start": "next start -H 0.0.0.0 -p ${DATABRICKS_APP_PORT:-3000}",
     "lint": "eslint app/ lib/",
     "test": "vitest run",
