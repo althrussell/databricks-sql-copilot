@@ -651,6 +651,11 @@ export function WarehouseMonitor({
                         Serverless
                       </Badge>
                     )}
+                    {warehouse.autoStopMins > 0 && (
+                      <Badge variant="outline" className="text-[10px] h-5 text-muted-foreground">
+                        Auto-stop {warehouse.autoStopMins}m
+                      </Badge>
+                    )}
                   </div>
                 )}
                 {isPending && (
@@ -1255,36 +1260,6 @@ export function WarehouseMonitor({
               />
             </div>
 
-            {/* Warehouse Config */}
-            {warehouse && (
-              <>
-                <div className="h-px bg-border" />
-                <div>
-                  <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Warehouse Config</h4>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Size</span>
-                      <span className="font-medium">{warehouse.size}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Type</span>
-                      <span className="font-medium">{warehouse.warehouseType}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Clusters</span>
-                      <span className="tabular-nums font-medium">{warehouse.minNumClusters}–{warehouse.maxNumClusters}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Auto-stop</span>
-                      <span className="tabular-nums font-medium">{warehouse.autoStopMins}m</span>
-                    </div>
-                    {warehouse.isServerless && (
-                      <Badge variant="outline" className="text-[10px] w-fit">Serverless</Badge>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
           </div>
         </aside>
       </div>
