@@ -786,7 +786,7 @@ export function WarehouseMonitor({
                 onQueryClick={handleQueryClick}
                 laneHeight={8}
                 maxLanes={80}
-                maxHeight={250}
+                maxHeight={350}
               />
             </CardContent>
           </Card>
