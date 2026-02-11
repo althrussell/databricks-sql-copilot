@@ -10,6 +10,7 @@
  */
 
 import { getConfig } from "@/lib/config";
+import { fingerprint as computeFingerprint } from "@/lib/domain/sql-fingerprint";
 import type {
   WarehouseLiveStats,
   EndpointMetric,
@@ -198,15 +199,19 @@ interface WarehouseStatsResponse {
 }
 
 interface EndpointMetricResponse {
-  start_time_ms: number;
-  end_time_ms: number;
-  max_running_slots: number;
-  max_queued_slots: number;
-  throughput: number;
+  start_time_ms: number | string;
+  end_time_ms: number | string;
+  max_running_slots: number | string;
+  max_queued_slots: number | string;
+  throughput: number | string;
+  [key: string]: unknown; // catch extra fields
 }
 
 interface EndpointMetricsListResponse {
-  metrics: EndpointMetricResponse[];
+  metrics?: EndpointMetricResponse[];
+  // Fallback keys in case the API nests differently
+  endpoint_metrics?: EndpointMetricResponse[];
+  [key: string]: unknown;
 }
 
 interface QueryHistoryApiQuery {
@@ -363,12 +368,22 @@ export async function getEndpointMetrics(
     }
   );
 
-  return (data.metrics ?? []).map((m) => ({
-    startTimeMs: m.start_time_ms,
-    endTimeMs: m.end_time_ms,
-    maxRunningSlots: m.max_running_slots ?? 0,
-    maxQueuedSlots: m.max_queued_slots ?? 0,
-    throughput: m.throughput ?? 0,
+  const rawMetrics = data.metrics ?? data.endpoint_metrics ?? [];
+  if (rawMetrics.length > 0) {
+    console.log(
+      `[endpoint-metrics] ${rawMetrics.length} buckets, sample:`,
+      JSON.stringify(rawMetrics[0])
+    );
+  } else {
+    console.warn("[endpoint-metrics] empty response, keys:", Object.keys(data));
+  }
+
+  return rawMetrics.map((m) => ({
+    startTimeMs: Number(m.start_time_ms) || 0,
+    endTimeMs: Number(m.end_time_ms) || 0,
+    maxRunningSlots: Number(m.max_running_slots) || 0,
+    maxQueuedSlots: Number(m.max_queued_slots) || 0,
+    throughput: Number(m.throughput) || 0,
   }));
 }
 
@@ -468,6 +483,7 @@ function mapApiQueryToTimeline(q: QueryHistoryApiQuery): TimelineQuery {
     bytesScanned: readBytes,
     spillBytes: metrics.spill_to_disk_bytes ?? 0,
     queryText: q.query_text ?? undefined,
+    fingerprint: q.query_text ? computeFingerprint(q.query_text) : undefined,
   };
 }
 

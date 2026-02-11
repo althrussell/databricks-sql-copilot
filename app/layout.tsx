@@ -90,7 +90,7 @@ export default function RootLayout({
           </header>
 
           {/* ── Main content — L0 canvas ── */}
-          <main className="container mx-auto px-6 py-8">{children}</main>
+          <main>{children}</main>
         </ThemeProvider>
       </body>
     </html>

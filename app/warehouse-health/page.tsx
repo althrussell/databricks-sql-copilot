@@ -6,5 +6,9 @@ export const revalidate = 300;
 export default function WarehouseHealthPage() {
   const workspaceUrl = getWorkspaceBaseUrl();
 
-  return <WarehouseHealthReport workspaceUrl={workspaceUrl} />;
+  return (
+    <div className="container mx-auto px-6 py-8">
+      <WarehouseHealthReport workspaceUrl={workspaceUrl} />
+    </div>
+  );
 }

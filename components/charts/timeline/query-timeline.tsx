@@ -152,14 +152,18 @@ export function QueryTimeline({
   }, []);
 
   // Fallback click detection: when pointer capture redirects events to the
-  // container, the span's native onClick may not fire. Detect clicks on spans
-  // via the data-query-id attribute after pointerup releases capture.
+  // container, the span's native onClick may not fire.  Use elementFromPoint
+  // to resolve the real element under the cursor after capture is released.
   const handleContainerClick = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {
-      const target = e.target as HTMLElement;
+      // e.target may be the container itself due to pointer capture;
+      // elementFromPoint gives us the actual element under the cursor.
+      const realTarget =
+        (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null) ??
+        (e.target as HTMLElement);
       const queryId =
-        target.dataset?.queryId ??
-        target.closest<HTMLElement>("[data-query-id]")?.dataset?.queryId;
+        realTarget.dataset?.queryId ??
+        realTarget.closest<HTMLElement>("[data-query-id]")?.dataset?.queryId;
       if (queryId) {
         handleQueryClick(queryId);
       }

@@ -12,6 +12,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ChevronDown,
+  ChevronRight,
   Loader2,
   RefreshCw,
   Server,
@@ -30,7 +32,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { QueryTimeline } from "@/components/charts/timeline/query-timeline";
 import { StepAreaChart } from "@/components/charts/step-area-chart";
 import { StackedBarsChart } from "@/components/charts/stacked-bars-chart";
@@ -135,6 +142,7 @@ export function WarehouseMonitor({
   const [sortAsc, setSortAsc] = useState(false);
   const [activeFilter, setActiveFilter] = useState<QueryFilter | null>(null);
   const [activeHeatmapCell, setActiveHeatmapCell] = useState<string | null>(null);
+  const [expandedQueryId, setExpandedQueryId] = useState<string | null>(null);
 
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -365,12 +373,18 @@ export function WarehouseMonitor({
   // ── Query click → scroll to table row ─────────────────────────
 
   const handleQueryClick = useCallback((queryId: string) => {
+    // Clear any active filter so the clicked query is visible in the table
+    setActiveFilter(null);
+    setActiveHeatmapCell(null);
     setHighlightedQueryId((prev) => (prev === queryId ? null : queryId));
-    // Scroll to the row in the table
-    const row = document.getElementById(`query-row-${queryId}`);
-    if (row) {
-      row.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    setExpandedQueryId((prev) => (prev === queryId ? null : queryId));
+    // Scroll after React has re-rendered (filter cleared, row visible)
+    requestAnimationFrame(() => {
+      const row = document.getElementById(`query-row-${queryId}`);
+      if (row) {
+        row.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
   }, []);
 
   // ── Sorted queries for the table ──────────────────────────────
@@ -659,10 +673,11 @@ export function WarehouseMonitor({
                       : "AI Insights"}
                 </Button>
               </div>
-              <div className="border border-border rounded-md overflow-auto max-h-[calc(100vh-26rem)]">
+              <div className="border border-border rounded-md overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-6 px-2" />
                       <TableHead className="w-8">Status</TableHead>
                       <TableHead>User</TableHead>
                       <TableHead>Source</TableHead>
@@ -697,44 +712,106 @@ export function WarehouseMonitor({
                         Started{sortColumn === "start" && <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>}
                       </TableHead>
                       {hasInsights && <TableHead className="min-w-[180px]">AI Insight</TableHead>}
+                      <TableHead className="w-10 text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sortedTableQueries.length > 0 ? (
-                      sortedTableQueries.map((q) => (
-                        <TableRow
-                          key={q.id}
-                          id={`query-row-${q.id}`}
-                          className={`cursor-pointer transition-colors ${
-                            highlightedQueryId === q.id ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
-                          }`}
-                          onClick={() => handleQueryClick(q.id)}
-                        >
-                          <TableCell><QueryStatusDot status={q.status} /></TableCell>
-                          <TableCell
-                            className="text-xs truncate max-w-[120px] cursor-pointer hover:text-primary transition-colors"
-                            onClick={(e) => { e.stopPropagation(); filterByUser(q.userName); }}
-                          >{q.userName}</TableCell>
-                          <TableCell
-                            className="text-xs cursor-pointer hover:text-primary transition-colors"
-                            onClick={(e) => { e.stopPropagation(); filterBySource(q.sourceName); }}
-                          >{q.sourceName}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{q.statementType}</TableCell>
-                          <TableCell className="text-xs tabular-nums font-medium">{formatDuration(q.durationMs)}</TableCell>
-                          <TableCell className="text-xs tabular-nums">{formatBytes(q.bytesScanned)}</TableCell>
-                          <TableCell className="text-xs tabular-nums">{q.cacheHitPercent > 0 ? `${q.cacheHitPercent}%` : "-"}</TableCell>
-                          <TableCell className="text-xs tabular-nums">
-                            {q.spillBytes > 0 ? <span className="text-destructive">{formatBytes(q.spillBytes)}</span> : "-"}
-                          </TableCell>
-                          <TableCell className="text-xs tabular-nums text-muted-foreground">{formatTime(q.startTimeMs)}</TableCell>
-                          {hasInsights && (
-                            <TableCell className="text-xs"><InsightCell insight={insights[q.id] ?? null} /></TableCell>
-                          )}
-                        </TableRow>
-                      ))
+                      sortedTableQueries.map((q) => {
+                        const isExpanded = expandedQueryId === q.id;
+                        const colCount = 11 + (hasInsights ? 1 : 0);
+                        return (
+                          <React.Fragment key={q.id}>
+                            <TableRow
+                              id={`query-row-${q.id}`}
+                              className={`cursor-pointer transition-colors ${
+                                highlightedQueryId === q.id ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
+                              }`}
+                              onClick={() => handleQueryClick(q.id)}
+                            >
+                              <TableCell className="px-2 w-6">
+                                {isExpanded
+                                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                              </TableCell>
+                              <TableCell><QueryStatusDot status={q.status} /></TableCell>
+                              <TableCell
+                                className="text-xs truncate max-w-[120px] cursor-pointer hover:text-primary transition-colors"
+                                onClick={(e) => { e.stopPropagation(); filterByUser(q.userName); }}
+                              >{q.userName}</TableCell>
+                              <TableCell
+                                className="text-xs cursor-pointer hover:text-primary transition-colors"
+                                onClick={(e) => { e.stopPropagation(); filterBySource(q.sourceName); }}
+                              >{q.sourceName}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{q.statementType}</TableCell>
+                              <TableCell className="text-xs tabular-nums font-medium">{formatDuration(q.durationMs)}</TableCell>
+                              <TableCell className="text-xs tabular-nums">{formatBytes(q.bytesScanned)}</TableCell>
+                              <TableCell className="text-xs tabular-nums">{q.cacheHitPercent > 0 ? `${q.cacheHitPercent}%` : "-"}</TableCell>
+                              <TableCell className="text-xs tabular-nums">
+                                {q.spillBytes > 0 ? <span className="text-destructive">{formatBytes(q.spillBytes)}</span> : "-"}
+                              </TableCell>
+                              <TableCell className="text-xs tabular-nums text-muted-foreground">{formatTime(q.startTimeMs)}</TableCell>
+                              {hasInsights && (
+                                <TableCell className="text-xs"><InsightCell insight={insights[q.id] ?? null} /></TableCell>
+                              )}
+                              <TableCell className="text-center">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        router.push(`/queries/${q.fingerprint ?? q.id}?action=analyse`);
+                                      }}
+                                    >
+                                      <Sparkles className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>AI Analyse &amp; Optimise</TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                            </TableRow>
+                            {isExpanded && q.queryText && (
+                              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                                <TableCell colSpan={colCount} className="py-2 px-4">
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">SQL Statement</p>
+                                      <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground/90 max-h-48 overflow-y-auto bg-background/50 rounded-md p-2 border border-border/50">
+                                        {q.queryText}
+                                      </pre>
+                                    </div>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="shrink-0 h-7 text-[11px] gap-1.5"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        router.push(`/queries/${q.fingerprint ?? q.id}?action=analyse`);
+                                      }}
+                                    >
+                                      <Sparkles className="h-3 w-3" />
+                                      AI Analyse &amp; Optimise
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            {isExpanded && !q.queryText && (
+                              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                                <TableCell colSpan={colCount} className="py-2 px-4">
+                                  <p className="text-xs text-muted-foreground italic">SQL text not available for this query.</p>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={hasInsights ? 10 : 9} className="text-center text-sm text-muted-foreground h-20">
+                        <TableCell colSpan={hasInsights ? 12 : 11} className="text-center text-sm text-muted-foreground h-20">
                           {activeFilter ? "No queries match the current filter" : "No queries in this time range"}
                         </TableCell>
                       </TableRow>

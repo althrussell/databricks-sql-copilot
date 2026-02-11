@@ -371,8 +371,10 @@ export default async function HomePage({
   }
 
   return (
-    <Suspense fallback={<DashboardSkeleton />}>
-      <CoreDashboardLoader preset={preset} customRange={customRange} />
-    </Suspense>
+    <div className="container mx-auto px-6 py-8">
+      <Suspense fallback={<DashboardSkeleton />}>
+        <CoreDashboardLoader preset={preset} customRange={customRange} />
+      </Suspense>
+    </div>
   );
 }

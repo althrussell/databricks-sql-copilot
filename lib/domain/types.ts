@@ -41,6 +41,8 @@ export interface TimelineQuery {
   spillBytes: number;
   /** Raw SQL text (may be truncated). Used for AI triage. */
   queryText?: string;
+  /** Normalized SQL fingerprint for deduplication / linking to query details. */
+  fingerprint?: string;
 }
 
 /** Time-bucketed activity data for sparklines */

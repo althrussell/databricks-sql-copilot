@@ -51,13 +51,22 @@ export function WarehouseTable({ warehouses, activity }: WarehouseTableProps) {
   }, [activity]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return warehouses;
-    const q = search.toLowerCase();
-    return warehouses.filter(
-      (wh) =>
-        wh.name.toLowerCase().includes(q) ||
-        wh.id.toLowerCase().includes(q)
-    );
+    let list = warehouses;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (wh) =>
+          wh.name.toLowerCase().includes(q) ||
+          wh.id.toLowerCase().includes(q)
+      );
+    }
+    // Running/starting warehouses first, then alphabetical
+    return [...list].sort((a, b) => {
+      const aRunning = a.state.toUpperCase() === "RUNNING" || a.state.toUpperCase() === "STARTING" ? 0 : 1;
+      const bRunning = b.state.toUpperCase() === "RUNNING" || b.state.toUpperCase() === "STARTING" ? 0 : 1;
+      if (aRunning !== bRunning) return aRunning - bRunning;
+      return a.name.localeCompare(b.name);
+    });
   }, [warehouses, search]);
 
   if (warehouses.length === 0) {
