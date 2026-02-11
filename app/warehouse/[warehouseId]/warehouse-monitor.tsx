@@ -74,6 +74,8 @@ interface WarehouseMonitorProps {
   warehouse: WarehouseInfo | null;
   initialMetrics: EndpointMetric[];
   initialQueries: TimelineQuery[];
+  initialNextPageToken?: string;
+  initialHasNextPage?: boolean;
   initialLiveStats: WarehouseLiveStats | null;
   initialRangeMs: { start: number; end: number };
   rangeHours: number;
@@ -86,6 +88,8 @@ export function WarehouseMonitor({
   initialMetrics,
   initialQueries,
   initialLiveStats,
+  initialNextPageToken,
+  initialHasNextPage = false,
   initialRangeMs,
   rangeHours: initialRangeHours,
   fetchError,
@@ -101,6 +105,11 @@ export function WarehouseMonitor({
   const [liveStats, setLiveStats] = useState<WarehouseLiveStats | null>(
     initialLiveStats
   );
+  const [nextPageToken, setNextPageToken] = useState<string | undefined>(
+    initialNextPageToken
+  );
+  const [hasNextPage, setHasNextPage] = useState(initialHasNextPage);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [highlightedQueryId, setHighlightedQueryId] = useState<string | null>(
     null
@@ -145,6 +154,8 @@ export function WarehouseMonitor({
           }
           if (queriesResult.status === "fulfilled") {
             setQueries(queriesResult.value.queries);
+            setNextPageToken(queriesResult.value.nextPageToken);
+            setHasNextPage(queriesResult.value.hasNextPage);
           }
           if (statsResult.status === "fulfilled") {
             setLiveStats(statsResult.value);
@@ -156,6 +167,29 @@ export function WarehouseMonitor({
     },
     [warehouseId]
   );
+
+  // ── Load more queries ──────────────────────────────────────────
+
+  const handleLoadMore = useCallback(async () => {
+    if (!nextPageToken || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const now = Date.now();
+      const startMs = now - rangeHours * 60 * 60 * 1000;
+      const endMs = now;
+      const result = await fetchWarehouseQueries(warehouseId, startMs, endMs, {
+        maxResults: 500,
+        pageToken: nextPageToken,
+      });
+      setQueries((prev) => [...prev, ...result.queries]);
+      setNextPageToken(result.nextPageToken);
+      setHasNextPage(result.hasNextPage);
+    } catch (err) {
+      console.error("[warehouse-monitor] load more failed:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [warehouseId, rangeHours, nextPageToken, isLoadingMore]);
 
   // Auto-refresh every 15 seconds
   useEffect(() => {
@@ -184,14 +218,14 @@ export function WarehouseMonitor({
       // When user zooms the timeline, refetch with the new range
       startTransition(async () => {
         try {
-          const [newQueries] = await Promise.all([
-            fetchWarehouseQueries(
-              warehouseId,
-              Math.round(range.start),
-              Math.round(range.end)
-            ),
-          ]);
+          const newQueries = await fetchWarehouseQueries(
+            warehouseId,
+            Math.round(range.start),
+            Math.round(range.end)
+          );
           setQueries(newQueries.queries);
+          setNextPageToken(newQueries.nextPageToken);
+          setHasNextPage(newQueries.hasNextPage);
         } catch (err) {
           console.error("[warehouse-monitor] zoom refetch failed:", err);
         }
@@ -376,38 +410,41 @@ export function WarehouseMonitor({
         </div>
 
         <div className="p-6 space-y-6">
-          {/* ── Live stats cards ──────────────────────────────── */}
+          {/* ── Live status bars ──────────────────────────────── */}
           {liveStats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard
-                label="Active Clusters"
-                value={liveStats.numActiveClusters}
-                icon={<Server className="h-4 w-4" />}
-              />
-              <StatCard
-                label="Running Queries"
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <StatusBar
+                label="RUNNING"
                 value={liveStats.numRunningCommands}
-                icon={<Activity className="h-4 w-4" />}
-                valueColor={
-                  liveStats.numRunningCommands > 0
-                    ? "text-chart-3"
-                    : undefined
-                }
+                maxValue={Math.max(queries.length, 1)}
+                color="bg-chart-3"
+                icon={<Activity className="h-3.5 w-3.5" />}
               />
-              <StatCard
-                label="Queued"
+              <StatusBar
+                label="QUEUED"
                 value={liveStats.numQueuedCommands}
-                icon={<Clock className="h-4 w-4" />}
-                valueColor={
-                  liveStats.numQueuedCommands > 0
-                    ? "text-chart-4"
-                    : undefined
-                }
+                maxValue={Math.max(queries.length, 1)}
+                color="bg-chart-4"
+                icon={<Clock className="h-3.5 w-3.5" />}
               />
-              <StatCard
-                label="Total in Window"
-                value={queries.length}
-                icon={<Layers className="h-4 w-4" />}
+              <StatusBar
+                label="COMPLETED"
+                value={Math.max(
+                  queries.length -
+                    liveStats.numRunningCommands -
+                    liveStats.numQueuedCommands,
+                  0
+                )}
+                maxValue={Math.max(queries.length, 1)}
+                color="bg-primary"
+                icon={<Layers className="h-3.5 w-3.5" />}
+              />
+              <StatusBar
+                label="CLUSTERS"
+                value={liveStats.numActiveClusters}
+                maxValue={Math.max(liveStats.numActiveClusters, 4)}
+                color="bg-chart-2"
+                icon={<Server className="h-3.5 w-3.5" />}
               />
             </div>
           )}
@@ -622,6 +659,27 @@ export function WarehouseMonitor({
                       </TableBody>
                     </Table>
                   </div>
+                  {/* Pagination footer */}
+                  <div className="flex items-center justify-between pt-3 border-t border-border mt-2 px-1">
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      Showing {sortedTableQueries.length.toLocaleString()} of{" "}
+                      {hasNextPage
+                        ? `${queries.length.toLocaleString()}+`
+                        : queries.length.toLocaleString()}{" "}
+                      queries
+                    </span>
+                    {hasNextPage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={handleLoadMore}
+                        disabled={isLoadingMore}
+                      >
+                        {isLoadingMore ? "Loading…" : "Load more"}
+                      </Button>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -655,6 +713,37 @@ export function WarehouseMonitor({
                 </CardContent>
               </Card>
 
+              {/* Query breakdown by source */}
+              <Card>
+                <CardContent className="pt-4">
+                  <h4 className="text-sm font-medium mb-3">
+                    Query Breakdown % by Source
+                  </h4>
+                  <div className="space-y-1.5">
+                    {summaryStats.topSources.map(([source, count]) => {
+                      const pct = queries.length > 0 ? Math.round((count / queries.length) * 100) : 0;
+                      return (
+                        <div key={source} className="space-y-0.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="truncate max-w-[140px]">{source}</span>
+                            <span className="tabular-nums text-muted-foreground">{pct}%</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {summaryStats.topSources.length === 0 && (
+                      <span className="text-xs text-muted-foreground">No data</span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
               {/* Duration histogram */}
               <Card>
                 <CardContent className="pt-4">
@@ -672,17 +761,26 @@ export function WarehouseMonitor({
                 <CardContent className="pt-4">
                   <h4 className="text-sm font-medium mb-3">Top Users</h4>
                   <div className="space-y-1.5">
-                    {summaryStats.topUsers.map(([user, count]) => (
-                      <div
-                        key={user}
-                        className="flex items-center justify-between text-xs"
-                      >
-                        <span className="truncate max-w-[140px]">{user}</span>
-                        <span className="tabular-nums text-muted-foreground">
-                          {count}
-                        </span>
-                      </div>
-                    ))}
+                    {summaryStats.topUsers.map(([user, count]) => {
+                      const maxCount = summaryStats.topUsers[0]?.[1] ?? 1;
+                      const pct = Math.round((count / maxCount) * 100);
+                      return (
+                        <div key={user} className="space-y-0.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="truncate max-w-[140px]">{user}</span>
+                            <span className="tabular-nums text-muted-foreground">
+                              {count}
+                            </span>
+                          </div>
+                          <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-chart-2 transition-all"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                     {summaryStats.topUsers.length === 0 && (
                       <span className="text-xs text-muted-foreground">
                         No data
@@ -714,26 +812,35 @@ export function WarehouseMonitor({
 
 // ── Sub-components ─────────────────────────────────────────────────
 
-function StatCard({
+function StatusBar({
   label,
   value,
+  maxValue,
+  color,
   icon,
-  valueColor,
 }: {
   label: string;
   value: number;
+  maxValue: number;
+  color: string;
   icon: React.ReactNode;
-  valueColor?: string;
 }) {
+  const pct = maxValue > 0 ? Math.min((value / maxValue) * 100, 100) : 0;
   return (
     <Card>
-      <CardContent className="pt-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-          {icon}
-          {label}
+      <CardContent className="pt-3 pb-3 px-4">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+            {icon}
+            {label}
+          </div>
+          <span className="text-lg font-bold tabular-nums">{value.toLocaleString()}</span>
         </div>
-        <div className={`text-2xl font-bold tabular-nums ${valueColor ?? ""}`}>
-          {value.toLocaleString()}
+        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full ${color} transition-all`}
+            style={{ width: `${pct}%`, minWidth: value > 0 ? "4px" : "0" }}
+          />
         </div>
       </CardContent>
     </Card>

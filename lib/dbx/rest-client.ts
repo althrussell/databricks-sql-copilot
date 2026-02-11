@@ -374,6 +374,7 @@ export async function getEndpointMetrics(
 
 /**
  * Get query history for a warehouse via the REST API (richer metadata than system tables).
+ * Uses GET /api/2.0/sql/history/queries with dotted query parameters for filtering.
  * Supports pagination via page tokens.
  */
 export async function getWarehouseQueries(
@@ -384,23 +385,18 @@ export async function getWarehouseQueries(
 ): Promise<{ queries: TimelineQuery[]; nextPageToken?: string; hasNextPage: boolean }> {
   const { maxResults = 500, pageToken } = options;
 
-  const body = {
-    filter_by: {
-      warehouse_ids: [warehouseId],
-      query_start_time_range: {
-        start_time_ms: startTimeMs,
-        end_time_ms: endTimeMs,
-      },
-    },
-    include_metrics: true,
+  const params: Record<string, string | number | undefined> = {
+    "filter_by.warehouse_ids": warehouseId,
+    "filter_by.query_start_time_range.start_time_ms": startTimeMs,
+    "filter_by.query_start_time_range.end_time_ms": endTimeMs,
+    include_metrics: "true",
     max_results: maxResults,
     ...(pageToken ? { page_token: pageToken } : {}),
   };
 
-  // The query history list API uses POST to /api/2.0/sql/history/queries/list
   const listData = await dbxFetch<QueryHistoryListResponse>(
-    "/api/2.0/sql/history/queries/list",
-    { method: "POST", body }
+    "/api/2.0/sql/history/queries",
+    { params }
   );
 
   const queries = (listData.res ?? []).map(mapApiQueryToTimeline);

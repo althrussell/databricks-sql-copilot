@@ -42,6 +42,8 @@ async function WarehouseMonitorLoader({
   let initialQueries: TimelineQuery[] = [];
   let liveStats: WarehouseLiveStats | null = null;
   let fetchError: string | null = null;
+  let initialNextPageToken: string | undefined;
+  let initialHasNextPage = false;
 
   try {
     const [warehouseResult, metricsResult, queriesResult, statsResult] =
@@ -58,10 +60,11 @@ async function WarehouseMonitorLoader({
       warehouseResult.status === "fulfilled" ? warehouseResult.value : null;
     initialMetrics =
       metricsResult.status === "fulfilled" ? metricsResult.value : [];
-    initialQueries =
-      queriesResult.status === "fulfilled"
-        ? queriesResult.value.queries
-        : [];
+    if (queriesResult.status === "fulfilled") {
+      initialQueries = queriesResult.value.queries;
+      initialNextPageToken = queriesResult.value.nextPageToken;
+      initialHasNextPage = queriesResult.value.hasNextPage;
+    }
     liveStats =
       statsResult.status === "fulfilled" ? statsResult.value : null;
 
@@ -93,6 +96,8 @@ async function WarehouseMonitorLoader({
       warehouse={warehouse}
       initialMetrics={initialMetrics}
       initialQueries={initialQueries}
+      initialNextPageToken={initialNextPageToken}
+      initialHasNextPage={initialHasNextPage}
       initialLiveStats={liveStats}
       initialRangeMs={{ start: startMs, end: endMs }}
       rangeHours={rangeHours}
