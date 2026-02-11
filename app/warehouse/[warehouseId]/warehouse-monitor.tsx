@@ -11,12 +11,7 @@ import React, {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  Activity,
   ArrowLeft,
-  ChevronRight,
-  Clock,
-  Cpu,
-  Layers,
   Loader2,
   RefreshCw,
   Server,
@@ -35,12 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryTimeline } from "@/components/charts/timeline/query-timeline";
 import { StepAreaChart } from "@/components/charts/step-area-chart";
 import { StackedBarsChart } from "@/components/charts/stacked-bars-chart";
@@ -146,17 +136,20 @@ export function WarehouseMonitor({
   const [activeFilter, setActiveFilter] = useState<QueryFilter | null>(null);
   const [activeHeatmapCell, setActiveHeatmapCell] = useState<string | null>(null);
 
+  const [refreshTick, setRefreshTick] = useState(0);
+
   const tableRef = useRef<HTMLDivElement>(null);
 
   // ── Derived range ─────────────────────────────────────────────
 
   const currentRange: TimeRange = useMemo(() => {
+    void refreshTick; // dependency to recompute on refresh
     const now = Date.now();
     return {
       start: now - rangeHours * 60 * 60 * 1000,
       end: now,
     };
-  }, [rangeHours]);
+  }, [rangeHours, refreshTick]);
 
   // ── Data refresh ──────────────────────────────────────────────
 
@@ -187,6 +180,8 @@ export function WarehouseMonitor({
           if (statsResult.status === "fulfilled") {
             setLiveStats(statsResult.value);
           }
+          // Bump tick so the timeline range recalculates with fresh Date.now()
+          setRefreshTick((t) => t + 1);
         } catch (err) {
           console.error("[warehouse-monitor] refresh failed:", err);
         }
@@ -467,175 +462,138 @@ export function WarehouseMonitor({
 
   // ── Render ────────────────────────────────────────────────────
 
+  const hasInsights = Object.keys(insights).length > 0;
+
   return (
     <TooltipProvider delayDuration={100}>
-      <div className="min-h-screen bg-background">
-        {/* ── Header ─────────────────────────────────────────── */}
-        <div className="border-b border-border bg-card px-6 py-4">
-          <div className="max-w-screen-xl mx-auto">
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-2">
-            <Link
-              href="/"
-              className="hover:text-foreground transition-colors flex items-center gap-1"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Dashboard
-            </Link>
-            <ChevronRight className="h-3.5 w-3.5" />
-            <span className="text-foreground font-medium">
-              {warehouse?.name ?? warehouseId}
-            </span>
-          </div>
-
-          {/* Title row */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-semibold">
-                {warehouse?.name ?? "Warehouse Monitor"}
-              </h1>
-              {warehouse && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    {warehouse.size}
-                  </Badge>
-                  <WarehouseStateBadge state={warehouse.state} />
-                  {warehouse.isServerless && (
-                    <Badge variant="secondary" className="text-xs">
-                      Serverless
+      <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
+        {/* ── Main content area (scrollable) ─────────────────── */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Compact toolbar */}
+          <div className="sticky top-0 z-30 bg-card/95 backdrop-blur-sm border-b border-border px-4 py-2">
+            <div className="flex items-center justify-between gap-4">
+              {/* Left: breadcrumb + warehouse info */}
+              <div className="flex items-center gap-2 min-w-0">
+                <Link
+                  href="/warehouse-monitor"
+                  className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+                <h1 className="text-sm font-semibold truncate">
+                  {warehouse?.name ?? "Warehouse Monitor"}
+                </h1>
+                {warehouse && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Badge variant="outline" className="text-[10px] h-5">
+                      {warehouse.size}
                     </Badge>
-                  )}
+                    <WarehouseStateBadge state={warehouse.state} />
+                    {warehouse.isServerless && (
+                      <Badge variant="secondary" className="text-[10px] h-5">
+                        Serverless
+                      </Badge>
+                    )}
+                  </div>
+                )}
+                {isPending && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />
+                )}
+              </div>
+
+              {/* Center: live counters */}
+              {liveStats && (
+                <div className="hidden md:flex items-center gap-3 text-xs shrink-0">
+                  <span className="flex items-center gap-1 tabular-nums">
+                    <span className="h-1.5 w-1.5 rounded-full bg-chart-3" />
+                    {liveStats.numRunningCommands} running
+                  </span>
+                  <span className="flex items-center gap-1 tabular-nums">
+                    <span className="h-1.5 w-1.5 rounded-full bg-chart-4" />
+                    {liveStats.numQueuedCommands} queued
+                  </span>
+                  <span className="flex items-center gap-1 tabular-nums">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    {Math.max(
+                      queries.length -
+                        liveStats.numRunningCommands -
+                        liveStats.numQueuedCommands,
+                      0
+                    )}{" "}
+                    completed
+                  </span>
+                  <span className="flex items-center gap-1 tabular-nums">
+                    <Server className="h-3 w-3 text-muted-foreground" />
+                    {liveStats.numActiveClusters}
+                  </span>
                 </div>
               )}
-              {isPending && (
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant={autoRefresh ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs gap-1"
-                onClick={() => setAutoRefresh(!autoRefresh)}
-              >
-                <RefreshCw
-                  className={`h-3 w-3 ${autoRefresh ? "animate-spin" : ""}`}
-                  style={{ animationDuration: "3s" }}
-                />
-                {autoRefresh ? "Live" : "Paused"}
-              </Button>
+              {/* Right: range presets + auto-refresh */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {RANGE_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.label}
+                    variant={rangeHours === preset.hours ? "default" : "ghost"}
+                    size="sm"
+                    className="h-6 text-[11px] px-2 min-w-0"
+                    onClick={() => handlePresetChange(preset.hours)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+                <div className="h-4 w-px bg-border mx-0.5" />
+                <Button
+                  variant={autoRefresh ? "default" : "ghost"}
+                  size="sm"
+                  className="h-6 text-[11px] px-2 gap-1"
+                  onClick={() => setAutoRefresh(!autoRefresh)}
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 ${autoRefresh ? "animate-spin" : ""}`}
+                    style={{ animationDuration: "3s" }}
+                  />
+                  {autoRefresh ? "Live" : "Paused"}
+                </Button>
+              </div>
             </div>
           </div>
 
-          {/* Range presets */}
-          <div className="flex items-center gap-1.5 mt-3">
-            {RANGE_PRESETS.map((preset) => (
-              <Button
-                key={preset.label}
-                variant={rangeHours === preset.hours ? "default" : "outline"}
-                size="sm"
-                className="h-7 text-xs min-w-[3rem]"
-                onClick={() => handlePresetChange(preset.hours)}
-              >
-                {preset.label}
-              </Button>
-            ))}
-          </div>
-          </div>
-        </div>
-
-        <div className="p-6">
-          <div className="max-w-screen-xl mx-auto space-y-6">
-          {/* ── Live status bars ──────────────────────────────── */}
-          {liveStats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatusBar
-                label="RUNNING"
-                value={liveStats.numRunningCommands}
-                maxValue={Math.max(queries.length, 1)}
-                color="bg-chart-3"
-                icon={<Activity className="h-3.5 w-3.5" />}
-              />
-              <StatusBar
-                label="QUEUED"
-                value={liveStats.numQueuedCommands}
-                maxValue={Math.max(queries.length, 1)}
-                color="bg-chart-4"
-                icon={<Clock className="h-3.5 w-3.5" />}
-              />
-              <StatusBar
-                label="COMPLETED"
-                value={Math.max(
-                  queries.length -
-                    liveStats.numRunningCommands -
-                    liveStats.numQueuedCommands,
-                  0
-                )}
-                maxValue={Math.max(queries.length, 1)}
-                color="bg-primary"
-                icon={<Layers className="h-3.5 w-3.5" />}
-              />
-              <StatusBar
-                label="CLUSTERS"
-                value={liveStats.numActiveClusters}
-                maxValue={Math.max(liveStats.numActiveClusters, 4)}
-                color="bg-chart-2"
-                icon={<Server className="h-3.5 w-3.5" />}
-              />
-            </div>
-          )}
-
+          {/* Content */}
+          <div className="p-4 space-y-3">
           {/* ── Metrics timeline ─────────────────────────────── */}
           <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium">Warehouse Metrics</h3>
-                <div className="flex items-center gap-4 text-[10px]">
+            <CardContent className="pt-3 pb-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-medium">Warehouse Metrics</h3>
+                <div className="flex items-center gap-3 text-[10px]">
                   <span className="flex items-center gap-1">
-                    <span
-                      className="inline-block w-2 h-2 rounded-full"
-                      style={{ backgroundColor: "var(--chart-3)" }}
-                    />
+                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--chart-3)" }} />
                     Running
                   </span>
                   <span className="flex items-center gap-1">
-                    <span
-                      className="inline-block w-2 h-2 rounded-full"
-                      style={{ backgroundColor: "var(--chart-4)" }}
-                    />
+                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--chart-4)" }} />
                     Queued
                   </span>
                   <span className="flex items-center gap-1">
-                    <span
-                      className="inline-block w-2 h-2 rounded-full"
-                      style={{ backgroundColor: "var(--chart-2)" }}
-                    />
+                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--chart-2)" }} />
                     Throughput
                   </span>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <div className="text-[10px] text-muted-foreground mb-1">
-                    Running / Queued Slots
-                  </div>
+                  <div className="text-[10px] text-muted-foreground mb-1">Running / Queued Slots</div>
                   <StackedBarsChart
                     data={metricsChartData.stackedData}
                     colors={["var(--chart-3)", "var(--chart-4)"]}
                     labels={["Running", "Queued"]}
-                    height={100}
+                    height={80}
                   />
                 </div>
                 <div>
-                  <div className="text-[10px] text-muted-foreground mb-1">
-                    Throughput (queries/interval)
-                  </div>
-                  <StepAreaChart
-                    data={metricsChartData.throughputData}
-                    height={100}
-                    strokeColor="var(--chart-2)"
-                  />
+                  <div className="text-[10px] text-muted-foreground mb-1">Throughput (queries/interval)</div>
+                  <StepAreaChart data={metricsChartData.throughputData} height={80} strokeColor="var(--chart-2)" />
                 </div>
               </div>
             </CardContent>
@@ -643,10 +601,10 @@ export function WarehouseMonitor({
 
           {/* ── Query Timeline ───────────────────────────────── */}
           <Card>
-            <CardContent className="pt-4">
+            <CardContent className="pt-3 pb-3">
               <div className="flex items-center justify-between mb-1">
-                <h3 className="text-sm font-medium flex items-center gap-1.5">
-                  <ZoomIn className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-xs font-medium flex items-center gap-1.5">
+                  <ZoomIn className="h-3.5 w-3.5 text-muted-foreground" />
                   Query Timeline
                 </h3>
               </div>
@@ -660,402 +618,268 @@ export function WarehouseMonitor({
             </CardContent>
           </Card>
 
-          {/* ── Query Table + Summary Panel ───────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Query Table */}
-            <div className="lg:col-span-2" ref={tableRef}>
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-medium">
-                        Queries
-                        {activeFilter
-                          ? ` (${sortedTableQueries.length} of ${queries.length})`
-                          : ` (${queries.length})`}
-                      </h3>
-                      {activeFilter && (
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] gap-1 cursor-pointer hover:bg-destructive/20 transition-colors"
-                          onClick={() => setActiveFilter(null)}
-                        >
-                          {activeFilter.type}: {activeFilter.label}
-                          <X className="h-2.5 w-2.5" />
-                        </Badge>
-                      )}
-                    </div>
-                    <Button
-                      variant={Object.keys(insights).length > 0 ? "outline" : "default"}
-                      size="sm"
-                      className="h-7 text-xs gap-1.5"
-                      onClick={handleFetchInsights}
-                      disabled={isLoadingInsights || queries.length === 0}
+          {/* ── Query Table (full width) ────────────────────── */}
+          <Card ref={tableRef}>
+            <CardContent className="pt-3 pb-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-medium">
+                    Queries
+                    {activeFilter
+                      ? ` (${sortedTableQueries.length} of ${queries.length})`
+                      : ` (${queries.length})`}
+                  </h3>
+                  {activeFilter && (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] gap-1 cursor-pointer hover:bg-destructive/20 transition-colors"
+                      onClick={() => setActiveFilter(null)}
                     >
-                      {isLoadingInsights ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-3 w-3" />
-                      )}
-                      {isLoadingInsights
-                        ? "Analyzing…"
-                        : Object.keys(insights).length > 0
-                          ? "Refresh Insights"
-                          : "AI Insights"}
-                    </Button>
-                  </div>
-                  <div className="border border-border rounded-md overflow-auto max-h-[500px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12">Status</TableHead>
-                          <TableHead className="w-24">User</TableHead>
-                          <TableHead className="w-20">Source</TableHead>
-                          <TableHead className="w-16">Type</TableHead>
-                          <TableHead
-                            className="w-20 cursor-pointer select-none"
-                            onClick={() => {
-                              if (sortColumn === "duration") setSortAsc(!sortAsc);
-                              else {
-                                setSortColumn("duration");
-                                setSortAsc(false);
-                              }
-                            }}
-                          >
-                            Duration
-                            {sortColumn === "duration" && (
-                              <span className="ml-1">
-                                {sortAsc ? "↑" : "↓"}
-                              </span>
-                            )}
-                          </TableHead>
-                          <TableHead
-                            className="w-20 cursor-pointer select-none"
-                            onClick={() => {
-                              if (sortColumn === "bytes") setSortAsc(!sortAsc);
-                              else {
-                                setSortColumn("bytes");
-                                setSortAsc(false);
-                              }
-                            }}
-                          >
-                            Bytes
-                            {sortColumn === "bytes" && (
-                              <span className="ml-1">
-                                {sortAsc ? "↑" : "↓"}
-                              </span>
-                            )}
-                          </TableHead>
-                          <TableHead className="w-14">Cache</TableHead>
-                          <TableHead className="w-16">Spill</TableHead>
-                          <TableHead
-                            className="w-24 cursor-pointer select-none"
-                            onClick={() => {
-                              if (sortColumn === "start") setSortAsc(!sortAsc);
-                              else {
-                                setSortColumn("start");
-                                setSortAsc(false);
-                              }
-                            }}
-                          >
-                            Started
-                            {sortColumn === "start" && (
-                              <span className="ml-1">
-                                {sortAsc ? "↑" : "↓"}
-                              </span>
-                            )}
-                          </TableHead>
-                          {Object.keys(insights).length > 0 && (
-                            <TableHead className="min-w-[180px]">AI Insight</TableHead>
+                      {activeFilter.type}: {activeFilter.label}
+                      <X className="h-2.5 w-2.5" />
+                    </Badge>
+                  )}
+                </div>
+                <Button
+                  variant={hasInsights ? "outline" : "default"}
+                  size="sm"
+                  className="h-6 text-[11px] gap-1.5"
+                  onClick={handleFetchInsights}
+                  disabled={isLoadingInsights || queries.length === 0}
+                >
+                  {isLoadingInsights ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3" />
+                  )}
+                  {isLoadingInsights
+                    ? "Analyzing…"
+                    : hasInsights
+                      ? "Refresh Insights"
+                      : "AI Insights"}
+                </Button>
+              </div>
+              <div className="border border-border rounded-md overflow-auto max-h-[calc(100vh-26rem)]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8">Status</TableHead>
+                      <TableHead>User</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead
+                        className="cursor-pointer select-none"
+                        onClick={() => {
+                          if (sortColumn === "duration") setSortAsc(!sortAsc);
+                          else { setSortColumn("duration"); setSortAsc(false); }
+                        }}
+                      >
+                        Duration{sortColumn === "duration" && <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>}
+                      </TableHead>
+                      <TableHead
+                        className="cursor-pointer select-none"
+                        onClick={() => {
+                          if (sortColumn === "bytes") setSortAsc(!sortAsc);
+                          else { setSortColumn("bytes"); setSortAsc(false); }
+                        }}
+                      >
+                        Bytes{sortColumn === "bytes" && <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>}
+                      </TableHead>
+                      <TableHead>Cache</TableHead>
+                      <TableHead>Spill</TableHead>
+                      <TableHead
+                        className="w-24 cursor-pointer select-none"
+                        onClick={() => {
+                          if (sortColumn === "start") setSortAsc(!sortAsc);
+                          else { setSortColumn("start"); setSortAsc(false); }
+                        }}
+                      >
+                        Started{sortColumn === "start" && <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>}
+                      </TableHead>
+                      {hasInsights && <TableHead className="min-w-[180px]">AI Insight</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedTableQueries.length > 0 ? (
+                      sortedTableQueries.map((q) => (
+                        <TableRow
+                          key={q.id}
+                          id={`query-row-${q.id}`}
+                          className={`cursor-pointer transition-colors ${
+                            highlightedQueryId === q.id ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
+                          }`}
+                          onClick={() => handleQueryClick(q.id)}
+                        >
+                          <TableCell><QueryStatusDot status={q.status} /></TableCell>
+                          <TableCell
+                            className="text-xs truncate max-w-[120px] cursor-pointer hover:text-primary transition-colors"
+                            onClick={(e) => { e.stopPropagation(); filterByUser(q.userName); }}
+                          >{q.userName}</TableCell>
+                          <TableCell
+                            className="text-xs cursor-pointer hover:text-primary transition-colors"
+                            onClick={(e) => { e.stopPropagation(); filterBySource(q.sourceName); }}
+                          >{q.sourceName}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{q.statementType}</TableCell>
+                          <TableCell className="text-xs tabular-nums font-medium">{formatDuration(q.durationMs)}</TableCell>
+                          <TableCell className="text-xs tabular-nums">{formatBytes(q.bytesScanned)}</TableCell>
+                          <TableCell className="text-xs tabular-nums">{q.cacheHitPercent > 0 ? `${q.cacheHitPercent}%` : "-"}</TableCell>
+                          <TableCell className="text-xs tabular-nums">
+                            {q.spillBytes > 0 ? <span className="text-destructive">{formatBytes(q.spillBytes)}</span> : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs tabular-nums text-muted-foreground">{formatTime(q.startTimeMs)}</TableCell>
+                          {hasInsights && (
+                            <TableCell className="text-xs"><InsightCell insight={insights[q.id] ?? null} /></TableCell>
                           )}
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sortedTableQueries.map((q) => (
-                          <TableRow
-                            key={q.id}
-                            id={`query-row-${q.id}`}
-                            className={`cursor-pointer transition-colors ${
-                              highlightedQueryId === q.id
-                                ? "bg-primary/10 ring-1 ring-primary/20"
-                                : "hover:bg-muted/50"
-                            }`}
-                            onClick={() => handleQueryClick(q.id)}
-                          >
-                            <TableCell>
-                              <QueryStatusDot status={q.status} />
-                            </TableCell>
-                            <TableCell
-                              className="text-xs truncate max-w-[100px] cursor-pointer hover:text-primary transition-colors"
-                              onClick={(e) => { e.stopPropagation(); filterByUser(q.userName); }}
-                            >
-                              {q.userName}
-                            </TableCell>
-                            <TableCell
-                              className="text-xs cursor-pointer hover:text-primary transition-colors"
-                              onClick={(e) => { e.stopPropagation(); filterBySource(q.sourceName); }}
-                            >
-                              {q.sourceName}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {q.statementType}
-                            </TableCell>
-                            <TableCell className="text-xs tabular-nums font-medium">
-                              {formatDuration(q.durationMs)}
-                            </TableCell>
-                            <TableCell className="text-xs tabular-nums">
-                              {formatBytes(q.bytesScanned)}
-                            </TableCell>
-                            <TableCell className="text-xs tabular-nums">
-                              {q.cacheHitPercent > 0
-                                ? `${q.cacheHitPercent}%`
-                                : "-"}
-                            </TableCell>
-                            <TableCell className="text-xs tabular-nums">
-                              {q.spillBytes > 0 ? (
-                                <span className="text-destructive">
-                                  {formatBytes(q.spillBytes)}
-                                </span>
-                              ) : (
-                                "-"
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs tabular-nums text-muted-foreground">
-                              {formatTime(q.startTimeMs)}
-                            </TableCell>
-                            {Object.keys(insights).length > 0 && (
-                              <TableCell className="text-xs">
-                                <InsightCell insight={insights[q.id] ?? null} />
-                              </TableCell>
-                            )}
-                          </TableRow>
-                        ))}
-                        {sortedTableQueries.length === 0 && (
-                          <TableRow>
-                            <TableCell
-                              colSpan={Object.keys(insights).length > 0 ? 10 : 9}
-                              className="text-center text-sm text-muted-foreground h-20"
-                            >
-                              {activeFilter
-                                ? "No queries match the current filter"
-                                : "No queries in this time range"}
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  {/* Pagination footer */}
-                  <div className="flex items-center justify-between pt-3 border-t border-border mt-2 px-1">
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      Showing {sortedTableQueries.length.toLocaleString()} of{" "}
-                      {hasNextPage
-                        ? `${queries.length.toLocaleString()}+`
-                        : queries.length.toLocaleString()}{" "}
-                      queries
-                    </span>
-                    {hasNextPage && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs h-7"
-                        onClick={handleLoadMore}
-                        disabled={isLoadingMore}
-                      >
-                        {isLoadingMore ? "Loading…" : "Load more"}
-                      </Button>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={hasInsights ? 10 : 9} className="text-center text-sm text-muted-foreground h-20">
+                          {activeFilter ? "No queries match the current filter" : "No queries in this time range"}
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Summary Panel */}
-            <div className="space-y-4">
-              {/* Status breakdown */}
-              <Card>
-                <CardContent className="pt-4">
-                  <h4 className="text-sm font-medium mb-3">
-                    Status Breakdown
-                  </h4>
-                  <div className="space-y-2">
-                    {Object.entries(summaryStats.statusCounts).map(
-                      ([status, count]) => (
-                        <div
-                          key={status}
-                          className={`flex items-center justify-between text-xs cursor-pointer rounded-sm px-1.5 py-1 -mx-1.5 transition-colors ${
-                            activeFilter?.type === "status" && activeFilter.label === status
-                              ? "bg-primary/10 ring-1 ring-primary/20"
-                              : "hover:bg-muted/50"
-                          }`}
-                          onClick={() => filterByStatus(status)}
-                        >
-                          <div className="flex items-center gap-2">
-                            <QueryStatusDot status={status} />
-                            <span>{status}</span>
-                          </div>
-                          <span className="tabular-nums font-medium">
-                            {count}
-                          </span>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Query breakdown by source */}
-              <Card>
-                <CardContent className="pt-4">
-                  <h4 className="text-sm font-medium mb-3">
-                    Query Breakdown % by Source
-                  </h4>
-                  <div className="space-y-1.5">
-                    {summaryStats.topSources.map(([source, count]) => {
-                      const pct = queries.length > 0 ? Math.round((count / queries.length) * 100) : 0;
-                      const isActive = activeFilter?.type === "source" && activeFilter.label === source;
-                      return (
-                        <div
-                          key={source}
-                          className={`space-y-0.5 cursor-pointer rounded-sm px-1.5 py-1 -mx-1.5 transition-colors ${
-                            isActive ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
-                          }`}
-                          onClick={() => filterBySource(source)}
-                        >
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="truncate max-w-[140px]">{source}</span>
-                            <span className="tabular-nums text-muted-foreground">{pct}%</span>
-                          </div>
-                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-primary transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {summaryStats.topSources.length === 0 && (
-                      <span className="text-xs text-muted-foreground">No data</span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Duration histogram */}
-              <Card>
-                <CardContent className="pt-4">
-                  <h4 className="text-sm font-medium mb-3">
-                    Duration Distribution
-                  </h4>
-                  <SummaryHistogram
-                    durations={queries.map((q) => q.durationMs)}
-                    onBucketClick={filterByDuration}
-                    activeBucket={activeFilter?.type === "duration" ? activeFilter.label : null}
-                  />
-                </CardContent>
-              </Card>
-
-              {/* Top users */}
-              <Card>
-                <CardContent className="pt-4">
-                  <h4 className="text-sm font-medium mb-3">Top Users</h4>
-                  <div className="space-y-1.5">
-                    {summaryStats.topUsers.map(([user, count]) => {
-                      const maxCount = summaryStats.topUsers[0]?.[1] ?? 1;
-                      const pct = Math.round((count / maxCount) * 100);
-                      const isActive = activeFilter?.type === "user" && activeFilter.label === user;
-                      return (
-                        <div
-                          key={user}
-                          className={`space-y-0.5 cursor-pointer rounded-sm px-1.5 py-1 -mx-1.5 transition-colors ${
-                            isActive ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
-                          }`}
-                          onClick={() => filterByUser(user)}
-                        >
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="truncate max-w-[140px]">{user}</span>
-                            <span className="tabular-nums text-muted-foreground">
-                              {count}
-                            </span>
-                          </div>
-                          <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-chart-2 transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {summaryStats.topUsers.length === 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        No data
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* I/O Heatmap */}
-              <Card>
-                <CardContent className="pt-4">
-                  <h4 className="text-sm font-medium mb-3">I/O Heatmap</h4>
-                  <SummaryHeatmap
-                    data={queries.map((q) => ({
-                      filesRead: q.filesRead,
-                      bytesScanned: q.bytesScanned,
-                    }))}
-                    onCellClick={filterByIO}
-                    activeCell={activeFilter?.type === "io" ? activeHeatmapCell : null}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+                  </TableBody>
+                </Table>
+              </div>
+              {/* Pagination footer */}
+              <div className="flex items-center justify-between pt-2 px-1">
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  Showing {sortedTableQueries.length.toLocaleString()} of{" "}
+                  {hasNextPage ? `${queries.length.toLocaleString()}+` : queries.length.toLocaleString()}{" "}
+                  queries
+                </span>
+                {hasNextPage && (
+                  <Button variant="ghost" size="sm" className="text-[11px] h-6" onClick={handleLoadMore} disabled={isLoadingMore}>
+                    {isLoadingMore ? "Loading…" : "Load more"}
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
           </div>
         </div>
+
+        {/* ── Pinned right sidebar ───────────────────────────── */}
+        <aside className="w-60 shrink-0 border-l border-border bg-card overflow-y-auto hidden lg:block">
+          <div className="p-3 space-y-3">
+            {/* Status breakdown */}
+            <div>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Status</h4>
+              <div className="space-y-1">
+                {Object.entries(summaryStats.statusCounts).map(([status, count]) => (
+                  <div
+                    key={status}
+                    className={`flex items-center justify-between text-xs cursor-pointer rounded-sm px-1.5 py-0.5 -mx-1.5 transition-colors ${
+                      activeFilter?.type === "status" && activeFilter.label === status
+                        ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
+                    }`}
+                    onClick={() => filterByStatus(status)}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <QueryStatusDot status={status} />
+                      <span>{status}</span>
+                    </div>
+                    <span className="tabular-nums font-medium">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="h-px bg-border" />
+
+            {/* Source breakdown */}
+            <div>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Sources</h4>
+              <div className="space-y-1">
+                {summaryStats.topSources.map(([source, count]) => {
+                  const pct = queries.length > 0 ? Math.round((count / queries.length) * 100) : 0;
+                  const isActive = activeFilter?.type === "source" && activeFilter.label === source;
+                  return (
+                    <div
+                      key={source}
+                      className={`cursor-pointer rounded-sm px-1.5 py-0.5 -mx-1.5 transition-colors ${
+                        isActive ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
+                      }`}
+                      onClick={() => filterBySource(source)}
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="truncate max-w-[110px]">{source}</span>
+                        <span className="tabular-nums text-muted-foreground">{pct}%</span>
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-muted overflow-hidden mt-0.5">
+                        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {summaryStats.topSources.length === 0 && <span className="text-[11px] text-muted-foreground">No data</span>}
+              </div>
+            </div>
+
+            <div className="h-px bg-border" />
+
+            {/* Duration histogram */}
+            <div>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Duration</h4>
+              <SummaryHistogram
+                durations={queries.map((q) => q.durationMs)}
+                onBucketClick={filterByDuration}
+                activeBucket={activeFilter?.type === "duration" ? activeFilter.label : null}
+              />
+            </div>
+
+            <div className="h-px bg-border" />
+
+            {/* Top users */}
+            <div>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Top Users</h4>
+              <div className="space-y-1">
+                {summaryStats.topUsers.map(([user, count]) => {
+                  const maxUserCount = summaryStats.topUsers[0]?.[1] ?? 1;
+                  const pct = Math.round((count / maxUserCount) * 100);
+                  const isActive = activeFilter?.type === "user" && activeFilter.label === user;
+                  return (
+                    <div
+                      key={user}
+                      className={`cursor-pointer rounded-sm px-1.5 py-0.5 -mx-1.5 transition-colors ${
+                        isActive ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
+                      }`}
+                      onClick={() => filterByUser(user)}
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="truncate max-w-[110px]">{user}</span>
+                        <span className="tabular-nums text-muted-foreground">{count}</span>
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-muted overflow-hidden mt-0.5">
+                        <div className="h-full rounded-full bg-chart-2 transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {summaryStats.topUsers.length === 0 && <span className="text-[11px] text-muted-foreground">No data</span>}
+              </div>
+            </div>
+
+            <div className="h-px bg-border" />
+
+            {/* I/O Heatmap */}
+            <div>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">I/O Heatmap</h4>
+              <SummaryHeatmap
+                data={queries.map((q) => ({ filesRead: q.filesRead, bytesScanned: q.bytesScanned }))}
+                onCellClick={filterByIO}
+                activeCell={activeFilter?.type === "io" ? activeHeatmapCell : null}
+              />
+            </div>
+          </div>
+        </aside>
       </div>
     </TooltipProvider>
   );
 }
 
 // ── Sub-components ─────────────────────────────────────────────────
-
-function StatusBar({
-  label,
-  value,
-  maxValue,
-  color,
-  icon,
-}: {
-  label: string;
-  value: number;
-  maxValue: number;
-  color: string;
-  icon: React.ReactNode;
-}) {
-  const pct = maxValue > 0 ? Math.min((value / maxValue) * 100, 100) : 0;
-  return (
-    <Card>
-      <CardContent className="pt-3 pb-3 px-4">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-            {icon}
-            {label}
-          </div>
-          <span className="text-lg font-bold tabular-nums">{value.toLocaleString()}</span>
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-          <div
-            className={`h-full rounded-full ${color} transition-all`}
-            style={{ width: `${pct}%`, minWidth: value > 0 ? "4px" : "0" }}
-          />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function WarehouseStateBadge({ state }: { state: string }) {
   const colorMap: Record<string, string> = {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export interface TimeRange {
   start: number; // epoch ms
@@ -56,7 +56,7 @@ export function useTimelineZoom(
 ): UseTimelineZoomReturn {
   const { onRangeChange, minZoomMs = 10_000 } = options ?? {};
 
-  const [fullRange] = useState<TimeRange>(initialRange);
+  const [fullRange, setFullRange] = useState<TimeRange>(initialRange);
   const [range, setRangeState] = useState<TimeRange>(initialRange);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
 
@@ -76,6 +76,15 @@ export function useTimelineZoom(
   });
 
   const isZoomed = range.start !== fullRange.start || range.end !== fullRange.end;
+
+  // Sync with external initialRange changes (e.g. live refresh) when not zoomed
+  useEffect(() => {
+    setFullRange(initialRange);
+    if (!isZoomed) {
+      setRangeState(initialRange);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRange.start, initialRange.end]);
 
   const setRange = useCallback(
     (newRange: TimeRange) => {

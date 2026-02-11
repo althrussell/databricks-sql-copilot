@@ -124,11 +124,13 @@ export default async function WarehouseMonitorPage({
   }
 
   return (
-    <Suspense fallback={<WarehouseMonitorLoading />}>
-      <WarehouseMonitorLoader
-        warehouseId={warehouseId}
-        rangeHours={rangeHours}
-      />
-    </Suspense>
+    <div className="-mx-6 -my-8">
+      <Suspense fallback={<WarehouseMonitorLoading />}>
+        <WarehouseMonitorLoader
+          warehouseId={warehouseId}
+          rangeHours={rangeHours}
+        />
+      </Suspense>
+    </div>
   );
 }
