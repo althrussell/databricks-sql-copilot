@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Loader2,
   RefreshCw,
@@ -76,6 +77,8 @@ const DURATION_BUCKETS = [
   { label: "2-10m", min: 120000, max: 600000 },
   { label: "10m+", min: 600000, max: Infinity },
 ] as const;
+
+const PAGE_SIZE = 25;
 
 // ── Range presets ──────────────────────────────────────────────────
 
@@ -143,6 +146,7 @@ export function WarehouseMonitor({
   const [activeFilter, setActiveFilter] = useState<QueryFilter | null>(null);
   const [activeHeatmapCell, setActiveHeatmapCell] = useState<string | null>(null);
   const [expandedQueryId, setExpandedQueryId] = useState<string | null>(null);
+  const [tablePage, setTablePage] = useState(0);
 
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -378,14 +382,28 @@ export function WarehouseMonitor({
     setActiveHeatmapCell(null);
     setHighlightedQueryId((prev) => (prev === queryId ? null : queryId));
     setExpandedQueryId((prev) => (prev === queryId ? null : queryId));
-    // Scroll after React has re-rendered (filter cleared, row visible)
-    requestAnimationFrame(() => {
-      const row = document.getElementById(`query-row-${queryId}`);
-      if (row) {
-        row.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Jump to the page containing this query so it appears at the top
+    // We need the index in the sorted (unfiltered) list
+    // Use a setTimeout to let the filter-clear take effect first
+    setTimeout(() => {
+      // Re-derive sorted list (filter was cleared, so all queries are included)
+      const idx = queries
+        .slice()
+        .sort((a, b) => {
+          let diff = 0;
+          switch (sortColumn) {
+            case "duration": diff = a.durationMs - b.durationMs; break;
+            case "bytes": diff = a.bytesScanned - b.bytesScanned; break;
+            case "start": diff = a.startTimeMs - b.startTimeMs; break;
+          }
+          return sortAsc ? diff : -diff;
+        })
+        .findIndex((q) => q.id === queryId);
+      if (idx >= 0) {
+        setTablePage(Math.floor(idx / PAGE_SIZE));
       }
-    });
-  }, []);
+    }, 0);
+  }, [queries, sortColumn, sortAsc]);
 
   // ── Sorted queries for the table ──────────────────────────────
 
@@ -409,6 +427,18 @@ export function WarehouseMonitor({
     });
     return sorted;
   }, [queries, sortColumn, sortAsc, activeFilter]);
+
+  // Reset to page 0 when filter/sort changes
+  useEffect(() => {
+    setTablePage(0);
+  }, [activeFilter, sortColumn, sortAsc]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedTableQueries.length / PAGE_SIZE));
+  const safeTablePage = Math.min(tablePage, totalPages - 1);
+  const paginatedQueries = sortedTableQueries.slice(
+    safeTablePage * PAGE_SIZE,
+    (safeTablePage + 1) * PAGE_SIZE
+  );
 
   // ── Summary stats ─────────────────────────────────────────────
 
@@ -716,8 +746,8 @@ export function WarehouseMonitor({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedTableQueries.length > 0 ? (
-                      sortedTableQueries.map((q) => {
+                    {paginatedQueries.length > 0 ? (
+                      paginatedQueries.map((q) => {
                         const isExpanded = expandedQueryId === q.id;
                         const colCount = 11 + (hasInsights ? 1 : 0);
                         return (
@@ -822,15 +852,43 @@ export function WarehouseMonitor({
               {/* Pagination footer */}
               <div className="flex items-center justify-between pt-2 px-1">
                 <span className="text-[11px] text-muted-foreground tabular-nums">
-                  Showing {sortedTableQueries.length.toLocaleString()} of{" "}
-                  {hasNextPage ? `${queries.length.toLocaleString()}+` : queries.length.toLocaleString()}{" "}
-                  queries
+                  {sortedTableQueries.length > 0
+                    ? `${(safeTablePage * PAGE_SIZE + 1).toLocaleString()}–${Math.min((safeTablePage + 1) * PAGE_SIZE, sortedTableQueries.length).toLocaleString()} of ${sortedTableQueries.length.toLocaleString()}`
+                    : "0"}{" "}
+                  queries{hasNextPage ? " (more available)" : ""}
                 </span>
-                {hasNextPage && (
-                  <Button variant="ghost" size="sm" className="text-[11px] h-6" onClick={handleLoadMore} disabled={isLoadingMore}>
-                    {isLoadingMore ? "Loading…" : "Load more"}
-                  </Button>
-                )}
+                <div className="flex items-center gap-1">
+                  {hasNextPage && (
+                    <Button variant="ghost" size="sm" className="text-[11px] h-6" onClick={handleLoadMore} disabled={isLoadingMore}>
+                      {isLoadingMore ? "Loading…" : "Load more from API"}
+                    </Button>
+                  )}
+                  {totalPages > 1 && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled={safeTablePage === 0}
+                        onClick={() => setTablePage((p) => Math.max(0, p - 1))}
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="text-[11px] tabular-nums text-muted-foreground min-w-[4rem] text-center">
+                        Page {safeTablePage + 1} of {totalPages}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled={safeTablePage >= totalPages - 1}
+                        onClick={() => setTablePage((p) => Math.min(totalPages - 1, p + 1))}
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>

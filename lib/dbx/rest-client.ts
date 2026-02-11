@@ -371,20 +371,41 @@ export async function getEndpointMetrics(
   const rawMetrics = data.metrics ?? data.endpoint_metrics ?? [];
   if (rawMetrics.length > 0) {
     console.log(
-      `[endpoint-metrics] ${rawMetrics.length} buckets, sample:`,
+      `[endpoint-metrics] ${rawMetrics.length} buckets, keys:`,
+      Object.keys(rawMetrics[0]),
+      "sample:",
       JSON.stringify(rawMetrics[0])
     );
   } else {
     console.warn("[endpoint-metrics] empty response, keys:", Object.keys(data));
   }
 
-  return rawMetrics.map((m) => ({
-    startTimeMs: Number(m.start_time_ms) || 0,
-    endTimeMs: Number(m.end_time_ms) || 0,
-    maxRunningSlots: Number(m.max_running_slots) || 0,
-    maxQueuedSlots: Number(m.max_queued_slots) || 0,
-    throughput: Number(m.throughput) || 0,
-  }));
+  const bucketCount = rawMetrics.length;
+  const intervalMs = bucketCount > 1 ? (endTimeMs - startTimeMs) / bucketCount : endTimeMs - startTimeMs;
+
+  return rawMetrics.map((m, i) => {
+    // Try multiple possible timestamp field names from the API
+    const raw = m as Record<string, unknown>;
+    const resolvedStart =
+      Number(raw.start_time_ms ?? raw.startTimeMs ?? raw.start_time ?? 0) || 0;
+    const resolvedEnd =
+      Number(raw.end_time_ms ?? raw.endTimeMs ?? raw.end_time ?? 0) || 0;
+
+    // If API didn't return usable timestamps, interpolate from the request range
+    const bucketStart = resolvedStart > 0 ? resolvedStart : startTimeMs + i * intervalMs;
+    const bucketEnd = resolvedEnd > 0 ? resolvedEnd : startTimeMs + (i + 1) * intervalMs;
+
+    return {
+      startTimeMs: bucketStart,
+      endTimeMs: bucketEnd,
+      maxRunningSlots:
+        Number(raw.max_running_slots ?? raw.max_num_active_sessions ?? raw.num_running_queries ?? 0) || 0,
+      maxQueuedSlots:
+        Number(raw.max_queued_slots ?? raw.max_num_queries_queued ?? raw.num_queued_queries ?? 0) || 0,
+      throughput:
+        Number(raw.throughput ?? raw.num_queries_completed ?? raw.num_queries_started ?? 0) || 0,
+    };
+  });
 }
 
 /**
