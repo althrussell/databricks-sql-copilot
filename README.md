@@ -1,221 +1,334 @@
-# DBSQL Co-Pilot — Performance Advisor
+# DBSQL Co-Pilot — SQL Warehouse Performance Advisor
 
-A Databricks App that helps Platform Administrators improve SQL Warehouse performance by surfacing slow queries, diagnosing bottlenecks, and recommending AI-powered rewrites.
+A Databricks App that surfaces slow and expensive SQL queries, diagnoses performance bottlenecks, and generates AI-powered query rewrites — all from data you already have in system tables.
 
-Built with **Next.js 16**, **shadcn/ui**, and the **Databricks SQL Node.js driver**. Deploys natively to Databricks Apps with zero-config OAuth authentication.
-
----
-
-## Why this exists
-
-Every Databricks customer with SQL Warehouses has the same problem: **nobody is watching the queries**. System tables collect terabytes of execution telemetry, but platform teams don't have the time or tooling to turn that data into action. The result is runaway costs, oversized warehouses, and end users waiting on queries that could run 10x faster with a single `OPTIMIZE` or a rewritten join.
-
-**DBSQL Co-Pilot closes that gap.** It reads the system tables the customer already has, scores every query pattern by real business impact (not just runtime), and uses Databricks-hosted AI to diagnose root causes and generate production-ready rewrites — all inside a single app that deploys in minutes.
-
-### Why SAs should care
-
-- **Immediate customer value** — Deploy into any workspace and within minutes surface the top 10 queries burning the most DBUs. Customers see cost savings opportunities in their first session.
-- **Showcases the platform** — One app that demonstrates System Tables, `ai_query()` with Foundation Models, Databricks Apps, Lakebase, Unity Catalog metadata, and multi-workspace governance working together. It's a living reference architecture.
-- **Drives the right conversations** — Warehouse Health recommendations quantify the cost of doing nothing ("$2,400/month wasted on queue wait") and compare Classic vs Serverless side-by-side. This naturally leads to right-sizing, Serverless migration, and governance discussions.
-- **Zero infrastructure** — No external databases, no API keys, no Docker containers. Just `app.yaml` + a SQL Warehouse + optional Lakebase. The app authenticates via the platform's native OAuth, reads only system tables, and creates nothing in the customer's lakehouse.
-- **Extensible** — Built as clean TypeScript with a modular architecture. SAs can fork it, add customer-specific scoring rules, plug in additional system tables, or white-label it as a starting point for the customer's own internal tool.
+Built with Next.js, shadcn/ui, and the Databricks SQL Node.js driver. Deploys natively to [Databricks Apps](https://docs.databricks.com/en/apps/index.html) with automatic OAuth authentication.
 
 ---
 
 ## What it does
 
-1. **Discovers** slow and high-impact SQL queries from `system.query.history` across all warehouses and workspaces
-2. **Enriches** with warehouse config, DBU costs, table maintenance history, and Unity Catalog metadata
-3. **Scores** each query pattern using a 5-factor model (runtime, frequency, waste, capacity, quick-win)
-4. **Triages** with AI fast-insights (Llama 4 Maverick) directly in the dashboard table
-5. **Diagnoses** performance issues using AI (`ai_query` with Claude on Databricks) including table metadata, maintenance history, and warehouse config context
+DBSQL Co-Pilot reads your Databricks system tables to find the queries that cost the most, run the slowest, or cause the most pressure on your warehouses. It then uses Databricks-hosted AI models to explain what's wrong and suggest fixes.
+
+1. **Discovers** slow and high-impact SQL queries from `system.query.history` across all warehouses
+2. **Scores** each query pattern by real business impact (runtime, frequency, cost, capacity pressure, quick-win potential)
+3. **Monitors** warehouse activity in real time with interactive query timelines, I/O heatmaps, and user/source breakdowns
+4. **Triages** queries with fast AI insights (one-liner per pattern, auto-generated)
+5. **Diagnoses** root causes using AI with full context (table metadata, maintenance history, warehouse config)
 6. **Proposes** optimised SQL rewrites with risks, rationale, and validation plans
-7. **Analyses warehouse health** over a 7-day window with sizing, scaling, and serverless recommendations
-8. **Persists** user actions, AI rewrite cache, and health snapshots in Lakebase (Databricks-managed Postgres)
+7. **Analyses warehouse health** with sizing, scaling, and serverless migration recommendations
+
+### The app is read-only
+
+DBSQL Co-Pilot does **not** create, modify, or delete anything in your lakehouse. It only reads system tables and calls `ai_query()`. No tables are created, no data is written to Unity Catalog, and no warehouse settings are changed.
 
 ---
 
-## Dashboard
+## Features
 
-The main dashboard provides a cross-warehouse, multi-workspace overview with:
+### Dashboard
 
-- **KPI tiles** — Total runs, critical patterns, compute time, estimated cost, top insight, applied fixes
-- **AI Triage** — One-liner AI insights per query pattern (fast model, auto-generated)
-- **Expandable rows** — Click to see detailed breakdown, time analysis, I/O stats, and action buttons
-- **Query actions** — Dismiss, Watch, or Mark Applied on any query pattern (persisted in Lakebase)
-- **Detail sheet** — Slide-out panel with full execution metrics, deep links, and AI CTA
-- **Filters** — Time range picker, warehouse, workspace, flags, min duration, search, dismissed toggle
-- **Pagination & sorting** — By impact, runs, p95, cost, or flags
+Cross-warehouse overview with KPI tiles, AI triage insights, expandable query rows, time analysis, and filtering by warehouse, workspace, time range, and performance flags. Sort by impact, cost, p95 runtime, or frequency.
 
-Supports **dark/light themes** using the Databricks brand palette.
+### Warehouse Monitor
 
----
+Real-time warehouse monitoring with:
+- Interactive query timeline (drag to zoom, click to inspect individual queries)
+- Running/queued slot metrics and throughput charts
+- I/O heatmap, duration histogram, top users, and source breakdown
+- AI-generated insights per query
+- CSV export of all query data
+- Auto-refresh (live mode)
 
-## Warehouse Health Report
+### Warehouse Health Report
 
-Dedicated page (`/warehouse-health`) providing a 7-day on-demand analysis with:
+On-demand 7-day warehouse analysis with pressure metrics (spill, queue wait, cold starts), hourly activity charts, cost impact estimates, and serverless comparison. Generates specific right-sizing recommendations with confidence scores.
 
-- **Current configuration panel** — Size, type, clusters, auto-stop with recommended changes
-- **7-day pressure metrics** — Spill, queue wait, cold starts with sustained-pressure detection
-- **Hourly activity chart** — Bar chart showing query volume and pressure by hour of day
-- **Cost impact** — Estimated weekly waste, cost of doing nothing over 30 days
-- **Serverless comparison** — Side-by-side cost analysis vs Serverless SQL
-- **Confidence scoring** — High/medium/low based on days with sustained pressure
-- **Trend indicators** — Worsened/Improved/Unchanged vs previous analysis (persisted in Lakebase)
-- **Affected users & sources** — Who is impacted by the warehouse issues
-- **View Queries** — Navigate to dashboard filtered by the specific warehouse
+### AI Query Analysis
+
+Single-click diagnosis and rewrite generation. The AI receives rich context including column types, table maintenance history (OPTIMIZE, VACUUM, ANALYZE), and warehouse configuration. Results include root causes, an optimised SQL rewrite, risks, and a validation plan. Copy the rewrite to your clipboard or open the SQL editor to test it.
 
 ---
 
-## AI Analysis
+## What Databricks services does this app use?
 
-The query detail page (`/queries/[fingerprint]`) provides:
+This section explains exactly what the app interacts with so you can assess security, permissions, and cost.
 
-- **Single-click AI Analyse** — Diagnoses root causes and generates an optimised rewrite in one step
-- **Rewrite cache** — Results are cached in Lakebase (7-day TTL) for instant repeat access
-- **Cached badge** — Shows when results come from cache; "Re-analyse" forces a fresh AI call
-- **Rich context** — AI receives warehouse config, Unity Catalog metadata, column types, table maintenance history (OPTIMIZE, VACUUM, ANALYZE), and metric view definitions
-- **Copy & test** — Copy rewritten SQL to clipboard, or launch the workspace SQL editor to test
-- **Original comparison** — Collapsible section showing original SQL alongside the rewrite
+### System tables (read-only)
 
----
+The app runs `SELECT` queries against these system tables via your SQL Warehouse:
 
-## Data sources
-
-| System Table | Purpose |
-|---|---|
-| `system.query.history` | Query text, execution metrics, user attribution (FINISHED, FAILED, CANCELED) |
-| `system.compute.warehouses` | Warehouse names, config, sizing |
-| `system.billing.usage` | DBU consumption per warehouse (`usage_unit = 'DBU'`, `sku_name LIKE '%SQL_COMPUTE%'`) |
-| `system.billing.list_prices` | SKU pricing (temporal join for accurate $ cost) |
-| `system.access.workspaces_latest` | Workspace names and URLs for multi-workspace support |
-| `INFORMATION_SCHEMA.COLUMNS` | Column types for AI context |
-| `DESCRIBE DETAIL` / `DESCRIBE TABLE EXTENDED` | Table metadata, metric view YAML definitions |
-| `describe_history()` | Delta table maintenance history (OPTIMIZE, VACUUM, ANALYZE) |
-
-All queries use **date partition pruning** on system tables for performance. System-generated queries are automatically filtered out.
-
----
-
-## Persistence (Lakebase + Prisma) — optional
-
-Lakebase persistence is **disabled by default**. The app works fully without it — all core features (query discovery, warehouse monitoring, AI analysis) run entirely from Databricks REST APIs and system tables. Enabling Lakebase adds caching and state that survives restarts.
-
-### Enabling Lakebase
-
-Set `ENABLE_LAKEBASE=true` in your environment (`.env.local` for local dev, or your app's environment config for deployment).
-
-When enabled, the app persists to a **Databricks Lakebase** (Neon-compatible Postgres) database via **Prisma ORM** in the `dbsql_copilot` schema:
-
-| Table | Purpose | TTL |
+| System table | What it reads | Why |
 |---|---|---|
-| `rewrite_cache` | AI diagnosis + rewrite results by fingerprint | 7 days |
-| `query_actions` | User actions (dismiss, watch, applied) per query pattern | 30 days |
-| `health_snapshots` | Warehouse health analysis history for trend comparison | 90 days |
+| `system.query.history` | Query text, execution metrics, user info | Core data source for all query analysis |
+| `system.compute.warehouses` | Warehouse names, sizes, config | Warehouse health recommendations |
+| `system.billing.usage` | DBU consumption per warehouse | Cost estimation per query pattern |
+| `system.billing.list_prices` | SKU pricing | Converts DBUs to dollar amounts |
+| `system.access.workspaces_latest` | Workspace names and URLs | Multi-workspace support and deep links |
+| `INFORMATION_SCHEMA.COLUMNS` | Column names and types | Provides context for AI analysis |
 
-When disabled (`ENABLE_LAKEBASE=false` or unset):
-- AI rewrites are generated fresh each time (no caching)
-- Query dismiss/watch actions are not persisted across restarts
-- Health trend comparisons are not available
+The app also calls `DESCRIBE DETAIL`, `DESCRIBE TABLE EXTENDED`, and `describe_history()` on tables referenced by slow queries to gather maintenance history for AI context.
 
-Schema is managed via `prisma db push` (use the direct/non-pooler URL). Runtime queries use the pooler URL. Secrets are stored in the `inspire-secrets` scope:
+All system table queries use **date partition pruning** (e.g., `WHERE start_time >= dateadd(...)`) to minimise scan size.
+
+### Databricks REST APIs (read-only)
+
+The Warehouse Monitor uses these REST APIs for real-time data:
+
+| API endpoint | What it reads | Why |
+|---|---|---|
+| `GET /api/2.0/sql/warehouses` | Warehouse list and state | Monitor page warehouse list |
+| `GET /api/2.0/sql/warehouses/{id}` | Individual warehouse detail | Warehouse config display |
+| `GET /api/2.0/sql/warehouses/{id}/stats` | Running/queued commands, active clusters | Live cluster and query counts |
+| `GET /api/2.0/sql/history/queries` | Recent query history with metadata | Timeline and query table |
+| `GET /api/2.0/sql/history/endpoint-metrics` | Slot utilisation and throughput metrics | Warehouse metrics charts |
+
+All REST API calls are authenticated using the service principal's OAuth token (automatically injected by Databricks Apps).
+
+### AI models (via `ai_query()`)
+
+The app calls Databricks-hosted foundation models through the `ai_query()` SQL function:
+
+| Model | Used for | When it runs |
+|---|---|---|
+| `databricks-llama-4-maverick` | Fast triage insights (one-liner per query) | Automatically on dashboard load and warehouse monitor "AI Insights" button |
+| `databricks-claude-opus-4-6` | Deep diagnosis and SQL rewrites | Only when you click "AI Analyse" on a specific query |
+
+AI features are **optional**. If `ai_query()` is not available or the service principal lacks access, the app still works — you just won't see AI insights or rewrites. No AI calls are made without user action (triage runs on page load but fails gracefully).
+
+### Lakebase / PostgreSQL (optional, disabled by default)
+
+When `ENABLE_LAKEBASE=true`, the app persists three small cache tables to a Databricks Lakebase (managed PostgreSQL) instance. See [Persistence](#persistence-lakebase--optional) below. This is entirely optional and disabled by default.
+
+### Nothing else
+
+The app does not:
+- Write to Unity Catalog or Delta tables
+- Create or modify warehouses
+- Access cloud storage (S3, ADLS, GCS)
+- Make external API calls outside your Databricks workspace
+- Send telemetry or analytics anywhere
+- Require internet access at runtime (all dependencies are bundled at build time)
+
+---
+
+## Estimated costs
+
+### SQL Warehouse compute
+
+The app runs queries against system tables using your existing SQL Warehouse. Costs depend on your warehouse type and size:
+
+| Activity | Approximate DBU usage | Notes |
+|---|---|---|
+| Dashboard load | ~0.01–0.05 DBU | 4–6 system table queries with partition pruning |
+| Warehouse Health analysis | ~0.02–0.10 DBU | 5 parallel queries over a 7-day window |
+| Warehouse Monitor (per refresh) | ~0.01 DBU | REST API calls (free) + optional AI triage |
+| AI triage (per batch) | ~0.01–0.05 DBU | Single `ai_query()` call per batch |
+| AI deep analysis (per query) | ~0.05–0.15 DBU | `ai_query()` with full context |
+
+**Typical monthly cost for moderate use** (10 dashboard loads/day, occasional AI analysis): **$5–$20/month** in warehouse DBUs, depending on warehouse size and pricing tier.
+
+### Foundation Model APIs (ai_query)
+
+`ai_query()` is billed per token. Costs are typically under **$0.01 per triage batch** and **$0.01–$0.10 per deep analysis**. Monthly AI costs for moderate use are usually **under $5/month**.
+
+### Lakebase (if enabled)
+
+Lakebase XS instance: approximately **$25/month**. The app stores only a few hundred rows of cache data, so the smallest instance is sufficient. **This is optional and disabled by default.**
+
+### Databricks Apps hosting
+
+Databricks Apps hosting is included with your workspace at no additional charge.
+
+---
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- [ ] A **Databricks workspace** (AWS, Azure, or GCP)
+- [ ] A **SQL Warehouse** (Serverless or Pro) — the app runs all queries through this warehouse
+- [ ] **Admin or metastore admin** access to grant permissions on system tables
+- [ ] The **Databricks CLI** installed on your local machine ([installation guide](https://docs.databricks.com/en/dev-tools/cli/install.html))
+- [ ] **Node.js 22+** and **npm** installed ([download](https://nodejs.org/))
+- [ ] (Optional) A **Lakebase** instance if you want persistent caching
+
+---
+
+## Deployment guide (Databricks Apps)
+
+This is the recommended deployment method. Follow every step in order.
+
+### Step 1: Install the Databricks CLI
+
+If you haven't already, install and authenticate the Databricks CLI:
+
 ```bash
-databricks secrets put-secret inspire-secrets DATABASE_URL
-databricks secrets put-secret inspire-secrets DIRECT_DATABASE_URL
+# Install (macOS/Linux)
+curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+# Verify installation
+databricks --version
+
+# Configure authentication to your workspace
+databricks configure
 ```
 
----
+When prompted:
+- **Host**: Enter your workspace URL (e.g., `https://your-workspace.cloud.databricks.com`)
+- **Token**: Enter a personal access token ([how to create one](https://docs.databricks.com/en/dev-tools/auth/pat.html))
 
-## Architecture
+Verify the connection:
 
-```
-app/                              Next.js App Router pages
-├── page.tsx                      Server component — phased data fetching + Suspense
-├── dashboard.tsx                 Client component — interactive dashboard with actions
-├── queries/[fingerprint]/        Query detail + AI diagnosis + rewrite
-├── warehouse-health/             Warehouse health report (7-day analysis)
-├── api/
-│   ├── warehouse-health/route.ts POST endpoint for health analysis
-│   └── query-actions/route.ts    GET/POST/DELETE for query actions
-
-lib/
-├── dbx/
-│   ├── sql-client.ts             Databricks SQL connection (OAuth + PAT)
-│   ├── prisma.ts                 Prisma client singleton (Lakebase)
-│   ├── rewrite-store.ts          AI rewrite cache (Prisma)
-│   ├── actions-store.ts          Query actions CRUD (Prisma)
-│   └── health-store.ts           Health snapshot CRUD (Lakebase)
-├── queries/
-│   ├── query-history.ts          system.query.history (filtered, workspace-aware)
-│   ├── warehouses.ts             system.compute.warehouses
-│   ├── warehouse-cost.ts         Billing costs (parallel DBU + price queries)
-│   ├── warehouse-health.ts       7-day health metrics, hourly activity, serverless price
-│   └── table-metadata.ts         Unity Catalog metadata + maintenance history
-├── domain/
-│   ├── candidate-builder.ts      Groups queries → scored candidates
-│   ├── sql-fingerprint.ts        Normalise + fingerprint SQL
-│   ├── scoring.ts                5-factor impact scoring
-│   ├── performance-flags.ts      Auto-detect perf issues
-│   ├── warehouse-recommendations.ts  TCO recommendation engine
-│   └── types.ts                  Shared TypeScript interfaces
-├── ai/
-│   ├── aiClient.ts               Calls ai_query() on Databricks
-│   ├── promptBuilder.ts          Structured prompts with Databricks knowledge base
-│   ├── triage.ts                 Fast AI triage insights (Llama 4 Maverick)
-│   └── actions.ts                Server actions (diagnose/rewrite with cache)
-├── utils/deep-links.ts           Databricks workspace deep link builder
-└── config.ts                     Environment config (auth mode detection)
-
-components/ui/                    shadcn/ui components
+```bash
+databricks warehouses list
 ```
 
----
+You should see your SQL warehouses listed.
 
-## Getting started
-
-### Prerequisites
-
-- **Node.js 22+** and **npm**
-- A Databricks workspace with:
-  - A SQL Warehouse (Serverless or Pro)
-  - `SELECT` permission on system tables (see Permissions below)
-  - Access to `ai_query()` for AI features (optional)
-  - A Lakebase database for persistence (optional)
-
-### Local development
-
-1. **Clone and install:**
+### Step 2: Clone the repository
 
 ```bash
 git clone <repo-url>
 cd databricks-sql-copilot
+```
+
+### Step 3: Create the Databricks App
+
+In your Databricks workspace UI:
+
+1. Navigate to **Compute** in the left sidebar
+2. Click **Apps**
+3. Click **Create App**
+4. Enter a name: `dbsql-copilot` (or your preferred name)
+5. Click **Create**
+
+The app is now created but not yet deployed. Note the app name — you'll need it for the deploy command.
+
+### Step 4: Add a SQL Warehouse resource
+
+The app needs access to a SQL Warehouse to run queries.
+
+1. On your app's page, click the **Resources** tab (or **Configure**)
+2. Click **+ Add resource**
+3. Select **SQL Warehouse**
+4. Choose the warehouse you want the app to use
+5. Set the **Resource key** to: `sql-warehouse`
+6. Set **Permission** to: **Can use**
+7. Click **Save**
+
+> **Which warehouse should I use?** Any Serverless or Pro warehouse works. The app's queries are lightweight (system table SELECTs with partition pruning), so a Small Serverless warehouse is sufficient. You can use an existing warehouse — the app's queries will have minimal impact on other workloads.
+
+### Step 5: Grant system table permissions
+
+The app runs as a **service principal** that Databricks creates automatically. This service principal needs `SELECT` access to system tables.
+
+1. On your app's page, go to the **Settings** tab
+2. Find the **Service principal** name (it looks like something like `dbsql-copilot-app-sp`)
+3. Open a SQL editor in your workspace (or use the Databricks CLI)
+4. Run the following SQL grants:
+
+```sql
+-- Required: Core query and warehouse data
+GRANT SELECT ON system.query.history TO `<service-principal-name>`;
+GRANT SELECT ON system.compute.warehouses TO `<service-principal-name>`;
+
+-- Required: Cost estimation
+GRANT SELECT ON system.billing.usage TO `<service-principal-name>`;
+GRANT SELECT ON system.billing.list_prices TO `<service-principal-name>`;
+
+-- Required: Multi-workspace support
+GRANT SELECT ON system.access.workspaces_latest TO `<service-principal-name>`;
+
+-- Optional: AI features (skip if you don't want AI analysis)
+GRANT EXECUTE ON FUNCTION ai_query TO `<service-principal-name>`;
+```
+
+Replace `<service-principal-name>` with the actual service principal name from your app's Settings tab.
+
+> **Note**: If you are a **metastore admin**, you can grant these permissions. If not, ask your metastore admin to run these statements.
+
+### Step 6: Upload and deploy
+
+From the cloned repository directory:
+
+```bash
+# Upload the source code to your workspace
+databricks sync . /Workspace/Users/<your-email>/dbsql-copilot
+
+# Deploy the app (in a separate terminal)
+databricks apps deploy dbsql-copilot \
+  --source-code-path /Workspace/Users/<your-email>/dbsql-copilot
+```
+
+Replace `<your-email>` with your Databricks workspace email.
+
+The deployment process will:
+1. Run `npm install` to install dependencies
+2. Run `npm run build` to create a production build
+3. Start the app on the platform-assigned port
+
+This takes **2–5 minutes** on first deploy.
+
+### Step 7: Verify the deployment
+
+1. Go back to **Compute > Apps** in your workspace
+2. Click on your app
+3. Once the status shows **Running**, click the app URL to open it
+4. You should see the dashboard with your query data loading
+
+If you see errors, check the **Logs** tab on your app's page.
+
+### Step 8: Iterate during development (optional)
+
+For ongoing development, use `--watch` mode to auto-sync changes:
+
+```bash
+# Terminal 1: Watch for file changes and sync
+databricks sync --watch . /Workspace/Users/<your-email>/dbsql-copilot
+
+# Terminal 2: Re-deploy after changes
+databricks apps deploy dbsql-copilot \
+  --source-code-path /Workspace/Users/<your-email>/dbsql-copilot
+```
+
+---
+
+## Local development
+
+For developing locally before deploying:
+
+### Step 1: Install dependencies
+
+```bash
+cd databricks-sql-copilot
 npm install
 ```
 
-2. **Configure environment:**
+### Step 2: Create your environment file
 
 ```bash
 cp .env.local.example .env.local
 ```
 
-Edit `.env.local`:
+### Step 3: Configure your environment
+
+Edit `.env.local` with your values:
 
 ```bash
-# Workspace URL (include https://)
+# Your workspace URL (must include https://)
 DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
 
-# Personal access token
+# A personal access token (Workspace > User Settings > Developer > Access Tokens > Generate)
 DATABRICKS_TOKEN=dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-# SQL warehouse ID (the hex ID, not the name)
+# Your SQL warehouse ID
+# Find it: Workspace > SQL Warehouses > click your warehouse > the ID is in the URL
+# e.g., https://your-workspace.../sql/warehouses/abcdef1234567890 → DATABRICKS_WAREHOUSE_ID=abcdef1234567890
 DATABRICKS_WAREHOUSE_ID=abcdef1234567890
-
-# Lakebase persistence (optional — disabled by default)
-# ENABLE_LAKEBASE=true
-# DATABASE_URL=postgresql://USER:PASSWORD@HOST-pooler.database.REGION.cloud.databricks.com/databricks_postgres?sslmode=require&schema=dbsql_copilot
 ```
 
-3. **Run the dev server:**
+### Step 4: Start the dev server
 
 ```bash
 npm run dev
@@ -223,153 +336,182 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+> **Note**: For local development, the personal access token is used for authentication instead of OAuth. Ensure the token belongs to a user with the same system table permissions listed in Step 5 of the deployment guide.
+
 ---
 
-## Deploy to Databricks Apps
+## Persistence (Lakebase) — optional
 
-### One-time setup
+Persistence is **disabled by default**. The app works fully without it. Enabling it adds:
 
-1. In your Databricks workspace, go to **Compute > Apps > Create App**
-2. Name the app (e.g. `databricks-sql-copilot`)
-3. In **Configure**, add resources:
-   - **SQL Warehouse** — Key: `sql-warehouse`, Permission: **Can use**
-   - **Database** (Lakebase) — Key: `lakebase`, Permission: **Can connect**
-4. Grant the app's service principal `SELECT` on the required system tables
+- **AI rewrite cache** — Avoids re-running expensive AI analysis on the same query (7-day TTL)
+- **Query actions** — Remembers when you dismiss, watch, or mark a query as applied (30-day TTL)
+- **Health trend tracking** — Compares warehouse health between analysis runs (90-day TTL)
 
-### Deploy
+Without persistence, AI analysis runs fresh each time and dismissed queries reappear after restart.
+
+### Enabling persistence
+
+#### 1. Create a Lakebase instance
+
+1. In your workspace, go to **Compute** > **OLTP Database**
+2. Click **Create**
+3. Name: `dbsql-copilot-db` (or any name)
+4. Size: **XS** (sufficient for this app — stores only a few hundred rows)
+5. Click **Create** and wait for it to become active
+
+#### 2. Add the database resource to your app
+
+1. Go to your app's **Resources** / **Configure** page
+2. Click **+ Add resource**
+3. Select **Database**
+4. Choose your Lakebase instance and the `databricks_postgres` database
+5. Set **Permission** to: **Can connect**
+6. Set **Resource key** to: `lakebase`
+7. Click **Save**
+
+#### 3. Store the connection string
+
+Create a secret scope and store the connection URL:
 
 ```bash
-# Sync source code to the workspace
-databricks sync --watch . /Workspace/Users/<your-email>/databricks-sql-copilot
+# Create a secret scope (one-time)
+databricks secrets create-scope inspire-secrets
 
-# Deploy (in a separate terminal)
-databricks apps deploy databricks-sql-copilot \
-  --source-code-path /Workspace/Users/<your-email>/databricks-sql-copilot
+# Store the pooler connection string
+# You can find this in your Lakebase instance > Connection Info > Pooler URL
+databricks secrets put-secret inspire-secrets DATABASE_URL
 ```
 
-The app will:
-1. Run `npm install`
-2. Run `npm run build` (`next build` with standalone output)
-3. Run `npm run start` (binds to `0.0.0.0:$DATABRICKS_APP_PORT`)
-
-All authentication is handled automatically via the service principal OAuth credentials injected by the platform.
-
----
-
-## Setting up Lakebase (optional)
-
-Lakebase enables persistence for AI rewrite caching, query actions (dismiss/watch/applied), and warehouse health trend tracking. The app works fully without it — you just lose state on restart.
-
-> **Important:** After completing setup, set `ENABLE_LAKEBASE=true` in your environment to activate persistence.
-
-### Step 1: Create a Lakebase instance
-
-1. Go to **Compute > OLTP Database** in your Databricks workspace
-2. Click **Create** and provide a name (e.g. `databricks-sql-copilot-db`)
-3. Select size (XS is fine for this use case) and create
-
-### Step 2: Add the Database resource to your app
-
-1. Go to your app's **Configure** page
-2. Click **+ Add resource**
-3. Select **Database**, choose your Lakebase instance and the `databricks_postgres` database
-4. Set Permission to **Can connect**
-5. Set Resource key to `lakebase`
-
-For Lakebase autoscaling, the connection uses the pooler URL (`DATABASE_URL`) at runtime and the direct URL (`DIRECT_DATABASE_URL`) for schema migrations. Both are stored in the `inspire-secrets` scope.
-
-### Step 3: Grant schema permissions
-
-The app needs permission to create tables in the `public` schema. Open the **Lakebase SQL editor** (from your Lakebase instance, click **New Query**) and run:
-
-```sql
--- Replace with your app's DATABRICKS_CLIENT_ID (visible in the app's Environment tab)
-GRANT ALL ON SCHEMA public TO "<your-app-client-id>";
+When prompted, paste the pooler connection URL (it looks like):
+```
+postgresql://USER:PASSWORD@HOST-pooler.database.REGION.cloud.databricks.com/databricks_postgres?sslmode=require
 ```
 
-For example:
+#### 4. Add the secret to app.yaml
 
-```sql
-GRANT ALL ON SCHEMA public TO "54870a07-43ed-4293-83df-3932c70c8898";
-```
-
-### Step 4: Enable and deploy
-
-Add `ENABLE_LAKEBASE=true` to your app's environment config (or `.env.local` for local dev), then deploy or restart the app.
-
-Prisma client connects automatically via `DATABASE_URL` on first query.
-
-The app auto-creates 3 tables (`rewrite_cache`, `query_actions`, `health_snapshots`) and an index on first startup. You can verify in the Lakebase SQL editor:
-
-```sql
-SELECT table_name, table_type
-FROM information_schema.tables
-WHERE table_schema = 'public'
-ORDER BY table_name;
-```
-
-### Troubleshooting
-
-| Log message | Cause | Fix |
-|---|---|---|
-| `No Lakebase config found` | Database resource not added to app | Add it in Configure (Step 2) |
-| `Failed to get OAuth token` | Missing `https://` or bad credentials | Check `DATABRICKS_HOST` includes protocol |
-| `permission denied for schema public` | GRANT not run | Run the GRANT statement (Step 3) |
-| `Initialised successfully` | Everything works | Nothing to do |
-
----
-
-## Configuration
-
-### `app.yaml`
+The `app.yaml` should reference the secret:
 
 ```yaml
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
+  - name: DATABASE_URL
+    valueFrom: db-secret
+  - name: ENABLE_LAKEBASE
+    value: "true"
 ```
 
-Lakebase does **not** need an `app.yaml` entry — the platform auto-injects `PGHOST` and `PGUSER` when you add a Database resource to the app.
+#### 5. Grant schema permissions
 
-### Environment variables
+The app's service principal needs permission to create tables. Open the **Lakebase SQL editor** (from your Lakebase instance > **New Query**) and run:
+
+```sql
+-- Replace with your app's service principal client ID
+-- (visible in the app's Settings tab or Environment tab as DATABRICKS_CLIENT_ID)
+GRANT ALL ON SCHEMA public TO "<your-app-client-id>";
+```
+
+#### 6. Deploy
+
+Re-deploy the app. The Prisma client will auto-create the required tables on first use.
+
+### Persistence troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| App works but no caching | `ENABLE_LAKEBASE` not set to `true` | Add it to `app.yaml` env section |
+| `DATABASE_URL is not set` | Secret not configured | Run the `put-secret` command (step 3) |
+| `permission denied for schema` | GRANT not run | Run the GRANT statement (step 5) |
+| `P1010: User was denied access` | Using pooler URL for DDL | Use the direct (non-pooler) URL for migrations |
+
+---
+
+## Permissions reference
+
+### Required permissions
+
+The app's service principal needs these permissions to function:
+
+| Permission | Resource | Purpose |
+|---|---|---|
+| **Can use** | Your SQL Warehouse | Run queries against system tables |
+| **SELECT** | `system.query.history` | Read query execution data |
+| **SELECT** | `system.compute.warehouses` | Read warehouse configurations |
+| **SELECT** | `system.billing.usage` | Read DBU consumption data |
+| **SELECT** | `system.billing.list_prices` | Read pricing data for cost estimation |
+| **SELECT** | `system.access.workspaces_latest` | Read workspace names for multi-workspace support |
+
+### Optional permissions
+
+| Permission | Resource | Purpose |
+|---|---|---|
+| **EXECUTE** | `ai_query()` function | AI triage, diagnosis, and rewrite features |
+| **SELECT** | `INFORMATION_SCHEMA.COLUMNS` | Column type context for AI analysis |
+| **SELECT** | `describe_history()` on user tables | Table maintenance history for AI context |
+| **Can connect** | Lakebase database | Persistent caching (when `ENABLE_LAKEBASE=true`) |
+
+> **What happens if a permission is missing?** The app degrades gracefully. Missing cost data means cost columns show "N/A". Missing AI permissions means AI buttons show an error message. Missing Lakebase means no persistence. The dashboard and warehouse monitor always work as long as the core system table permissions are granted.
+
+---
+
+## Environment variables
+
+### Auto-injected by Databricks Apps (do not set manually)
+
+| Variable | Description |
+|---|---|
+| `DATABRICKS_HOST` | Workspace URL |
+| `DATABRICKS_CLIENT_ID` | Service principal OAuth client ID |
+| `DATABRICKS_CLIENT_SECRET` | Service principal OAuth secret |
+| `DATABRICKS_APP_PORT` | Port the app must bind to |
+
+### Set via resource bindings
 
 | Variable | Source | Description |
 |---|---|---|
-| `DATABRICKS_HOST` | Auto-injected | Workspace URL |
-| `DATABRICKS_CLIENT_ID` | Auto-injected | Service principal OAuth client ID |
-| `DATABRICKS_CLIENT_SECRET` | Auto-injected | Service principal OAuth client secret |
-| `DATABRICKS_APP_PORT` | Auto-injected | Port to bind to |
-| `DATABRICKS_WAREHOUSE_ID` | Resource binding | SQL warehouse ID |
-| `ENABLE_LAKEBASE` | `.env.local` / app config | `true` to enable Lakebase persistence (default: `false`) |
-| `DATABASE_URL` | `inspire-secrets` scope | Lakebase pooler URL (only when `ENABLE_LAKEBASE=true`) |
-| `DIRECT_DATABASE_URL` | `inspire-secrets` scope | Lakebase direct URL (migrations only) |
-| `DATABRICKS_TOKEN` | `.env.local` only | PAT for local development |
+| `DATABRICKS_WAREHOUSE_ID` | `app.yaml` → `sql-warehouse` resource | SQL Warehouse ID |
+| `DATABASE_URL` | `app.yaml` → secret or resource | Lakebase connection string |
+
+### Set manually
+
+| Variable | Where | Description |
+|---|---|---|
+| `ENABLE_LAKEBASE` | `app.yaml` or `.env.local` | Set to `true` to enable persistence (default: `false`) |
+| `DATABRICKS_TOKEN` | `.env.local` only | Personal access token for local development |
 
 ---
 
-## Key design decisions
+## Architecture
 
-- **Billing lag offset** — All time windows are shifted back 6 hours to ensure `system.billing.usage` data is fully populated. A "1 hour" window actually shows data from 7h ago to 6h ago.
-- **3-phase loading** — Core data loads first (instant dashboard), costs stream in second, AI triage third. Each phase uses Suspense for progressive rendering.
-- **Client-side router cache** — `experimental.staleTimes` keeps the dashboard cached for 5 minutes, making back-navigation instant.
-- **Lakebase persistence** — Optional Postgres backing for rewrite cache, query actions, and health snapshots. Authenticates via OAuth token (platform-injected `PGHOST`/`PGUSER`). Auto-migrates tables on first use; gracefully degrades to no-op.
-- **SQL fingerprinting** — Queries are normalised (literals masked, whitespace collapsed, IN-lists deduplicated) to group identical patterns.
-- **Graceful degradation** — Each data source loads independently with timeouts. If one fails, the rest still display.
-- **System query filtering** — Queries matching `-- This is a system generated query %` are excluded from analysis.
-- **Multi-workspace** — Joins `system.access.workspaces_latest` for workspace names, URLs, and filtering.
+```
+app/                              Next.js App Router pages
+├── page.tsx                      Dashboard (server + client components)
+├── queries/[fingerprint]/        Query detail + AI analysis
+├── warehouse-health/             Warehouse health report
+├── warehouse-monitor/            Warehouse list
+├── warehouse/[warehouseId]/      Real-time warehouse monitor
+├── api/
+│   ├── warehouse-health/         Health analysis endpoint
+│   └── query-actions/            Query action CRUD
 
----
+lib/
+├── dbx/
+│   ├── sql-client.ts             Databricks SQL connection (OAuth + PAT)
+│   ├── rest-client.ts            Databricks REST API client
+│   ├── prisma.ts                 Prisma client (optional Lakebase)
+│   ├── rewrite-store.ts          AI rewrite cache
+│   ├── actions-store.ts          Query actions CRUD
+│   └── health-store.ts           Health snapshot CRUD
+├── queries/                      SQL queries against system tables
+├── domain/                       Scoring, fingerprinting, recommendations
+├── ai/                           AI client, prompts, triage
+└── utils/                        Deep links, formatting
 
-## Scripts
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Start dev server with Turbopack |
-| `npm run build` | Production build (standalone output) |
-| `npm run start` | Start production server |
-| `npm run lint` | ESLint on `app/` and `lib/` |
-| `npm test` | Run tests with Vitest |
-| `npm run test:watch` | Run tests in watch mode |
+components/
+├── ui/                           shadcn/ui components
+└── charts/                       Timeline, heatmap, histogram, charts
+```
 
 ---
 
@@ -379,36 +521,58 @@ Lakebase does **not** need an `app.yaml` entry — the platform auto-injects `PG
 |---|---|
 | Framework | Next.js 16 (App Router, React 19) |
 | UI | shadcn/ui, Radix UI, Tailwind CSS 4 |
-| Icons | Lucide React |
-| Theming | next-themes (dark/light) |
-| Data | @databricks/sql Node.js driver |
-| Persistence | Lakebase (Databricks-managed Postgres) via node-postgres |
-| AI | Databricks `ai_query()` with Claude Opus 4.6 + Llama 4 Maverick |
+| Data | @databricks/sql Node.js driver, REST API client |
+| AI | Databricks `ai_query()` (Llama 4 Maverick, Claude Opus 4.6) |
+| Persistence | Databricks Lakebase via Prisma (optional) |
 | Language | TypeScript (strict mode) |
-| Testing | Vitest |
-| Deployment | Databricks Apps (standalone Node.js) |
+| Deployment | Databricks Apps |
 
 ---
 
-## Permissions required
+## Development scripts
 
-The app's service principal needs:
-
-| Permission | Resource |
+| Command | Description |
 |---|---|
-| **Can use** | SQL Warehouse |
-| **Can connect** | Lakebase database (optional) |
-| **SELECT** | `system.query.history` |
-| **SELECT** | `system.compute.warehouses` |
-| **SELECT** | `system.billing.usage` |
-| **SELECT** | `system.billing.list_prices` |
-| **SELECT** | `system.access.workspaces_latest` |
-| **SELECT** | `INFORMATION_SCHEMA` (for table metadata enrichment) |
-| **Execute** | `ai_query()` function (for AI features) |
-| **SELECT** | `describe_history()` on queried tables (for maintenance history) |
+| `npm run dev` | Start local dev server (Turbopack) |
+| `npm run build` | Production build |
+| `npm run start` | Start production server |
+| `npm run lint` | Lint `app/` and `lib/` |
+| `npm test` | Run tests |
+
+---
+
+## Troubleshooting
+
+### Common issues
+
+| Problem | Cause | Solution |
+|---|---|---|
+| Dashboard shows no data | Service principal lacks system table access | Grant `SELECT` on system tables (see Step 5) |
+| Cost columns show "N/A" | Missing billing table permissions | Grant `SELECT` on `system.billing.usage` and `system.billing.list_prices` |
+| AI buttons show errors | `ai_query()` not available | Grant `EXECUTE` on `ai_query()`, or ignore (AI is optional) |
+| "PERMISSION_DENIED" in logs | Service principal lacks a specific permission | Check which API/table failed and grant the corresponding permission |
+| App stuck on "Starting" | Build failed | Check the **Logs** tab for npm or TypeScript errors |
+| Blank page after deploy | Missing warehouse resource | Ensure `sql-warehouse` resource is added (Step 4) |
+
+### Checking logs
+
+1. Go to **Compute > Apps** in your workspace
+2. Click your app
+3. Click the **Logs** tab
+4. Look for lines starting with `[warehouse-health]`, `[ai-triage]`, or `[rest-client]` for diagnostic info
+
+---
+
+## Security
+
+- **Read-only**: The app only reads system tables and REST APIs. It does not write to Unity Catalog, modify warehouses, or create compute resources.
+- **No external calls**: All data stays within your Databricks workspace. The app makes no calls to external services.
+- **OAuth authentication**: When deployed to Databricks Apps, authentication is handled automatically via the platform's OAuth flow. No tokens are stored in the app.
+- **PII handling**: Query text from `system.query.history` is displayed in the UI. If your queries contain sensitive data in string literals, the AI triage feature normalises literals in SQL fingerprints. Consider row-level security on system tables if needed.
+- **No secrets in code**: All credentials are injected via environment variables or Databricks secret scopes.
 
 ---
 
 ## License
 
-Internal use. Not open source.
+Apache License 2.0. See [LICENSE](LICENSE) for details.
