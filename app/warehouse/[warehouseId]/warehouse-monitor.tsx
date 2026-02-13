@@ -1331,17 +1331,26 @@ function InsightCell({ insight }: { insight: TriageInsight | null }) {
   }
 
   return (
-    <div className="space-y-1">
-      <Badge
-        variant="outline"
-        className={`text-[10px] font-medium ${ACTION_COLORS[insight.action] ?? ACTION_COLORS.investigate}`}
-      >
-        {insight.action}
-      </Badge>
-      <p className="text-[11px] leading-tight text-muted-foreground line-clamp-2">
-        {insight.insight}
-      </p>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="space-y-1 cursor-help">
+          <Badge
+            variant="outline"
+            className={`text-[10px] font-medium inline-flex items-center gap-1 ${ACTION_COLORS[insight.action] ?? ACTION_COLORS.investigate}`}
+          >
+            <Sparkles className="h-2.5 w-2.5 opacity-60" />
+            {insight.action}
+          </Badge>
+          <p className="text-[11px] leading-tight text-muted-foreground line-clamp-2">
+            {insight.insight}
+          </p>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm">
+        <p className="text-xs leading-relaxed">{insight.insight}</p>
+        <p className="text-[10px] text-muted-foreground mt-1 opacity-70">Source: AI triage analysis</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

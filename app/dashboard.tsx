@@ -432,7 +432,8 @@ function TriageCell({
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="space-y-1 cursor-help min-w-0">
-          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${style}`}>
+          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${style}`}>
+            <Sparkles className="h-2.5 w-2.5 opacity-60" />
             {insight.action}
           </span>
           <p className="text-[11px] text-muted-foreground leading-tight line-clamp-2 break-words">
@@ -442,6 +443,7 @@ function TriageCell({
       </TooltipTrigger>
       <TooltipContent className="max-w-sm">
         <p className="text-xs leading-relaxed">{insight.insight}</p>
+        <p className="text-[10px] text-muted-foreground mt-1 opacity-70">Source: AI triage analysis</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -516,9 +518,12 @@ function ExpandedRowContent({
         {/* AI Insight */}
         {triageInsight && (
           <div className="space-y-1 min-w-0 overflow-hidden">
-            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">AI Insight</h4>
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+              <Sparkles className="h-3 w-3 opacity-50" />
+              AI Insight
+            </h4>
             <div className="flex items-start gap-2 min-w-0">
-              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 mt-0.5 ${TRIAGE_ACTION_STYLE[triageInsight.action] ?? TRIAGE_ACTION_STYLE.investigate}`}>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 mt-0.5 ${TRIAGE_ACTION_STYLE[triageInsight.action] ?? TRIAGE_ACTION_STYLE.investigate}`}>
                 {triageInsight.action}
               </span>
               <p className="text-xs leading-relaxed min-w-0 break-words" style={{ overflowWrap: "anywhere" }}>{triageInsight.insight}</p>
@@ -529,17 +534,27 @@ function ExpandedRowContent({
         {/* Performance Flags */}
         {candidate.performanceFlags.length > 0 && (
           <div className="space-y-1">
-            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Performance Flags</h4>
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+              <Activity className="h-3 w-3 opacity-50" />
+              Performance Flags
+            </h4>
             <div className="flex flex-wrap gap-1.5">
               {candidate.performanceFlags.map((f) => (
                 <Tooltip key={f.flag}>
                   <TooltipTrigger asChild>
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-help ${flagSeverityColor(f.severity)}`}>
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-help ${flagSeverityColor(f.severity)}`}>
                       {f.label}
+                      {f.estimatedImpactPct != null && (
+                        <span className="opacity-60">{f.estimatedImpactPct}%</span>
+                      )}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs">
                     <p className="text-xs">{f.detail}</p>
+                    {f.estimatedImpactPct != null && (
+                      <p className="text-[10px] text-muted-foreground mt-1">Estimated impact: {f.estimatedImpactPct}% of task time</p>
+                    )}
+                    <p className="text-[10px] text-muted-foreground opacity-70">Source: rule-based detection</p>
                   </TooltipContent>
                 </Tooltip>
               ))}
@@ -1055,7 +1070,12 @@ function DetailPanel({
           {/* Performance Flags */}
           {candidate.performanceFlags.length > 0 && (
             <div>
-              <SectionLabel>Performance Flags</SectionLabel>
+              <SectionLabel>
+                <span className="flex items-center gap-1">
+                  <Activity className="h-3 w-3 opacity-50" />
+                  Performance Flags
+                </span>
+              </SectionLabel>
               <div className="flex flex-wrap gap-1.5">
                 {candidate.performanceFlags.map((pf) => (
                   <Tooltip key={pf.flag}>
@@ -1065,10 +1085,17 @@ function DetailPanel({
                       >
                         <Flag className="h-3 w-3" />
                         {pf.label}
+                        {pf.estimatedImpactPct != null && (
+                          <span className="opacity-60 text-[10px]">{pf.estimatedImpactPct}%</span>
+                        )}
                       </span>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      {pf.detail}
+                      <p className="text-xs">{pf.detail}</p>
+                      {pf.estimatedImpactPct != null && (
+                        <p className="text-[10px] text-muted-foreground mt-1">Estimated impact: {pf.estimatedImpactPct}% of task time</p>
+                      )}
+                      <p className="text-[10px] text-muted-foreground opacity-70">Source: rule-based detection</p>
                     </TooltipContent>
                   </Tooltip>
                 ))}
@@ -2459,11 +2486,12 @@ export function Dashboard({
                                       <div className="space-y-1">
                                         {c.performanceFlags.map((f) => (
                                           <p key={f.flag} className="text-xs">
-                                            <span className="font-semibold">{f.label}:</span>{" "}
+                                            <span className="font-semibold">{f.label}{f.estimatedImpactPct != null ? ` (${f.estimatedImpactPct}%)` : ""}:</span>{" "}
                                             {f.detail}
                                           </p>
                                         ))}
                                       </div>
+                                      <p className="text-[10px] text-muted-foreground mt-1.5 opacity-70">Source: rule-based detection</p>
                                     </TooltipContent>
                                   </Tooltip>
                                 ) : (
