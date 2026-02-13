@@ -114,6 +114,8 @@ The app does not:
 
 ## Estimated costs
 
+> **Quick summary** — For a team that uses the app a few hours per day on AWS Premium, expect roughly **$20–$50/month** total (app hosting + warehouse DBUs). AI features and Lakebase are optional and add a few dollars more. See below for full breakdown.
+
 ### SQL Warehouse compute
 
 The app runs queries against system tables using your existing SQL Warehouse. Costs depend on your warehouse type and size:
@@ -138,7 +140,20 @@ Lakebase XS instance: approximately **$25/month**. The app stores only a few hun
 
 ### Databricks Apps hosting
 
-Databricks Apps hosting is included with your workspace at no additional charge.
+Databricks Apps are billed per DBU based on app size and uptime. Pricing varies by cloud and tier — always refer to the [official Databricks Apps pricing page](https://www.databricks.com/product/pricing/databricks-apps) for current rates.
+
+| App size | DBU per hour | Example: 24/7 for 30 days |
+|---|---|---|
+| Medium | 0.5 DBU/hr | 360 DBU/month |
+| Large | 1.0 DBU/hr | 720 DBU/month |
+
+**Example cost** (AWS Premium, US-East): A single Medium app running 24/7 for 30 days = 360 DBUs x $0.75/DBU = **~$270/month**.
+
+**Cost optimisation tip**: DBSQL Co-Pilot does not need to run 24/7. You can **stop the app** when not in use and **start it** only when you need to analyse queries or review warehouse health. If you run the app for ~2 hours per business day (22 days/month), the cost drops to approximately **$16.50/month** for a Medium app on AWS Premium.
+
+To stop/start your app:
+- **UI**: Go to **Compute > Apps**, click your app, then **Stop** / **Start**
+- **CLI**: `databricks apps stop <app-name>` / `databricks apps start <app-name>`
 
 ---
 
@@ -219,7 +234,24 @@ The app needs access to a SQL Warehouse to run queries.
 
 > **Which warehouse should I use?** Any Serverless or Pro warehouse works. The app's queries are lightweight (system table SELECTs with partition pruning), so a Small Serverless warehouse is sufficient. You can use an existing warehouse — the app's queries will have minimal impact on other workloads.
 
-### Step 5: Grant system table permissions
+### Step 5: Configure user authorization scopes
+
+The Warehouse Monitor uses Databricks REST APIs (query history, warehouse stats) which require user-authorized API access. You must add the `sql` scope so the app can make these calls on behalf of the logged-in user.
+
+1. On your app's page, click the **Resources** tab (or **Configure**)
+2. Scroll down to **User authorization** (Preview section)
+3. Click **+ Add scope**
+4. Add the following scope:
+
+| Scope | Description |
+|---|---|
+| `sql` | Allow the app to execute SQL and manage SQL related resources in Databricks |
+
+5. Click **Save**
+
+> **What does this do?** When a user opens the app for the first time, they will be prompted to consent to this scope. This allows the app to call Databricks REST APIs (warehouse list, query history, endpoint metrics) on behalf of that user. Without this scope, the Warehouse Monitor page will not be able to load real-time data.
+
+### Step 6: Grant system table permissions
 
 The app runs as a **service principal** that Databricks creates automatically. This service principal needs `SELECT` access to system tables.
 
@@ -248,7 +280,7 @@ Replace `<service-principal-name>` with the actual service principal name from y
 
 > **Note**: If you are a **metastore admin**, you can grant these permissions. If not, ask your metastore admin to run these statements.
 
-### Step 6: Upload and deploy
+### Step 7: Upload and deploy
 
 From the cloned repository directory:
 
@@ -270,7 +302,7 @@ The deployment process will:
 
 This takes **2–5 minutes** on first deploy.
 
-### Step 7: Verify the deployment
+### Step 8: Verify the deployment
 
 1. Go back to **Compute > Apps** in your workspace
 2. Click on your app
@@ -279,7 +311,7 @@ This takes **2–5 minutes** on first deploy.
 
 If you see errors, check the **Logs** tab on your app's page.
 
-### Step 8: Iterate during development (optional)
+### Step 9: Iterate during development (optional)
 
 For ongoing development, use `--watch` mode to auto-sync changes:
 
@@ -291,6 +323,40 @@ databricks sync --watch . /Workspace/Users/<your-email>/dbsql-copilot
 databricks apps deploy dbsql-copilot \
   --source-code-path /Workspace/Users/<your-email>/dbsql-copilot
 ```
+
+---
+
+## Alternative: Deploy directly from GitHub (Beta)
+
+Instead of uploading files with `databricks sync`, you can deploy directly from a Git repository. This is a Beta feature that a workspace admin must enable first. See the [official documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/deploy/#deploy-from-a-git-repository) for full details.
+
+### Prerequisites
+
+- A workspace admin must enable the **Git-based app deployment** preview feature in your workspace
+- The repository must be accessible from your Databricks workspace (public repos work immediately; private repos require a Git credential)
+
+### Steps
+
+1. **Fork or clone this repository** to your own GitHub (or GitLab / Bitbucket) account
+2. **Create the app** following Steps 3–6 from the deployment guide above (create app, add SQL Warehouse resource, configure user authorization, grant permissions)
+3. **Configure the Git repository**:
+   - On your app's page, click **Edit**
+   - In the **Configure Git repository** step, enter your repository URL (e.g., `https://github.com/your-org/databricks-sql-copilot`)
+   - Select your Git provider (GitHub, GitLab, Bitbucket, etc.)
+   - Click **Save**
+4. **Add a Git credential** (private repos only):
+   - On the app details page, click **Configure Git credential**
+   - Follow the prompts for your Git provider (typically a personal access token)
+5. **Deploy from Git**:
+   - Click **Deploy**
+   - Select **From Git**
+   - Enter the **Git reference**: `main` (or a branch name, tag, or commit SHA)
+   - Select the **Reference type**: Branch
+   - Click **Deploy**
+
+The app will pull the code directly from your repository, run the build, and start. To redeploy after pushing changes to Git, simply click **Deploy** again — no need to re-sync files.
+
+> **Note**: Changing the Git repository or switching between Git and workspace deployment sources deletes all stored Git credentials for the app's service principal. You will need to reconfigure credentials after switching.
 
 ---
 
