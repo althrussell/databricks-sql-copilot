@@ -485,6 +485,148 @@ export async function fetchAllTableMetadata(
   return results;
 }
 
+/* ── Lightweight Metadata for Triage ── */
+
+/**
+ * Lightweight table summary for triage prompts.
+ * Only fetches DESCRIBE DETAIL (one SQL call per table) — no columns,
+ * no maintenance history, no extended description. Fast and cheap.
+ */
+export interface TableSummaryForTriage {
+  tableName: string;
+  clusteringColumns: string[];
+  partitionColumns: string[];
+  isManaged: boolean;
+  predictiveOptEnabled: boolean;
+  format: string | null;
+  sizeInBytes: number | null;
+  numFiles: number | null;
+}
+
+/** In-memory cache for lightweight triage summaries (per server session) */
+const triageSummaryCache = new Map<string, TableSummaryForTriage>();
+
+/**
+ * Fetch lightweight metadata for a single table (DESCRIBE DETAIL only).
+ * Uses an in-memory cache to avoid repeated calls.
+ */
+async function fetchTableSummaryForTriage(
+  tableName: string
+): Promise<TableSummaryForTriage | null> {
+  const cached = triageSummaryCache.get(tableName);
+  if (cached) return cached;
+
+  const { detail, error } = await fetchDescribeDetail(tableName);
+  if (error || !detail) return null;
+
+  const hasPredOpt =
+    detail.properties["delta.enableOptimizeWrite"] === "true" ||
+    detail.properties["delta.enablePredictiveOptimization"] === "true" ||
+    detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
+
+  const summary: TableSummaryForTriage = {
+    tableName,
+    clusteringColumns: detail.clusteringColumns,
+    partitionColumns: detail.partitionColumns,
+    isManaged: detail.isManaged,
+    predictiveOptEnabled: hasPredOpt,
+    format: detail.format,
+    sizeInBytes: detail.sizeInBytes,
+    numFiles: detail.numFiles,
+  };
+
+  triageSummaryCache.set(tableName, summary);
+  return summary;
+}
+
+/**
+ * Batch-fetch lightweight table metadata for triage.
+ * Extracts table names from multiple SQL texts, deduplicates,
+ * and fetches DESCRIBE DETAIL in parallel (capped at 10 tables).
+ *
+ * Returns a Map of tableName → TableSummaryForTriage.
+ */
+export async function fetchTriageTableContext(
+  sqlTexts: string[]
+): Promise<Map<string, TableSummaryForTriage>> {
+  // Extract and deduplicate table names across all SQL texts
+  const allTables = new Set<string>();
+  for (const sql of sqlTexts) {
+    for (const t of extractTableNames(sql)) {
+      allTables.add(t);
+    }
+  }
+
+  if (allTables.size === 0) return new Map();
+
+  // Cap at 10 tables to keep it fast
+  const capped = [...allTables].slice(0, 10);
+
+  console.log(
+    `[triage-metadata] Fetching lightweight metadata for ${capped.length} tables: ${capped.join(", ")}`
+  );
+
+  const results = await Promise.allSettled(
+    capped.map((name) => fetchTableSummaryForTriage(name))
+  );
+
+  const map = new Map<string, TableSummaryForTriage>();
+  for (let i = 0; i < capped.length; i++) {
+    const r = results[i];
+    if (r.status === "fulfilled" && r.value) {
+      map.set(capped[i], r.value);
+    }
+  }
+
+  console.log(
+    `[triage-metadata] Got metadata for ${map.size}/${capped.length} tables`
+  );
+
+  return map;
+}
+
+/**
+ * Format triage table context into a compact string for the prompt.
+ * One line per table with key details.
+ */
+export function formatTriageTableContext(
+  tables: Map<string, TableSummaryForTriage>
+): string {
+  if (tables.size === 0) return "";
+
+  const lines: string[] = [];
+  for (const [, t] of tables) {
+    const parts: string[] = [t.tableName];
+
+    if (t.clusteringColumns.length > 0) {
+      parts.push(`clustered on [${t.clusteringColumns.join(", ")}]`);
+    } else {
+      parts.push("NO clustering");
+    }
+
+    if (t.partitionColumns.length > 0) {
+      parts.push(`partitioned by [${t.partitionColumns.join(", ")}]`);
+    }
+
+    parts.push(t.isManaged ? "managed" : "EXTERNAL");
+    parts.push(t.predictiveOptEnabled ? "PO enabled" : "PO disabled");
+
+    if (t.sizeInBytes != null) {
+      const sizeStr =
+        t.sizeInBytes >= 1e9
+          ? `${(t.sizeInBytes / 1e9).toFixed(1)}GB`
+          : t.sizeInBytes >= 1e6
+            ? `${(t.sizeInBytes / 1e6).toFixed(0)}MB`
+            : `${(t.sizeInBytes / 1e3).toFixed(0)}KB`;
+      parts.push(`${sizeStr} in ${t.numFiles ?? "?"} files`);
+    }
+
+    lines.push(parts.join(", "));
+  }
+
+  return lines.join("\n");
+}
+
 /* ── Helpers ── */
 
 function escape(s: string): string {

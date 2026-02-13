@@ -134,6 +134,12 @@ export interface PerformanceFlagInfo {
   label: string;
   severity: "warning" | "critical";
   detail: string;
+  /**
+   * Estimated percentage of total task time this issue accounts for (0-100).
+   * Follows the PRD principle: only surface insights above 10% of total task time.
+   * May be undefined if impact cannot be estimated from available metrics.
+   */
+  estimatedImpactPct?: number;
 }
 
 /** Aggregated candidate (Sprint 1+) */
@@ -216,6 +222,62 @@ export interface Candidate {
     | "DRAFTED"
     | "VALIDATED"
     | "APPROVED";
+}
+
+/* ── Unified Insight Record ──────────────────────────────────────── */
+
+/**
+ * Target surface for an insight — what needs to change.
+ * Aligns with the Databricks PRD for Query Performance Insights.
+ */
+export type InsightTargetSurface = "query" | "table" | "compute" | "cloud_storage";
+
+/**
+ * Source of the insight — how it was detected.
+ */
+export type InsightSource =
+  | "builtin_rule"      // Our deterministic rule-based detection
+  | "ai_triage"         // AI-generated triage insight
+  | "ai_deep_analysis"  // AI-generated deep analysis
+  | "system_table";     // Future: system.query.performance_insights
+
+/**
+ * Unified insight record that can be populated by either
+ * our rule-based detection, AI analysis, or the future
+ * system.query.performance_insights Databricks system table.
+ *
+ * Designed for future extensibility — when the Databricks system table
+ * becomes available, records from it can be merged into this structure.
+ */
+export interface InsightRecord {
+  /** Unique identifier for this insight */
+  id: string;
+  /** Source of the insight */
+  source: InsightSource;
+  /** Human-readable insight type (e.g. "Exploding Join", "Clustering Key Filter Missing") */
+  insightType: string;
+  /** What needs to change: the query SQL, a table, compute/warehouse config, or cloud storage */
+  targetSurface: InsightTargetSurface;
+  /** Target name: table name, warehouse ID, or "query" */
+  targetName: string;
+  /** User-facing recommendation text (1-2 sentences) */
+  recommendation: string;
+  /** Detailed explanation of the issue */
+  detail: string;
+  /** Estimated impact as percentage of total task time (0-100). null if unknown. */
+  estimatedImpactPct: number | null;
+  /** Action category for routing */
+  action: "rewrite" | "cluster" | "optimize" | "resize" | "investigate" | "migrate";
+  /** Severity for display priority */
+  severity: "critical" | "warning" | "info";
+  /** Optional: statement ID this insight applies to */
+  statementId?: string;
+  /** Optional: fingerprint this insight applies to (for pattern-level insights) */
+  fingerprint?: string;
+  /** Optional: warehouse ID this insight applies to */
+  warehouseId?: string;
+  /** ISO timestamp when the insight was generated */
+  generatedAt: string;
 }
 
 /** A single warehouse scaling/lifecycle event from system.compute.warehouse_events */

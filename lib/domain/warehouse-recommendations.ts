@@ -369,14 +369,26 @@ export function generateRecommendations(
     let targetAutoStop: number | undefined;
     let estimatedNewWeeklyCost = m.weeklyCostDollars;
 
+    // Queue-to-execution ratio: if queries spend more time queueing than executing,
+    // it's a scaling problem regardless of absolute queue minutes
+    const queueRatioHigh =
+      m.avgRuntimeSec > 0 &&
+      m.totalCapacityQueueMin > 0 &&
+      m.totalCapacityQueueMin / (m.avgRuntimeSec * m.totalQueries / 60) > 0.5;
+
     // Rule 1: High cold starts + not serverless → suggest Serverless
     if (highColdStart && !m.isServerless) {
       action = "serverless";
       severity = confidence === "high" ? "critical" : "warning";
       headline = "Switch to Serverless";
+      const coldStartQueriesEstimate = Math.round(m.totalColdStartMin * 60 / (m.avgRuntimeSec || 10)); // rough count of queries affected
       rationale = [
         `${m.totalColdStartMin.toFixed(1)} min of cold start wait over 7 days (${m.daysWithColdStart}/7 days).`,
-        `Serverless SQL eliminates cold starts entirely.`,
+        `Serverless SQL eliminates cold starts entirely — instant start, no idle cost, elastic scaling.`,
+        `Estimated ${coldStartQueriesEstimate} queries affected by cold starts weekly.`,
+        m.autoStopMinutes < LOW_AUTOSTOP_MIN
+          ? `Current auto-stop is ${m.autoStopMinutes} min which causes frequent restarts. Serverless eliminates this trade-off.`
+          : "",
         serverlessCostEstimate
           ? `Estimated serverless cost: $${serverlessCostEstimate.toFixed(2)}/wk vs current $${m.weeklyCostDollars.toFixed(2)}/wk.`
           : "",
@@ -489,6 +501,27 @@ export function generateRecommendations(
         ].join("\n");
       }
     }
+    // Rule 4b: Queue-ratio-based scaling (even if absolute queue is below threshold)
+    // If queries spend >50% of their time queueing, it's a scaling problem
+    else if (queueRatioHigh && m.totalQueries >= 50 && !highSpill) {
+      const proposedClusters = Math.min(m.maxClusters + 2, 10);
+      if (proposedClusters > m.maxClusters) {
+        targetMaxClusters = proposedClusters;
+        action = "add_clusters";
+        severity = "warning";
+        const queueRatioPct = Math.round(
+          (m.totalCapacityQueueMin / (m.avgRuntimeSec * m.totalQueries / 60)) * 100
+        );
+        headline = `Increase max clusters to ${proposedClusters}`;
+        rationale = [
+          `Queries spend ${queueRatioPct}% of their processing time waiting in queue.`,
+          `Even though absolute queue time (${m.totalCapacityQueueMin.toFixed(1)} min) is moderate, the ratio to execution time indicates a concurrency bottleneck.`,
+          `Adding clusters increases parallelism and reduces per-query queue wait.`,
+          m.isServerless ? "" : `Consider Serverless SQL for elastic scaling that auto-adjusts to demand.`,
+        ].filter(Boolean).join("\n");
+        estimatedNewWeeklyCost = estimateCostForClusters(m.weeklyCostDollars, m.maxClusters, proposedClusters);
+      }
+    }
     // Rule 5: Low pressure → downsize
     else if (lowPressure && m.activeDays >= 3 && m.totalQueries >= 50) {
       const prev = prevSize(m.size);
@@ -509,22 +542,36 @@ export function generateRecommendations(
       targetAutoStop = Math.min(m.autoStopMinutes + 10, 30);
       action = "increase_autostop";
       severity = "warning";
+      // Quantify the trade-off: extra idle cost vs cold start savings
+      const extraIdleMinPerDay = targetAutoStop - m.autoStopMinutes;
+      const costPerMinute = m.weeklyCostDollars > 0 && m.totalQueries > 0
+        ? m.weeklyCostDollars / (m.activeDays * 24 * 60) // rough cost per minute
+        : 0;
+      const extraWeeklyCost = extraIdleMinPerDay * m.activeDays * costPerMinute;
       headline = `Increase auto-stop to ${targetAutoStop} min`;
       rationale = [
-        `Cold start wait: ${m.totalColdStartMin.toFixed(1)} min over 7 days.`,
+        `Cold start wait: ${m.totalColdStartMin.toFixed(1)} min over 7 days (${m.daysWithColdStart}/7 days).`,
         `Current auto-stop is ${m.autoStopMinutes} min — the warehouse stops frequently and users wait for it to restart.`,
         `Increasing auto-stop keeps it warm longer, reducing cold start impact.`,
-      ].join("\n");
+        `Trade-off: ~$${extraWeeklyCost.toFixed(2)}/wk extra idle cost vs ${m.totalColdStartMin.toFixed(1)} min of cold start wait saved.`,
+        !m.isServerless ? `Alternative: Switch to Serverless SQL to eliminate cold starts entirely without idle cost.` : "",
+      ].filter(Boolean).join("\n");
     }
     // Rule 7: Low pressure + high auto-stop → decrease auto-stop
     else if (lowPressure && m.autoStopMinutes > HIGH_AUTOSTOP_MIN) {
       targetAutoStop = Math.max(m.autoStopMinutes - 15, 10);
       action = "decrease_autostop";
       severity = "info";
+      const savedIdleMinPerDay = m.autoStopMinutes - targetAutoStop;
+      const costPerMinute = m.weeklyCostDollars > 0 && m.activeDays > 0
+        ? m.weeklyCostDollars / (m.activeDays * 24 * 60)
+        : 0;
+      const savedWeeklyCost = savedIdleMinPerDay * m.activeDays * costPerMinute;
       headline = `Decrease auto-stop to ${targetAutoStop} min`;
       rationale = [
         `Low utilisation with auto-stop at ${m.autoStopMinutes} min.`,
-        `Reducing it saves idle compute costs without impacting users.`,
+        `Reducing to ${targetAutoStop} min saves ~$${savedWeeklyCost.toFixed(2)}/wk in idle compute costs.`,
+        `With only ${m.totalSpillGiB.toFixed(2)} GiB spill and ${m.totalCapacityQueueMin.toFixed(1)} min queue, occasional cold starts from the shorter auto-stop won't materially impact users.`,
       ].join("\n");
     }
 

@@ -11,6 +11,10 @@ import { executeQuery } from "@/lib/dbx/sql-client";
 import { fingerprint as computeFingerprint } from "@/lib/domain/sql-fingerprint";
 import type { TimelineQuery } from "@/lib/domain/types";
 import type { TriageInsight } from "@/lib/ai/triage";
+import {
+  fetchTriageTableContext,
+  formatTriageTableContext,
+} from "@/lib/queries/table-metadata";
 
 const TRIAGE_MODEL = "databricks-llama-4-maverick";
 const MAX_PATTERNS = 15;
@@ -29,9 +33,12 @@ interface PatternSummary {
   avgDurationMs: number;
   maxDurationMs: number;
   totalBytesScanned: number;
+  totalRowsProduced: number;
   totalSpillBytes: number;
   avgCacheHitPercent: number;
+  avgQueueWaitMs: number;
   users: string[];
+  clientApplications: string[];
 }
 
 function escapeForSql(text: string): string {
@@ -64,9 +71,12 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
       statementType: string;
       durations: number[];
       bytesScanned: number[];
+      rowsProduced: number[];
       spillBytes: number[];
       cacheHits: number[];
+      queueWaits: number[];
       users: Set<string>;
+      clientApps: Set<string>;
     }
   >();
 
@@ -79,9 +89,12 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
     if (existing) {
       existing.durations.push(q.durationMs);
       existing.bytesScanned.push(q.bytesScanned);
+      existing.rowsProduced.push(q.rowsProduced);
       existing.spillBytes.push(q.spillBytes);
       existing.cacheHits.push(q.cacheHitPercent);
+      existing.queueWaits.push(q.queueWaitMs);
       existing.users.add(q.userName);
+      if (q.clientApplication) existing.clientApps.add(q.clientApplication);
     } else {
       groups.set(fp, {
         fingerprint: fp,
@@ -89,9 +102,12 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
         statementType: q.statementType,
         durations: [q.durationMs],
         bytesScanned: [q.bytesScanned],
+        rowsProduced: [q.rowsProduced],
         spillBytes: [q.spillBytes],
         cacheHits: [q.cacheHitPercent],
+        queueWaits: [q.queueWaitMs],
         users: new Set([q.userName]),
+        clientApps: new Set(q.clientApplication ? [q.clientApplication] : []),
       });
     }
   }
@@ -102,9 +118,12 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
     const avgDurationMs = totalDurationMs / g.durations.length;
     const maxDurationMs = Math.max(...g.durations);
     const totalBytesScanned = g.bytesScanned.reduce((a, b) => a + b, 0);
+    const totalRowsProduced = g.rowsProduced.reduce((a, b) => a + b, 0);
     const totalSpillBytes = g.spillBytes.reduce((a, b) => a + b, 0);
     const avgCacheHitPercent =
       g.cacheHits.reduce((a, b) => a + b, 0) / g.cacheHits.length;
+    const avgQueueWaitMs =
+      g.queueWaits.reduce((a, b) => a + b, 0) / g.queueWaits.length;
 
     result.push({
       fingerprint: g.fingerprint,
@@ -115,9 +134,12 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
       avgDurationMs,
       maxDurationMs,
       totalBytesScanned,
+      totalRowsProduced,
       totalSpillBytes,
       avgCacheHitPercent,
+      avgQueueWaitMs,
       users: [...g.users].slice(0, 3),
+      clientApplications: [...g.clientApps].slice(0, 2),
     });
   }
 
@@ -128,14 +150,22 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
 }
 
 function patternSummaryLine(p: PatternSummary): string {
+  const queuePct =
+    p.avgDurationMs > 0
+      ? Math.round((p.avgQueueWaitMs / p.avgDurationMs) * 100)
+      : 0;
+
   return [
     `ID: ${p.fingerprint}`,
     `Type: ${p.statementType}`,
     `SQL: ${p.sqlSnippet}`,
     `Runs: ${p.runCount}, avg: ${fmtMs(p.avgDurationMs)}, max: ${fmtMs(p.maxDurationMs)}`,
-    `Read: ${fmtBytes(p.totalBytesScanned)}, spill: ${fmtBytes(p.totalSpillBytes)}, cache: ${Math.round(p.avgCacheHitPercent)}%`,
+    `Read: ${fmtBytes(p.totalBytesScanned)}, produced: ${p.totalRowsProduced.toLocaleString()} rows`,
+    `Spill: ${fmtBytes(p.totalSpillBytes)}, cache: ${Math.round(p.avgCacheHitPercent)}%`,
+    `Queue: ${fmtMs(p.avgQueueWaitMs)} avg (${queuePct}% of duration)`,
+    p.clientApplications.length > 0 ? `App: ${p.clientApplications.join(", ")}` : "",
     `Users: ${p.users.join(", ")}`,
-  ].join(" | ");
+  ].filter(Boolean).join(" | ");
 }
 
 /**
@@ -151,6 +181,21 @@ export async function triageMonitorQueries(
 
   const top = patterns.slice(0, MAX_PATTERNS);
 
+  // Fetch lightweight table metadata for context (parallel, cached, capped)
+  let tableContextBlock = "";
+  try {
+    const sqlTexts = top
+      .map((p) => p.sqlSnippet)
+      .filter((t) => t.length > 0);
+    const tableContext = await fetchTriageTableContext(sqlTexts);
+    const formatted = formatTriageTableContext(tableContext);
+    if (formatted) {
+      tableContextBlock = `\n\n## Table Context (from Unity Catalog)\n${formatted}`;
+    }
+  } catch (err) {
+    console.warn("[ai-triage-monitor] table metadata fetch failed, continuing without:", err);
+  }
+
   const patternLines = top
     .map((p, i) => `[${i + 1}] ${patternSummaryLine(p)}`)
     .join("\n\n");
@@ -161,9 +206,14 @@ export async function triageMonitorQueries(
 
 Key Databricks best practices to flag:
 - Low cache hit rates and large reads suggest missing clustering — recommend Liquid Clustering.
-- High spill indicates the warehouse may be undersized or queries need optimization.
+- High spill relative to data read indicates the warehouse needs a LARGER size (more memory), not just query optimization. Recommend upsizing.
 - Many short-running queries from the same pattern may benefit from result caching or materialized views.
 - Always prefer Liquid Clustering over Z-ORDER on all tables.
+- If producedRows >> readRows (ratio > 2x), flag as Exploding Join — recommend adding join conditions or pre-filtering.
+- If readRows >> producedRows (ratio > 10x), flag as Filtering Join — recommend filtering before the join.
+- If queue wait is a significant portion of total duration, this is a SCALING problem — recommend adding clusters or Serverless, NOT query rewrites.
+- If client_application indicates a BI tool (Tableau, Power BI, Looker) and cache is low, the BI tool may not be pushing filters down.
+- For frequently repeated aggregation patterns on tables with frequent writes, recommend Materialized Views over result cache.
 
 Focus on the most impactful observation per pattern. Be specific — reference actual metrics.
 
@@ -172,7 +222,7 @@ Respond with ONLY a valid JSON array (no markdown, no explanation outside JSON):
 
 ## Query Patterns
 
-${patternLines}`;
+${patternLines}${tableContextBlock}`;
 
   const escapedPrompt = escapeForSql(prompt);
   const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}') AS response`;
@@ -180,7 +230,7 @@ ${patternLines}`;
   try {
     const t0 = Date.now();
     console.log(
-      `[ai-triage-monitor] calling ${TRIAGE_MODEL} for ${top.length} patterns (prompt ~${escapedPrompt.length} chars)`
+      `[ai-triage-monitor] calling ${TRIAGE_MODEL} for ${top.length} patterns (prompt ~${escapedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`
     );
 
     // Race the query against a timeout

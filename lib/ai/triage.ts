@@ -13,6 +13,10 @@
 
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { Candidate } from "@/lib/domain/types";
+import {
+  fetchTriageTableContext,
+  formatTriageTableContext,
+} from "@/lib/queries/table-metadata";
 
 const TRIAGE_MODEL = "databricks-llama-4-maverick";
 const MAX_CANDIDATES = 15;
@@ -64,13 +68,25 @@ function candidateSummary(c: Candidate): string {
         ? `${c.allocatedDBUs.toFixed(1)} DBU`
         : "n/a";
 
+  const rowRatio =
+    ws.totalReadRows > 0
+      ? (ws.totalProducedRows / ws.totalReadRows).toFixed(1)
+      : "n/a";
+  const queuePct =
+    ws.avgExecutionMs > 0
+      ? Math.round((ws.avgQueueWaitMs / ws.avgExecutionMs) * 100)
+      : 0;
+
   return [
     `ID: ${c.fingerprint}`,
     `Type: ${c.statementType}`,
     `SQL: ${sqlSnippet}`,
     `p95: ${fmtMs(ws.p95Ms)}, runs: ${ws.count}, cost: ${cost}`,
-    `Read: ${fmtBytes(ws.totalReadBytes)}, spill: ${fmtBytes(ws.totalSpilledBytes)}, prune: ${Math.round(ws.avgPruningEfficiency * 100)}%`,
+    `Read: ${fmtBytes(ws.totalReadBytes)} (${ws.totalReadRows.toLocaleString()} rows), produced: ${ws.totalProducedRows.toLocaleString()} rows (ratio: ${rowRatio}x)`,
+    `Spill: ${fmtBytes(ws.totalSpilledBytes)}, prune: ${Math.round(ws.avgPruningEfficiency * 100)}%`,
     `Cache: IO ${Math.round(ws.avgIoCachePercent)}%, result ${Math.round(ws.cacheHitRate * 100)}%`,
+    `Queue: ${fmtMs(ws.avgQueueWaitMs)} avg (${queuePct}% of exec time)`,
+    `App: ${c.clientApplication}`,
     flags ? `Flags: ${flags}` : "",
   ]
     .filter(Boolean)
@@ -89,6 +105,21 @@ export async function triageCandidates(
   // Take top N by impact score (already sorted)
   const top = candidates.slice(0, MAX_CANDIDATES);
 
+  // Fetch lightweight table metadata for context (parallel, cached, capped)
+  let tableContextBlock = "";
+  try {
+    const sqlTexts = top
+      .map((c) => c.sampleQueryText)
+      .filter((t) => t.length > 0);
+    const tableContext = await fetchTriageTableContext(sqlTexts);
+    const formatted = formatTriageTableContext(tableContext);
+    if (formatted) {
+      tableContextBlock = `\n\n## Table Context (from Unity Catalog)\n${formatted}`;
+    }
+  } catch (err) {
+    console.warn("[ai-triage] table metadata fetch failed, continuing without:", err);
+  }
+
   const candidateLines = top
     .map((c, i) => `[${i + 1}] ${candidateSummary(c)}`)
     .join("\n\n");
@@ -102,6 +133,12 @@ Key Databricks best practices to flag:
 - Large full table scans suggest missing clustering or partitioning — recommend Liquid Clustering and Predictive Optimization.
 - If a query reads many GB with poor cache hit rates, the table likely needs OPTIMIZE and Predictive Optimization enabled.
 - Always prefer Liquid Clustering over Z-ORDER on all tables.
+- If producedRows >> readRows (ratio > 2x), flag as Exploding Join — recommend adding join conditions or pre-filtering.
+- If readRows >> producedRows (ratio > 10x), flag as Filtering Join — recommend filtering before the join.
+- If queueWaitMs > 50% of executionMs, this is a SCALING problem — recommend adding clusters or Serverless, NOT query rewrites.
+- High spill relative to data read suggests the warehouse needs a LARGER size (more memory per node), not just query optimization.
+- If the query is from a BI tool (Tableau, Power BI, Looker) and has low pruning, the BI tool may not be pushing filters down — recommend checking BI connection settings.
+- For frequently repeated aggregation patterns with low cache hit rates on tables with frequent writes, recommend Materialized Views over result cache.
 
 Focus on the most impactful observation per query. Be specific — reference actual metrics.
 
@@ -110,7 +147,7 @@ Respond with ONLY a valid JSON array (no markdown, no explanation outside JSON):
 
 ## Query Patterns
 
-${candidateLines}`;
+${candidateLines}${tableContextBlock}`;
 
   const escapedPrompt = escapeForSql(prompt);
 
@@ -118,7 +155,8 @@ ${candidateLines}`;
 
   try {
     const t0 = Date.now();
-    console.log(`[ai-triage] calling ${TRIAGE_MODEL} for ${top.length} candidates`);
+    console.log(`[ai-triage] calling ${TRIAGE_MODEL} for ${top.length} candidates${tableContextBlock ? ` (with table context)` : ""}`);
+
 
     // Race the query against a timeout
     const resultPromise = executeQuery<{ response: string }>(sql);

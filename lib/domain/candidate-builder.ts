@@ -9,7 +9,7 @@
 import type { QueryRun, Candidate, QueryOrigin, WarehouseCost } from "@/lib/domain/types";
 import { fingerprint } from "@/lib/domain/sql-fingerprint";
 import { scoreCandidate, type ScoreInput } from "@/lib/domain/scoring";
-import { computeFlags } from "@/lib/domain/performance-flags";
+import { computeFlags, filterAndRankFlags } from "@/lib/domain/performance-flags";
 import {
   isDbtQuery,
   extractDbtMetadata,
@@ -306,8 +306,9 @@ export function buildCandidates(
       status: "NEW",
     };
 
-    // ── P4: Performance flags ──
-    candidate.performanceFlags = computeFlags(candidate);
+    // ── P4: Performance flags (with impact-based filtering & ranking) ──
+    const rawFlags = computeFlags(candidate);
+    candidate.performanceFlags = filterAndRankFlags(rawFlags);
 
     candidates.push(candidate);
   }
