@@ -4,9 +4,12 @@
  * Stores a snapshot each time warehouse health is analysed (7-day window).
  * Enables trend comparison between runs ("was WARNING last time, now CRITICAL").
  * 90-day TTL.
+ *
+ * Requires ENABLE_LAKEBASE=true. When disabled, all functions are safe no-ops
+ * (saves skipped, lookups return null/empty).
  */
 
-import { prisma } from "./prisma";
+import { prisma, isLakebaseEnabled } from "./prisma";
 import type { WarehouseRecommendation, WarehouseHealthMetrics } from "@/lib/domain/types";
 
 export interface HealthSnapshot {
@@ -22,12 +25,15 @@ export interface HealthSnapshot {
 
 /**
  * Save a health snapshot for a warehouse after analysis.
+ * Silently skipped when Lakebase is disabled.
  */
 export async function saveHealthSnapshot(
   warehouseId: string,
   recommendation: WarehouseRecommendation,
   metrics: WarehouseHealthMetrics
 ): Promise<void> {
+  if (!isLakebaseEnabled()) return;
+
   const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
   try {
@@ -69,8 +75,11 @@ export async function saveHealthSnapshot(
 
 /**
  * Get the most recent non-expired snapshot for a warehouse.
+ * Returns null when Lakebase is disabled.
  */
 export async function getLastSnapshot(warehouseId: string): Promise<HealthSnapshot | null> {
+  if (!isLakebaseEnabled()) return null;
+
   try {
     const row = await prisma.healthSnapshot.findFirst({
       where: {
@@ -100,11 +109,14 @@ export async function getLastSnapshot(warehouseId: string): Promise<HealthSnapsh
 
 /**
  * Get recent snapshot history for a warehouse (for trend analysis).
+ * Returns empty array when Lakebase is disabled.
  */
 export async function getSnapshotHistory(
   warehouseId: string,
   limit = 10
 ): Promise<HealthSnapshot[]> {
+  if (!isLakebaseEnabled()) return [];
+
   try {
     const rows = await prisma.healthSnapshot.findMany({
       where: {

@@ -2,9 +2,12 @@
  * Rewrite Cache — Prisma persistence for AI rewrite results.
  *
  * Caches AI diagnosis + rewrite results by fingerprint with a 7-day TTL.
+ *
+ * Requires ENABLE_LAKEBASE=true. When disabled, all functions are safe no-ops
+ * (cache misses, writes silently skipped).
  */
 
-import { prisma } from "./prisma";
+import { prisma, isLakebaseEnabled } from "./prisma";
 import type { Prisma } from "../generated/prisma/client";
 
 export interface CachedRewrite {
@@ -21,9 +24,11 @@ export interface CachedRewrite {
 
 /**
  * Retrieve a cached rewrite result for a query fingerprint.
- * Returns null if not found or expired.
+ * Returns null if not found, expired, or Lakebase is disabled.
  */
 export async function getCachedRewrite(fingerprint: string): Promise<CachedRewrite | null> {
+  if (!isLakebaseEnabled()) return null;
+
   try {
     const row = await prisma.rewriteCache.findFirst({
       where: {
@@ -54,6 +59,7 @@ export async function getCachedRewrite(fingerprint: string): Promise<CachedRewri
 /**
  * Cache an AI rewrite result for a query fingerprint.
  * UPSERTs into the cache with a fresh 7-day TTL.
+ * Silently skipped when Lakebase is disabled.
  */
 export async function cacheRewrite(
   fingerprint: string,
@@ -66,6 +72,8 @@ export async function cacheRewrite(
     modelUsed: string;
   }
 ): Promise<void> {
+  if (!isLakebaseEnabled()) return;
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 

@@ -5,6 +5,10 @@
  * Schema: dbsql_copilot (not public).
  * Connection: pooler URL from DATABASE_URL env var.
  *
+ * **Disabled by default.** Set `ENABLE_LAKEBASE=true` in your environment
+ * to activate persistence (rewrite cache, query actions, health snapshots).
+ * When disabled, all store functions return safe no-op defaults.
+ *
  * The client is created lazily on first use (not at import time) so that
  * `next build` can import the module without DATABASE_URL being set.
  *
@@ -13,6 +17,15 @@
  */
 
 import { PrismaClient } from "../generated/prisma/client";
+
+/**
+ * Returns true when Lakebase persistence is enabled.
+ * Disabled by default — set ENABLE_LAKEBASE=true to activate.
+ */
+export function isLakebaseEnabled(): boolean {
+  const val = process.env.ENABLE_LAKEBASE;
+  return val === "true" || val === "1";
+}
 
 const globalForPrisma = globalThis as unknown as {
   _prisma: PrismaClient | undefined;

@@ -3,9 +3,11 @@
  *
  * Actions: dismiss, watch, applied
  * Each action has a 30-day TTL that refreshes on update.
+ *
+ * Requires ENABLE_LAKEBASE=true. When disabled, all functions are safe no-ops.
  */
 
-import { prisma } from "./prisma";
+import { prisma, isLakebaseEnabled } from "./prisma";
 
 export type QueryActionType = "dismiss" | "watch" | "applied";
 
@@ -23,6 +25,7 @@ export interface QueryAction {
  */
 export async function getQueryActions(): Promise<Map<string, QueryAction>> {
   const map = new Map<string, QueryAction>();
+  if (!isLakebaseEnabled()) return map;
 
   try {
     const rows = await prisma.queryAction.findMany({
@@ -59,6 +62,8 @@ export async function setQueryAction(
   actedBy?: string,
   note?: string
 ): Promise<void> {
+  if (!isLakebaseEnabled()) return;
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
@@ -91,6 +96,8 @@ export async function setQueryAction(
  * Remove an action from a query fingerprint.
  */
 export async function removeQueryAction(fingerprint: string): Promise<void> {
+  if (!isLakebaseEnabled()) return;
+
   try {
     await prisma.queryAction.delete({
       where: { fingerprint },

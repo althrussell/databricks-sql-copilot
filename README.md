@@ -97,15 +97,26 @@ All queries use **date partition pruning** on system tables for performance. Sys
 
 ---
 
-## Persistence (Lakebase + Prisma)
+## Persistence (Lakebase + Prisma) — optional
 
-Backed by **Databricks Lakebase** (Neon-compatible Postgres) via **Prisma ORM** in the `dbsql_copilot` schema:
+Lakebase persistence is **disabled by default**. The app works fully without it — all core features (query discovery, warehouse monitoring, AI analysis) run entirely from Databricks REST APIs and system tables. Enabling Lakebase adds caching and state that survives restarts.
+
+### Enabling Lakebase
+
+Set `ENABLE_LAKEBASE=true` in your environment (`.env.local` for local dev, or your app's environment config for deployment).
+
+When enabled, the app persists to a **Databricks Lakebase** (Neon-compatible Postgres) database via **Prisma ORM** in the `dbsql_copilot` schema:
 
 | Table | Purpose | TTL |
 |---|---|---|
 | `rewrite_cache` | AI diagnosis + rewrite results by fingerprint | 7 days |
 | `query_actions` | User actions (dismiss, watch, applied) per query pattern | 30 days |
 | `health_snapshots` | Warehouse health analysis history for trend comparison | 90 days |
+
+When disabled (`ENABLE_LAKEBASE=false` or unset):
+- AI rewrites are generated fresh each time (no caching)
+- Query dismiss/watch actions are not persisted across restarts
+- Health trend comparisons are not available
 
 Schema is managed via `prisma db push` (use the direct/non-pooler URL). Runtime queries use the pooler URL. Secrets are stored in the `inspire-secrets` scope:
 ```bash
@@ -199,10 +210,9 @@ DATABRICKS_TOKEN=dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 # SQL warehouse ID (the hex ID, not the name)
 DATABRICKS_WAREHOUSE_ID=abcdef1234567890
 
-# Prisma — Lakebase pooler URL (runtime):
-DATABASE_URL=postgresql://USER:PASSWORD@HOST-pooler.database.REGION.cloud.databricks.com/databricks_postgres?sslmode=require&schema=dbsql_copilot
-# Prisma — Lakebase direct URL (migrations):
-DIRECT_DATABASE_URL=postgresql://USER:PASSWORD@HOST.database.REGION.cloud.databricks.com/databricks_postgres?sslmode=require&schema=dbsql_copilot
+# Lakebase persistence (optional — disabled by default)
+# ENABLE_LAKEBASE=true
+# DATABASE_URL=postgresql://USER:PASSWORD@HOST-pooler.database.REGION.cloud.databricks.com/databricks_postgres?sslmode=require&schema=dbsql_copilot
 ```
 
 3. **Run the dev server:**
@@ -250,6 +260,8 @@ All authentication is handled automatically via the service principal OAuth cred
 
 Lakebase enables persistence for AI rewrite caching, query actions (dismiss/watch/applied), and warehouse health trend tracking. The app works fully without it — you just lose state on restart.
 
+> **Important:** After completing setup, set `ENABLE_LAKEBASE=true` in your environment to activate persistence.
+
 ### Step 1: Create a Lakebase instance
 
 1. Go to **Compute > OLTP Database** in your Databricks workspace
@@ -281,9 +293,9 @@ For example:
 GRANT ALL ON SCHEMA public TO "54870a07-43ed-4293-83df-3932c70c8898";
 ```
 
-### Step 4: Deploy and verify
+### Step 4: Enable and deploy
 
-Deploy or restart the app. Check the logs for:
+Add `ENABLE_LAKEBASE=true` to your app's environment config (or `.env.local` for local dev), then deploy or restart the app.
 
 Prisma client connects automatically via `DATABASE_URL` on first query.
 
@@ -328,8 +340,9 @@ Lakebase does **not** need an `app.yaml` entry — the platform auto-injects `PG
 | `DATABRICKS_CLIENT_SECRET` | Auto-injected | Service principal OAuth client secret |
 | `DATABRICKS_APP_PORT` | Auto-injected | Port to bind to |
 | `DATABRICKS_WAREHOUSE_ID` | Resource binding | SQL warehouse ID |
-| `DATABASE_URL` | `inspire-secrets` scope | Lakebase pooler URL (runtime) |
-| `DIRECT_DATABASE_URL` | `inspire-secrets` scope | Lakebase direct URL (migrations) |
+| `ENABLE_LAKEBASE` | `.env.local` / app config | `true` to enable Lakebase persistence (default: `false`) |
+| `DATABASE_URL` | `inspire-secrets` scope | Lakebase pooler URL (only when `ENABLE_LAKEBASE=true`) |
+| `DIRECT_DATABASE_URL` | `inspire-secrets` scope | Lakebase direct URL (migrations only) |
 | `DATABRICKS_TOKEN` | `.env.local` only | PAT for local development |
 
 ---
