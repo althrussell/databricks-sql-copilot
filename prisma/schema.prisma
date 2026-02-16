@@ -1,0 +1,68 @@
+// Prisma schema for Databricks SQL Co-Pilot
+// Database: Databricks Lakebase (Neon-compatible Postgres)
+// Schema: dbsql_copilot (not public)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["dbsql_copilot"]
+}
+
+// ── Query Actions ──────────────────────────────────────────────────
+// User actions on query patterns: dismiss, watch, applied.
+// Each action has a 30-day TTL that refreshes on update.
+
+model QueryAction {
+  fingerprint String   @id
+  action      String   // "dismiss" | "watch" | "applied"
+  note        String?
+  actedBy     String?  @map("acted_by")
+  actedAt     DateTime @default(now()) @map("acted_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  expiresAt   DateTime @default(dbgenerated("NOW() + INTERVAL '30 days'")) @map("expires_at") @db.Timestamptz
+
+  @@map("query_actions")
+  @@schema("dbsql_copilot")
+}
+
+// ── Rewrite Cache ──────────────────────────────────────────────────
+// Caches AI diagnosis + rewrite results by fingerprint with a 7-day TTL.
+
+model RewriteCache {
+  fingerprint    String   @id
+  diagnosis      Json?
+  rewrittenSql   String?  @map("rewritten_sql")
+  rationale      String?
+  risks          String?
+  validationPlan String?  @map("validation_plan")
+  modelUsed      String?  @map("model_used")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt      DateTime @default(dbgenerated("NOW() + INTERVAL '7 days'")) @map("expires_at") @db.Timestamptz
+
+  @@map("rewrite_cache")
+  @@schema("dbsql_copilot")
+}
+
+// ── Health Snapshots ───────────────────────────────────────────────
+// Stores a snapshot each time warehouse health is analysed.
+// Enables trend comparison between runs. 90-day TTL.
+
+model HealthSnapshot {
+  id             Int      @id @default(autoincrement())
+  warehouseId    String   @map("warehouse_id")
+  snapshotAt     DateTime @default(now()) @map("snapshot_at") @db.Timestamptz
+  severity       String?
+  headline       String?
+  action         String?
+  metrics        Json?
+  recommendation Json?
+  expiresAt      DateTime @default(dbgenerated("NOW() + INTERVAL '90 days'")) @map("expires_at") @db.Timestamptz
+
+  @@index([warehouseId, snapshotAt(sort: Desc)], map: "idx_health_wh_time")
+  @@map("health_snapshots")
+  @@schema("dbsql_copilot")
+}

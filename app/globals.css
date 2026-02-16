@@ -1,0 +1,221 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ── L0–L4 Layer tokens ── */
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-row-hover: var(--row-hover);
+  --color-row-selected: var(--row-selected);
+  --color-row-accent: var(--row-accent);
+}
+
+/*
+ * ═══════════════════════════════════════════════════════
+ *  DATABRICKS BRAND — Primary Palette
+ * ═══════════════════════════════════════════════════════
+ *
+ *  Brand Red:     #FF3621  →  oklch(0.63 0.255 27)
+ *  Brand Dark:    #1B3139  →  oklch(0.24 0.02 220)
+ *  Brand Charcoal:#2D3E50  →  oklch(0.32 0.02 230)
+ *  Warm White:    #FAFAFA
+ *
+ *  Hue 27 = Databricks red-orange
+ *  Hue 220-230 = Databricks dark teal-slate (used for dark surfaces)
+ */
+
+/*
+ * ═══════════════════════════════════════════
+ *  LIGHT THEME — Databricks Brand
+ * ═══════════════════════════════════════════
+ *
+ *  L0  Page Canvas     --background       warm off-white
+ *  L1  Section Surface --card             white + shadow + border
+ *  L2  Interactive     --input/--accent   stronger contrast than L1
+ *  L3  Focus/Selected  --ring/--row-*     ring + bg shift
+ *  L4  Primary CTA     --primary          Databricks Red #FF3621
+ */
+:root {
+  --radius: 0.625rem;
+
+  /* L0 — Page canvas: warm off-white */
+  --background: oklch(0.97 0.003 60);
+  --foreground: oklch(0.15 0.01 230);
+
+  /* L1 — Card / section surface: white */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.01 230);
+
+  /* Popover */
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 230);
+
+  /* L4 — Primary accent: Databricks Red #FF3621 */
+  --primary: oklch(0.63 0.255 27);
+  --primary-foreground: oklch(0.99 0 0);
+
+  /* Secondary: warm neutral surface */
+  --secondary: oklch(0.955 0.005 60);
+  --secondary-foreground: oklch(0.22 0.01 230);
+
+  /* Muted: subtle backgrounds, helper text */
+  --muted: oklch(0.945 0.004 60);
+  --muted-foreground: oklch(0.46 0.01 230);
+
+  /* Accent: hover states, interactive surface backgrounds */
+  --accent: oklch(0.935 0.008 30);
+  --accent-foreground: oklch(0.22 0.01 230);
+
+  /* Destructive */
+  --destructive: oklch(0.55 0.24 27);
+
+  /* Borders: visible 1px on all cards and tables */
+  --border: oklch(0.89 0.004 60);
+  --input: oklch(0.91 0.004 60);
+  --ring: oklch(0.63 0.255 27);
+
+  /* Charts — Databricks-inspired warm palette */
+  --chart-1: oklch(0.63 0.255 27);   /* Databricks Red */
+  --chart-2: oklch(0.58 0.14 240);   /* Steel blue */
+  --chart-3: oklch(0.65 0.17 150);   /* Teal green */
+  --chart-4: oklch(0.72 0.16 60);    /* Warm amber */
+  --chart-5: oklch(0.55 0.2 300);    /* Purple */
+
+  /* Sidebar */
+  --sidebar: oklch(0.975 0.003 60);
+  --sidebar-foreground: oklch(0.15 0.01 230);
+  --sidebar-primary: oklch(0.63 0.255 27);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.94 0.006 30);
+  --sidebar-accent-foreground: oklch(0.22 0.01 230);
+  --sidebar-border: oklch(0.89 0.004 60);
+  --sidebar-ring: oklch(0.63 0.255 27);
+
+  /* ── Layer helpers ── */
+  --surface-raised: oklch(0.98 0.002 60);
+  --surface-overlay: oklch(0 0 0 / 4%);
+  --row-hover: oklch(0.96 0.01 27);
+  --row-selected: oklch(0.94 0.03 27);
+  --row-accent: oklch(0.63 0.255 27);
+}
+
+/*
+ * ═══════════════════════════════════════════
+ *  DARK THEME — Databricks Brand
+ * ═══════════════════════════════════════════
+ *
+ *  Dark surfaces use Databricks teal-slate (hue 220-230)
+ *  Primary remains Databricks Red, slightly brighter for contrast
+ */
+.dark {
+  /* L0 — Page canvas: Databricks dark teal-charcoal */
+  --background: oklch(0.16 0.015 225);
+  --foreground: oklch(0.95 0.005 60);
+
+  /* L1 — Card surface: slightly lighter than canvas */
+  --card: oklch(0.21 0.015 225);
+  --card-foreground: oklch(0.95 0.005 60);
+
+  /* Popover */
+  --popover: oklch(0.23 0.015 225);
+  --popover-foreground: oklch(0.95 0.005 60);
+
+  /* L4 — Primary: Databricks Red, brighter for dark mode legibility */
+  --primary: oklch(0.68 0.24 27);
+  --primary-foreground: oklch(0.12 0 0);
+
+  /* Secondary */
+  --secondary: oklch(0.24 0.012 225);
+  --secondary-foreground: oklch(0.92 0.005 60);
+
+  /* Muted */
+  --muted: oklch(0.26 0.01 225);
+  --muted-foreground: oklch(0.62 0.01 225);
+
+  /* Accent */
+  --accent: oklch(0.28 0.015 225);
+  --accent-foreground: oklch(0.92 0.005 60);
+
+  /* Destructive */
+  --destructive: oklch(0.65 0.22 27);
+
+  /* Borders */
+  --border: oklch(0.30 0.012 225);
+  --input: oklch(0.28 0.012 225);
+  --ring: oklch(0.68 0.24 27);
+
+  /* Charts — warm palette for dark backgrounds */
+  --chart-1: oklch(0.68 0.24 27);    /* Databricks Red (bright) */
+  --chart-2: oklch(0.65 0.14 240);   /* Steel blue */
+  --chart-3: oklch(0.70 0.17 150);   /* Teal green */
+  --chart-4: oklch(0.76 0.16 60);    /* Warm amber */
+  --chart-5: oklch(0.65 0.2 300);    /* Purple */
+
+  /* Sidebar */
+  --sidebar: oklch(0.18 0.015 225);
+  --sidebar-foreground: oklch(0.95 0.005 60);
+  --sidebar-primary: oklch(0.68 0.24 27);
+  --sidebar-primary-foreground: oklch(0.12 0 0);
+  --sidebar-accent: oklch(0.26 0.012 225);
+  --sidebar-accent-foreground: oklch(0.92 0.005 60);
+  --sidebar-border: oklch(0.30 0.012 225);
+  --sidebar-ring: oklch(0.68 0.24 27);
+
+  /* Layer helpers */
+  --surface-raised: oklch(0.23 0.01 225);
+  --surface-overlay: oklch(1 0 0 / 4%);
+  --row-hover: oklch(0.24 0.02 27);
+  --row-selected: oklch(0.26 0.04 27);
+  --row-accent: oklch(0.68 0.24 27);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
