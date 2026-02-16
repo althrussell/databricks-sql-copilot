@@ -1,5 +1,9 @@
 # DBSQL Co-Pilot — SQL Warehouse Performance Advisor
 
+> **Not a Databricks product.** This project was built independently by a Databricks SQL SME. It is **not** officially supported, endorsed, or maintained by Databricks, Inc. Databricks provides **no warranty, liability, or support** for this software. Use it entirely at your own risk.
+>
+> **Alpha software.** This project is in early alpha. APIs, features, and behaviour may change without notice. There are no guarantees of correctness, completeness, or fitness for any purpose. **Do not rely on this tool for production decisions without independent validation.**
+
 A Databricks App that surfaces slow and expensive SQL queries, diagnoses performance bottlenecks, and generates AI-powered query rewrites — all from data you already have in system tables.
 
 Built with Next.js, shadcn/ui, and the Databricks SQL Node.js driver. Deploys natively to [Databricks Apps](https://docs.databricks.com/en/apps/index.html) with automatic OAuth authentication.
@@ -645,6 +649,32 @@ components/
 
 ---
 
+## Disclaimer
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+- **Not a Databricks product.** This project is an independent, community-driven tool created by a Databricks SQL SME. It is not part of the Databricks platform, not covered by any Databricks support agreement, and not endorsed by Databricks, Inc.
+- **No warranty.** The authors and contributors make no guarantees that this software is correct, complete, secure, or fit for any particular purpose. AI-generated recommendations (query rewrites, warehouse sizing advice) may be inaccurate or inappropriate for your workload. Always validate recommendations independently before applying them.
+- **No liability.** In no event shall the authors, contributors, or Databricks, Inc. be held liable for any damages — including but not limited to data loss, increased costs, service disruption, or any direct, indirect, incidental, or consequential damages — arising from the use of this software.
+- **Alpha status.** This project is in early alpha. Features, APIs, and behaviour may change at any time without notice or migration support.
+- **Your responsibility.** You are solely responsible for evaluating whether this tool is appropriate for your environment and for any actions taken based on its output.
+
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) for details.
+Licensed under the [Apache License, Version 2.0](LICENSE).
+
+```
+Copyright 2025 DBSQL Co-Pilot Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
