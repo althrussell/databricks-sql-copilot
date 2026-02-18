@@ -5,9 +5,10 @@
  * ai_query() is available on all Databricks workspaces with Foundation Model APIs.
  *
  * Cost guardrails:
- *   - Diagnose mode: uses a smaller/cheaper model
- *   - Rewrite mode: uses a larger model for better SQL generation
- *   - Max token limits enforced
+ *   - Both modes use Claude Opus 4.6 (pay-per-token)
+ *   - Diagnose mode: lower input/output token caps for faster, cheaper calls
+ *   - Rewrite mode: higher token caps for full SQL generation
+ *   - Max token limits enforced per mode
  */
 
 import { executeQuery } from "@/lib/dbx/sql-client";

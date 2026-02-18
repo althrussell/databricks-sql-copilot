@@ -123,9 +123,9 @@ The Warehouse Monitor uses these REST APIs for real-time data:
 
 All REST API calls are authenticated using the service principal's OAuth token (automatically injected by Databricks Apps).
 
-### AI models (via `ai_query()`)
+### AI models (via `ai_query()` — pay-per-token)
 
-The app calls Databricks-hosted foundation models through the `ai_query()` SQL function:
+The app calls Databricks-hosted foundation models through the `ai_query()` SQL function. Both models use **pay-per-token (PPT)** billing — inference costs are billed per token consumed, separate from your SQL Warehouse DBUs.
 
 | Model | Used for | When it runs |
 |---|---|---|
@@ -152,7 +152,7 @@ The app does not:
 
 ## Estimated costs
 
-> **Quick summary** — For a team that uses the app a few hours per day on AWS Premium, expect roughly **$20–$50/month** total (app hosting + warehouse DBUs). AI features and Lakebase are optional and add a few dollars more. See below for full breakdown.
+> **Quick summary** — For a team that uses the app a few hours per day on AWS Premium, expect roughly **$20–$50/month** total (app hosting + warehouse DBUs + AI pay-per-token). AI and Lakebase are optional and add a few dollars more. See below for full breakdown.
 
 ### SQL Warehouse compute
 
@@ -162,15 +162,23 @@ The app runs queries against system tables using your existing SQL Warehouse. Co
 |---|---|---|
 | Dashboard load | ~0.01–0.05 DBU | 4–6 system table queries with partition pruning |
 | Warehouse Health analysis | ~0.02–0.10 DBU | 5 parallel queries over a 7-day window |
-| Warehouse Monitor (per refresh) | ~0.01 DBU | REST API calls (free) + optional AI triage |
-| AI triage (per batch) | ~0.01–0.05 DBU | Single `ai_query()` call per batch |
-| AI deep analysis (per query) | ~0.05–0.15 DBU | `ai_query()` with full context |
+| Warehouse Monitor (per refresh) | ~0.01 DBU | REST API calls (free) + lightweight SQL queries |
 
-**Typical monthly cost for moderate use** (10 dashboard loads/day, occasional AI analysis): **$5–$20/month** in warehouse DBUs, depending on warehouse size and pricing tier.
+> **Note**: AI model inference (triage and deep analysis) is billed separately as pay-per-token — see below. The warehouse only incurs a small SQL execution overhead for `ai_query()` calls, not the inference cost itself.
 
-### Foundation Model APIs (ai_query)
+**Typical monthly cost for moderate use** (10 dashboard loads/day): **$3–$10/month** in warehouse DBUs, depending on warehouse size and pricing tier.
 
-`ai_query()` is billed per token. Costs are typically under **$0.01 per triage batch** and **$0.01–$0.10 per deep analysis**. Monthly AI costs for moderate use are usually **under $5/month**.
+### Foundation Model APIs — pay-per-token (PPT)
+
+All AI features use Databricks Foundation Model APIs via `ai_query()` with **pay-per-token** billing. Inference costs are billed per token consumed, separate from warehouse DBU charges. Refer to the [Databricks Foundation Model APIs pricing page](https://www.databricks.com/product/pricing/foundation-model-training-and-serving) for current per-token rates.
+
+| Feature | Model | Typical tokens per call | Approximate cost per call |
+|---|---|---|---|
+| AI triage (batch of ~10 queries) | `databricks-llama-4-maverick` | ~2K–5K input, ~1K output | < $0.01 |
+| AI deep analysis (per query) | `databricks-claude-opus-4-6` | ~5K–30K input, ~4K–8K output | ~$0.05–$0.30 |
+| AI SQL rewrite (per query) | `databricks-claude-opus-4-6` | ~10K–50K input, ~4K–16K output | ~$0.10–$0.50 |
+
+**Typical monthly cost for moderate use** (10 triage batches/day, 5 deep analyses/day): **$5–$15/month** in PPT token costs. Costs scale linearly with usage — if you run fewer analyses, you pay less.
 
 ### Lakebase (if enabled)
 
