@@ -8,6 +8,10 @@ A Databricks App that surfaces slow and expensive SQL queries, diagnoses perform
 
 Built with Next.js, shadcn/ui, and the Databricks SQL Node.js driver. Deploys natively to [Databricks Apps](https://docs.databricks.com/en/apps/index.html) with automatic OAuth authentication.
 
+<p align="center">
+  <img src="public/1.png" alt="DBSQL Co-Pilot Dashboard" width="100%" />
+</p>
+
 ---
 
 ## What it does
@@ -34,6 +38,12 @@ DBSQL Co-Pilot does **not** create, modify, or delete anything in your lakehouse
 
 Cross-warehouse overview with KPI tiles, AI triage insights, expandable query rows, time analysis, and filtering by warehouse, workspace, time range, and performance flags. Sort by impact, cost, p95 runtime, or frequency.
 
+<p align="center">
+  <img src="public/3.png" alt="Dashboard — expanded query detail" width="100%" />
+  <br />
+  <em>Expanding a query row reveals execution details, performance flags, and AI triage insights</em>
+</p>
+
 ### Warehouse Monitor
 
 Real-time warehouse monitoring with:
@@ -44,13 +54,31 @@ Real-time warehouse monitoring with:
 - CSV export of all query data
 - Auto-refresh (live mode)
 
+<p align="center">
+  <img src="public/2.png" alt="Warehouse Monitor" width="100%" />
+  <br />
+  <em>Live warehouse view with query timeline, slot utilisation, and I/O heatmap</em>
+</p>
+
 ### Warehouse Health Report
 
 On-demand 7-day warehouse analysis with pressure metrics (spill, queue wait, cold starts), hourly activity charts, cost impact estimates, and serverless comparison. Generates specific right-sizing recommendations with confidence scores.
 
+<p align="center">
+  <img src="public/5.png" alt="Warehouse Health Report" width="100%" />
+  <br />
+  <em>7-day health analysis with pressure gauges, hourly charts, and sizing recommendations</em>
+</p>
+
 ### AI Query Analysis
 
 Single-click diagnosis and rewrite generation. The AI receives rich context including column types, table maintenance history (OPTIMIZE, VACUUM, ANALYZE), and warehouse configuration. Results include root causes, an optimised SQL rewrite, risks, and a validation plan. Copy the rewrite to your clipboard or open the SQL editor to test it.
+
+<p align="center">
+  <img src="public/4.png" alt="AI Query Analysis" width="100%" />
+  <br />
+  <em>AI-powered root cause diagnosis with optimised SQL rewrite, risk assessment, and validation plan</em>
+</p>
 
 ### How optimization advice works
 
