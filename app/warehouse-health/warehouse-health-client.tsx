@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { notifyError } from "@/lib/errors";
 import {
@@ -602,11 +602,13 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
     }
   }, []);
 
-  // Auto-start analysis on first mount
-  if (!autoStarted) {
-    setAutoStarted(true);
-    fetchHealth();
-  }
+  // Auto-start analysis on first mount (useEffect ensures client-side only)
+  useEffect(() => {
+    if (!autoStarted) {
+      setAutoStarted(true);
+      fetchHealth();
+    }
+  }, [autoStarted, fetchHealth]);
 
   const actionable = recommendations?.filter((r) => r.action !== "no_change") ?? [];
   const healthy = recommendations?.filter((r) => r.action === "no_change") ?? [];

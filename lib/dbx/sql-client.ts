@@ -9,8 +9,9 @@ import { isAuthError } from "@/lib/dbx/retry";
  * Databricks SQL client module.
  *
  * Auth priority (when AUTH_MODE=obo):
- *   1. OBO user token from x-forwarded-access-token — uses access-token auth,
- *      fresh (uncached) client per request since each user has a different token.
+ *   1. OBO user token from x-forwarded-access-token — uses access-token auth.
+ *      Cached per token value so parallel queries within the same request
+ *      share one client instead of creating N clients.
  *   2. OAuth client credentials (service principal) — cached client.
  *   3. PAT (local dev) — cached client.
  *
@@ -22,6 +23,8 @@ import { isAuthError } from "@/lib/dbx/retry";
  *     cached client and retry once with a fresh client.
  *   - OBO tokens are per-request from the proxy — retrying won't help.
  */
+
+// ── SP / PAT client cache (singleton) ──────────────────────────────
 
 let _client: DBSQLClient | null = null;
 let _clientCreatedAt = 0;
@@ -36,7 +39,6 @@ function getClient(forceNew = false): DBSQLClient {
   const isStale = now - _clientCreatedAt > CLIENT_MAX_AGE_MS;
 
   if (!_client || forceNew || isStale) {
-    // Attempt to close the old client (best-effort)
     if (_client) {
       try {
         _client.close().catch(() => {});
@@ -53,7 +55,7 @@ function getClient(forceNew = false): DBSQLClient {
   return _client;
 }
 
-/** Force-destroy the cached client (called on auth failures) */
+/** Force-destroy the cached SP/PAT client (called on auth failures) */
 function resetClient(): void {
   if (_client) {
     try {
@@ -66,29 +68,68 @@ function resetClient(): void {
   _clientCreatedAt = 0;
 }
 
+// ── OBO client cache (keyed by token) ──────────────────────────────
+// Multiple parallel queries in the same request share one client.
+// Evicted when a different token arrives or after OBO_CLIENT_MAX_AGE_MS.
+
+let _oboClient: DBSQLClient | null = null;
+let _oboToken: string | null = null;
+let _oboClientCreatedAt = 0;
+let _oboRefCount = 0;
+
+const OBO_CLIENT_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+
+function getOboClient(token: string): DBSQLClient {
+  const now = Date.now();
+  const isStale = now - _oboClientCreatedAt > OBO_CLIENT_MAX_AGE_MS;
+  const tokenChanged = token !== _oboToken;
+
+  if (!_oboClient || tokenChanged || isStale) {
+    // Close the old OBO client only if no queries are still using it
+    if (_oboClient && _oboRefCount <= 0) {
+      try {
+        _oboClient.close().catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    }
+    _oboClient = new DBSQLClient();
+    _oboToken = token;
+    _oboClientCreatedAt = now;
+    _oboRefCount = 0;
+  }
+
+  _oboRefCount++;
+  return _oboClient;
+}
+
+function releaseOboClient(): void {
+  _oboRefCount = Math.max(0, _oboRefCount - 1);
+}
+
 /**
  * Open a session, using the OBO user token when available.
- * OBO connections use a fresh (uncached) client since each user has a different token.
+ * OBO connections reuse a cached client keyed by token value so parallel
+ * queries within the same request share one thrift connection.
  */
 async function openSession(
   forceNewClient = false,
   oboToken?: string | null,
-): Promise<{ session: IDBSQLSession; oboClient: DBSQLClient | null }> {
+): Promise<{ session: IDBSQLSession; isObo: boolean }> {
   const config = getConfig();
 
-  // OBO path: fresh client per request, access-token auth with user's token
   if (oboToken) {
-    const oboClient = new DBSQLClient();
-    const connection = await oboClient.connect({
+    const client = getOboClient(oboToken);
+    const connection = await client.connect({
       authType: "access-token" as const,
       host: config.serverHostname,
       path: config.httpPath,
       token: oboToken,
     });
-    return { session: await connection.openSession(), oboClient };
+    return { session: await connection.openSession(), isObo: true };
   }
 
-  // SP / PAT path: reuse cached client
+  // SP / PAT path: reuse cached singleton client
   const client = getClient(forceNewClient);
 
   const connectOptions =
@@ -108,7 +149,7 @@ async function openSession(
         };
 
   const connection = await client.connect(connectOptions);
-  return { session: await connection.openSession(), oboClient: null };
+  return { session: await connection.openSession(), isObo: false };
 }
 
 export interface QueryResult<T = Record<string, unknown>> {
@@ -142,13 +183,13 @@ async function executeQueryInner<T>(
 ): Promise<QueryResult<T>> {
   const maxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
   let session: IDBSQLSession | null = null;
-  let oboClient: DBSQLClient | null = null;
+  let isObo = false;
   let operation: IOperation | null = null;
 
   try {
     const opened = await openSession(isRetry, oboToken);
     session = opened.session;
-    oboClient = opened.oboClient;
+    isObo = opened.isObo;
 
     operation = await session.executeStatement(sql, {
       runAsync: true,
@@ -195,13 +236,8 @@ async function executeQueryInner<T>(
         /* best-effort cleanup */
       }
     }
-    // OBO clients are not cached — close them after each request
-    if (oboClient) {
-      try {
-        await oboClient.close();
-      } catch {
-        /* best-effort cleanup */
-      }
+    if (isObo) {
+      releaseOboClient();
     }
   }
 }

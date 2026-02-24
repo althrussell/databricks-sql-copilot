@@ -23,7 +23,12 @@ import { getConfig } from "@/lib/config";
  * Returns null when:
  *   - AUTH_MODE is "sp" (service principal forced)
  *   - No x-forwarded-access-token header (local dev / non-Databricks-App)
- *   - Called outside a request context (build time, background task)
+ *   - Called outside a request context (build time — caught before headers())
+ *
+ * IMPORTANT: In OBO mode, headers() is called WITHOUT a try/catch so that
+ * Next.js's dynamic bailout signal propagates. This ensures pages that use
+ * OBO are always rendered per-request (never statically pre-rendered or
+ * ISR-cached), which is required for per-user auth.
  */
 export async function getOboToken(): Promise<string | null> {
   try {
@@ -34,13 +39,10 @@ export async function getOboToken(): Promise<string | null> {
     return null;
   }
 
-  try {
-    const hdrs = await headers();
-    return hdrs.get("x-forwarded-access-token") ?? null;
-  } catch {
-    // headers() throws when called outside a request context
-    return null;
-  }
+  // Let headers() propagate naturally — its bailout error tells Next.js
+  // this page is dynamic and must be rendered per-request.
+  const hdrs = await headers();
+  return hdrs.get("x-forwarded-access-token") ?? null;
 }
 
 /**

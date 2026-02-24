@@ -16,15 +16,15 @@ export interface ListRecentQueriesParams {
 
 /**
  * Raw row shape from system.query.history joined with warehouse name.
- * See docs/schemas/system_query_history.csv for full schema.
+ * Workspace enrichment (name/URL) is fetched separately to avoid
+ * failing the entire query when the user lacks SELECT on
+ * system.access.workspaces_latest.
  */
 interface QueryHistoryRow {
   statement_id: string;
   warehouse_id: string;
   warehouse_name: string | null;
   workspace_id: string | null;
-  workspace_name: string | null;
-  workspace_url: string | null;
   executed_by: string;
   start_time: string;
   end_time: string | null;
@@ -59,10 +59,19 @@ interface QueryHistoryRow {
   executed_as: string | null;
 }
 
+interface WorkspaceRow {
+  workspace_id: string;
+  workspace_name: string;
+  workspace_url: string;
+}
+
 /**
  * Fetch recent queries from system.query.history, optionally filtered by warehouse.
- * Joins to system.compute.warehouses for warehouse names and
- * system.access.workspaces_latest for workspace names + URLs (multi-workspace).
+ * Joins to system.compute.warehouses for warehouse names.
+ *
+ * Workspace enrichment (name/URL from system.access.workspaces_latest) is
+ * fetched as a separate, non-blocking query. If the user lacks SELECT on that
+ * table, the dashboard still works — workspace columns just default to "Unknown".
  *
  * Schema notes (see docs/schemas/):
  *   - warehouse_id lives inside compute struct: compute.warehouse_id
@@ -83,14 +92,12 @@ export async function listRecentQueries(
     ? `AND h.compute.warehouse_id = '${validateIdentifier(warehouseId, "warehouseId")}'`
     : "";
 
-  const sql = `
+  const historySql = `
     SELECT
       h.statement_id,
       h.compute.warehouse_id AS warehouse_id,
       w.warehouse_name AS warehouse_name,
       h.workspace_id,
-      wk.workspace_name AS workspace_name,
-      wk.workspace_url AS workspace_url,
       h.executed_by,
       h.start_time,
       h.end_time,
@@ -126,8 +133,6 @@ export async function listRecentQueries(
     FROM system.query.history h
     LEFT JOIN system.compute.warehouses w
       ON h.compute.warehouse_id = w.warehouse_id
-    LEFT JOIN system.access.workspaces_latest wk
-      ON h.workspace_id = wk.workspace_id
     WHERE h.start_time >= '${validStart}'
       AND h.start_time <= '${validEnd}'
       AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
@@ -142,8 +147,36 @@ export async function listRecentQueries(
     LIMIT ${validLimit}
   `;
 
-  const result = await executeQuery<QueryHistoryRow>(sql);
-  return result.rows.map(mapRow);
+  // Run core query + optional workspace enrichment in parallel
+  const [historyResult, workspaceLookup] = await Promise.all([
+    executeQuery<QueryHistoryRow>(historySql),
+    fetchWorkspaceLookup(),
+  ]);
+
+  return historyResult.rows.map((row) => mapRow(row, workspaceLookup));
+}
+
+/**
+ * Fetch workspace names/URLs from system.access.workspaces_latest.
+ * Returns an empty map if the user lacks SELECT on the table.
+ */
+async function fetchWorkspaceLookup(): Promise<Map<string, WorkspaceRow>> {
+  try {
+    const result = await executeQuery<WorkspaceRow>(
+      `SELECT workspace_id, workspace_name, workspace_url FROM system.access.workspaces_latest`
+    );
+    const map = new Map<string, WorkspaceRow>();
+    for (const row of result.rows) {
+      map.set(row.workspace_id, row);
+    }
+    return map;
+  } catch (err) {
+    console.warn(
+      "[query-history] workspace enrichment unavailable (user may lack SELECT on system.access.workspaces_latest):",
+      err instanceof Error ? err.message : String(err)
+    );
+    return new Map();
+  }
 }
 
 /** Derive a human-friendly origin from the query_source struct */
@@ -157,7 +190,7 @@ function deriveOrigin(source: QuerySource): QueryOrigin {
   return "unknown";
 }
 
-function mapRow(row: QueryHistoryRow): QueryRun {
+function mapRow(row: QueryHistoryRow, workspaceLookup: Map<string, WorkspaceRow>): QueryRun {
   const querySource: QuerySource = {
     dashboardId: row.query_source_dashboard_id ?? null,
     legacyDashboardId: row.query_source_legacy_dashboard_id ?? null,
@@ -168,13 +201,15 @@ function mapRow(row: QueryHistoryRow): QueryRun {
     genieSpaceId: row.query_source_genie_space_id ?? null,
   };
 
+  const ws = row.workspace_id ? workspaceLookup.get(row.workspace_id) : undefined;
+
   return {
     statementId: row.statement_id,
     warehouseId: row.warehouse_id,
     warehouseName: row.warehouse_name ?? row.warehouse_id ?? "Unknown",
     workspaceId: row.workspace_id ?? "unknown",
-    workspaceName: row.workspace_name ?? "Unknown",
-    workspaceUrl: row.workspace_url ? row.workspace_url.replace(/\/$/, "") : "",
+    workspaceName: ws?.workspace_name ?? "Unknown",
+    workspaceUrl: ws?.workspace_url ? ws.workspace_url.replace(/\/$/, "") : "",
     startedAt: row.start_time,
     endedAt: row.end_time,
     status: row.status,
