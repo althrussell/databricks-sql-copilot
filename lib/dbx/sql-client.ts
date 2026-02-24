@@ -2,27 +2,25 @@ import { DBSQLClient } from "@databricks/sql";
 import type IDBSQLSession from "@databricks/sql/dist/contracts/IDBSQLSession";
 import type IOperation from "@databricks/sql/dist/contracts/IOperation";
 import { getConfig } from "@/lib/config";
+import { getOboToken } from "@/lib/dbx/obo";
 import { isAuthError } from "@/lib/dbx/retry";
 
 /**
  * Databricks SQL client module.
  *
- * Connects via OAuth (Databricks Apps) or PAT (local dev).
- * Creates a fresh client for each session to avoid stale OAuth tokens.
+ * Auth priority (when AUTH_MODE=obo):
+ *   1. OBO user token from x-forwarded-access-token — uses access-token auth,
+ *      fresh (uncached) client per request since each user has a different token.
+ *   2. OAuth client credentials (service principal) — cached client.
+ *   3. PAT (local dev) — cached client.
  *
- * Token refresh strategy:
+ * When AUTH_MODE=sp, OBO is skipped and the service principal is always used.
+ *
+ * Token refresh strategy (SP/PAT only):
  *   - Each query opens a NEW session (and thus a new connection).
  *   - If the query fails with a 403/401 (expired token), we destroy the
- *     cached client and retry once with a fresh client, forcing the
- *     @databricks/sql driver to re-authenticate.
- *
- * Future improvements (backlog):
- *   - Session pooling: keep 2-3 sessions open to avoid ~50-100ms per-query
- *     overhead. Current architecture opens/closes a session per query.
- *   - Statement Execution API: the REST-based /api/2.0/sql/statements/ API
- *     provides stateless execution with total_row_count, chunk pagination,
- *     and column metadata. databricks-forge already has a working implementation.
- *     Migration would eliminate session management entirely.
+ *     cached client and retry once with a fresh client.
+ *   - OBO tokens are per-request from the proxy — retrying won't help.
  */
 
 let _client: DBSQLClient | null = null;
@@ -68,8 +66,29 @@ function resetClient(): void {
   _clientCreatedAt = 0;
 }
 
-async function openSession(forceNewClient = false): Promise<IDBSQLSession> {
+/**
+ * Open a session, using the OBO user token when available.
+ * OBO connections use a fresh (uncached) client since each user has a different token.
+ */
+async function openSession(
+  forceNewClient = false,
+  oboToken?: string | null,
+): Promise<{ session: IDBSQLSession; oboClient: DBSQLClient | null }> {
   const config = getConfig();
+
+  // OBO path: fresh client per request, access-token auth with user's token
+  if (oboToken) {
+    const oboClient = new DBSQLClient();
+    const connection = await oboClient.connect({
+      authType: "access-token" as const,
+      host: config.serverHostname,
+      path: config.httpPath,
+      token: oboToken,
+    });
+    return { session: await connection.openSession(), oboClient };
+  }
+
+  // SP / PAT path: reuse cached client
   const client = getClient(forceNewClient);
 
   const connectOptions =
@@ -89,7 +108,7 @@ async function openSession(forceNewClient = false): Promise<IDBSQLSession> {
         };
 
   const connection = await client.connect(connectOptions);
-  return connection.openSession();
+  return { session: await connection.openSession(), oboClient: null };
 }
 
 export interface QueryResult<T = Record<string, unknown>> {
@@ -102,27 +121,35 @@ export interface QueryResult<T = Record<string, unknown>> {
 /**
  * Execute a SQL query and return typed rows.
  *
- * On auth failures (403/401), destroys the cached client and retries
- * once with a fresh connection to pick up a new OAuth token.
+ * When AUTH_MODE=obo and a user token is available, runs as the logged-in user.
+ * Otherwise falls back to the service principal / PAT.
+ *
+ * On auth failures (SP/PAT only), destroys the cached client and retries once.
  */
 export async function executeQuery<T = Record<string, unknown>>(
   sql: string,
   options: { maxRows?: number } = {}
 ): Promise<QueryResult<T>> {
-  return executeQueryInner<T>(sql, options, false);
+  const oboToken = await getOboToken();
+  return executeQueryInner<T>(sql, options, false, oboToken);
 }
 
 async function executeQueryInner<T>(
   sql: string,
   options: { maxRows?: number },
-  isRetry: boolean
+  isRetry: boolean,
+  oboToken: string | null,
 ): Promise<QueryResult<T>> {
   const maxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
   let session: IDBSQLSession | null = null;
+  let oboClient: DBSQLClient | null = null;
   let operation: IOperation | null = null;
 
   try {
-    session = await openSession(isRetry);
+    const opened = await openSession(isRetry, oboToken);
+    session = opened.session;
+    oboClient = opened.oboClient;
+
     operation = await session.executeStatement(sql, {
       runAsync: true,
       maxRows,
@@ -140,14 +167,14 @@ async function executeQueryInner<T>(
 
     return { rows, rowCount: rows.length, truncated };
   } catch (error: unknown) {
-    // On auth failure, reset client and retry once
-    if (!isRetry && isAuthError(error)) {
+    // Only retry SP/PAT connections — OBO tokens are per-request, retrying won't help
+    if (!isRetry && !oboToken && isAuthError(error)) {
       console.warn(
         "[sql-client] Auth error detected, rotating client and retrying:",
         error instanceof Error ? error.message : String(error)
       );
       resetClient();
-      return executeQueryInner<T>(sql, options, true);
+      return executeQueryInner<T>(sql, options, true, oboToken);
     }
 
     const message =
@@ -164,6 +191,14 @@ async function executeQueryInner<T>(
     if (session) {
       try {
         await session.close();
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    // OBO clients are not cached — close them after each request
+    if (oboClient) {
+      try {
+        await oboClient.close();
       } catch {
         /* best-effort cleanup */
       }

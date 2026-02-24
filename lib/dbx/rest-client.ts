@@ -4,12 +4,16 @@
  * A typed fetch wrapper for Databricks REST APIs that the SQL driver cannot reach
  * (live warehouse stats, endpoint metrics, query history API with richer metadata).
  *
- * Auth: reuses the same OAuth client credentials or PAT token from lib/config.ts.
- * For OAuth mode, exchanges clientId/clientSecret for a bearer token via the
- * Databricks OAuth token endpoint, then caches it with expiry handling.
+ * Auth priority (when AUTH_MODE=obo):
+ *   1. OBO user token from x-forwarded-access-token header
+ *   2. PAT (local dev)
+ *   3. OAuth client credentials (service principal)
+ *
+ * When AUTH_MODE=sp, OBO is skipped and the service principal is always used.
  */
 
 import { getConfig } from "@/lib/config";
+import { getOboToken } from "@/lib/dbx/obo";
 import { fingerprint as computeFingerprint } from "@/lib/domain/sql-fingerprint";
 import { fetchWithTimeout, TIMEOUTS } from "@/lib/dbx/fetch-with-timeout";
 import { validateIdentifier } from "@/lib/validation";
@@ -19,7 +23,7 @@ import type {
   TimelineQuery,
 } from "@/lib/domain/types";
 
-// ── OAuth token cache ──────────────────────────────────────────────
+// ── OAuth token cache (service principal) ──────────────────────────
 
 let _cachedToken: string | null = null;
 let _tokenExpiresAt = 0;
@@ -28,36 +32,14 @@ let _tokenExpiresAt = 0;
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * On-behalf-of-user (OBO) token from the Databricks Apps proxy.
- * When deployed as a Databricks App, the proxy forwards the logged-in
- * user's token via the x-forwarded-access-token header.
- * Set this per-request to run queries under user identity.
- */
-let _oboToken: string | null = null;
-
-/**
- * Set the on-behalf-of-user token for the current request context.
- * Call from middleware or request handlers when deployed as a Databricks App.
- */
-export function setOboToken(token: string | null): void {
-  _oboToken = token;
-}
-
-/**
- * Get the current OBO token, if set.
- */
-export function getOboToken(): string | null {
-  return _oboToken;
-}
-
-/**
  * Get a bearer token for REST API calls.
  * Priority: OBO token > PAT > OAuth client credentials.
  */
 async function getBearerToken(): Promise<string> {
   // OBO token takes priority when available (runs as the logged-in user)
-  if (_oboToken) {
-    return _oboToken;
+  const oboToken = await getOboToken();
+  if (oboToken) {
+    return oboToken;
   }
 
   const config = getConfig();
@@ -144,6 +126,7 @@ async function dbxFetchInner<T>(
 ): Promise<T> {
   const config = getConfig();
   const token = await getBearerToken();
+  const isObo = !!(await getOboToken());
 
   // Build URL with query params
   const url = new URL(`https://${config.serverHostname}${path}`);
@@ -177,9 +160,11 @@ async function dbxFetchInner<T>(
       text.includes("PERMISSION_DENIED") ||
       text.includes("is not authorized");
 
-    // Only retry on 401 or 403-that-isn't-a-real-permission-denial
+    // Retry on 401/403 only for SP tokens (refreshing the SP cache).
+    // OBO tokens are per-request from the proxy — retrying won't help.
     if (
       !isRetry &&
+      !isObo &&
       !isPermissionDenied &&
       (response.status === 401 || response.status === 403)
     ) {

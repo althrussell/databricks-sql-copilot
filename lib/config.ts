@@ -10,6 +10,10 @@
  * Local-dev vars (.env.local):
  *   DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_WAREHOUSE_ID
  *
+ * AUTH_MODE controls identity for Databricks API calls:
+ *   "obo" (default) — use the logged-in user's token (x-forwarded-access-token)
+ *   "sp"            — always use the app's service principal credentials
+ *
  * All env vars are validated with Zod at startup for early, descriptive errors.
  */
 
@@ -43,11 +47,15 @@ const EnvSchema = z.object({
   DATABRICKS_TOKEN: z.string().optional(),
 });
 
+export type AuthMode = "obo" | "sp";
+
 export interface AppConfig {
   serverHostname: string;
   host: string;
   warehouseId: string;
   httpPath: string;
+  /** "obo" = use logged-in user's token when available; "sp" = always use service principal */
+  authMode: AuthMode;
   auth:
     | { mode: "oauth"; clientId: string; clientSecret: string }
     | { mode: "pat"; token: string };
@@ -69,7 +77,8 @@ export function getConfig(): AppConfig {
     `[config] env check — DATABRICKS_HOST=${rawHost ? `"${rawHost.substring(0, 30)}..."` : "MISSING"}, ` +
       `WAREHOUSE_ID=${rawWarehouse ? "set" : "MISSING"}, ` +
       `CLIENT_ID=${process.env.DATABRICKS_CLIENT_ID ? "set" : "MISSING"}, ` +
-      `TOKEN=${process.env.DATABRICKS_TOKEN ? "set" : "MISSING"}`
+      `TOKEN=${process.env.DATABRICKS_TOKEN ? "set" : "MISSING"}, ` +
+      `AUTH_MODE=${process.env.AUTH_MODE ?? "obo (default)"}`
   );
 
   const result = EnvSchema.safeParse({
@@ -107,6 +116,11 @@ export function getConfig(): AppConfig {
     );
   }
 
-  _config = { serverHostname, host, warehouseId, httpPath, auth };
+  const rawAuthMode = process.env.AUTH_MODE?.toLowerCase();
+  const authMode: AuthMode = rawAuthMode === "sp" ? "sp" : "obo";
+
+  console.log(`[config] AUTH_MODE=${authMode}`);
+
+  _config = { serverHostname, host, warehouseId, httpPath, authMode, auth };
   return _config;
 }
