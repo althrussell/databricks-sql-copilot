@@ -23,6 +23,11 @@ import { TriageItemSchema, validateLLMArray } from "@/lib/validation";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import { renderPrompt } from "@/lib/ai/prompts/registry";
 import { writePromptLog } from "@/lib/ai/prompt-logger";
+import {
+  computeFingerprintHash,
+  getCachedTriage,
+  cacheTriage,
+} from "@/lib/dbx/triage-store";
 
 const TRIAGE_MODEL = "databricks-llama-4-maverick";
 const MAX_CANDIDATES = 15;
@@ -112,6 +117,18 @@ export async function triageCandidates(
   // Take top N by impact score (already sorted)
   const top = candidates.slice(0, MAX_CANDIDATES);
 
+  // Check triage cache before calling the LLM
+  const fpHash = computeFingerprintHash(top.map((c) => c.fingerprint));
+  try {
+    const cached = await getCachedTriage(fpHash);
+    if (cached && Object.keys(cached).length > 0) {
+      console.log(`[ai-triage] returning cached insights (${Object.keys(cached).length} entries)`);
+      return cached;
+    }
+  } catch {
+    // Cache miss or error — proceed with LLM call
+  }
+
   // Fetch lightweight table metadata for context (parallel, cached, capped)
   let tableContextBlock = "";
   try {
@@ -198,6 +215,12 @@ export async function triageCandidates(
     console.log(
       `[ai-triage] got insights for ${insightCount}/${top.length} candidates in ${elapsed}s`
     );
+
+    // Persist to cache (fire-and-forget)
+    if (insightCount > 0) {
+      cacheTriage(fpHash, parsed).catch(() => {});
+    }
+
     return parsed;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -38,6 +38,8 @@ const MAX_INPUT_TOKENS = {
   rewrite: 50_000,
 } as const;
 
+const AI_TIMEOUT_MS = 90_000;
+
 export type AiResult =
   | { status: "success"; mode: "diagnose"; data: DiagnoseResponse }
   | { status: "success"; mode: "rewrite"; data: RewriteResponse }
@@ -92,9 +94,13 @@ export async function callAi(
   const t0 = Date.now();
 
   try {
-    const result = await aiSemaphore.run(() =>
+    const aiPromise = aiSemaphore.run(() =>
       executeQuery<{ response: string }>(sql)
     );
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`AI ${mode} call timed out after ${AI_TIMEOUT_MS / 1000}s`)), AI_TIMEOUT_MS)
+    );
+    const result = await Promise.race([aiPromise, timeoutPromise]);
 
     const durationMs = Date.now() - t0;
 
@@ -159,6 +165,9 @@ export async function callAi(
       errorMessage: msg,
     });
 
+    if (msg.includes("timed out")) {
+      return { status: "error", message: msg };
+    }
     if (msg.includes("RESOURCE_DOES_NOT_EXIST") || msg.includes("not found")) {
       console.warn("[ai] returnType not supported, falling back to unstructured call");
       return callAiUnstructured(mode, context);
@@ -198,9 +207,13 @@ async function callAiUnstructured(
   const t0 = Date.now();
 
   try {
-    const result = await aiSemaphore.run(() =>
+    const aiPromise = aiSemaphore.run(() =>
       executeQuery<{ response: string }>(sql)
     );
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`AI ${mode} call timed out after ${AI_TIMEOUT_MS / 1000}s`)), AI_TIMEOUT_MS)
+    );
+    const result = await Promise.race([aiPromise, timeoutPromise]);
 
     const durationMs = Date.now() - t0;
 

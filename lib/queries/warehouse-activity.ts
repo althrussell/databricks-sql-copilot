@@ -54,6 +54,10 @@ export async function getWarehouseActivityBuckets(params: {
     FROM system.query.history h
     WHERE h.start_time >= '${validStart}'
       AND h.start_time < '${validEnd}'
+      AND h.compute.warehouse_id IS NOT NULL
+      AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
+      AND h.statement_type NOT IN ('REFRESH STREAMING TABLE', 'REFRESH MATERIALIZED VIEW')
+      AND h.statement_text NOT LIKE '-- This is a system generated query %'
       ${warehouseFilter}
     GROUP BY h.compute.warehouse_id, bucket
     ORDER BY h.compute.warehouse_id, bucket
