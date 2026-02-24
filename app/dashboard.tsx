@@ -128,7 +128,7 @@ import type {
   WarehouseActivity,
 } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
-import { notifyError, notifySuccess } from "@/lib/errors";
+import { notifyError, notifySuccess, isPermissionError, extractPermissionDetails } from "@/lib/errors";
 
 /* ── Constants ── */
 
@@ -813,6 +813,44 @@ function EmptyState({ message }: { message?: string }) {
 }
 
 function ErrorBanner({ message }: { message: string }) {
+  const isPerm = isPermissionError(new Error(message));
+
+  if (isPerm) {
+    const details = extractPermissionDetails([{ label: "", message }]);
+    return (
+      <Card className="border-destructive/50">
+        <CardContent className="flex items-start gap-3 py-4">
+          <div className="rounded-full bg-red-100 dark:bg-red-900/30 p-2 mt-0.5">
+            <ShieldAlert className="h-4 w-4 text-destructive" />
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-destructive">
+              Insufficient Permissions
+            </p>
+            <p className="text-sm text-muted-foreground">
+              The service principal used by this app does not have the required
+              access. Ask your workspace administrator to:
+            </p>
+            <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1 pl-1">
+              {details.schemas.map((s) => (
+                <li key={s}>
+                  Grant <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">USE SCHEMA</code> on{" "}
+                  <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">{s}</code>
+                </li>
+              ))}
+              {details.endpointAccess && (
+                <li>
+                  Grant <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">CAN MONITOR</code> on
+                  the SQL warehouse
+                </li>
+              )}
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="border-destructive/50">
       <CardContent className="flex items-start gap-3 py-4">

@@ -48,3 +48,64 @@ export function notifyError(label: string, error: unknown) {
 export function notifySuccess(message: string) {
   toast.success(message);
 }
+
+/* ── Permission error helpers (server + client safe) ── */
+
+const PERMISSION_PATTERNS = [
+  "INSUFFICIENT_PERMISSIONS",
+  "PERMISSION_DENIED",
+  "is not authorized to",
+] as const;
+
+/** True when the error message indicates a Databricks permission / access issue. */
+export function isPermissionError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return PERMISSION_PATTERNS.some((p) => msg.includes(p));
+}
+
+const SCHEMA_RE = /Schema '([^']+)'/g;
+const ENDPOINT_RE = /is not authorized to (?:monitor|access) this SQL Endpoint/i;
+
+export interface PermissionDetails {
+  schemas: string[];
+  endpointAccess: boolean;
+  summary: string;
+}
+
+/**
+ * Extract actionable details from one or more permission error messages.
+ * Returns the schemas that need USE SCHEMA grants and whether endpoint
+ * monitoring access is missing.
+ */
+export function extractPermissionDetails(
+  errors: Array<{ label: string; message: string }>
+): PermissionDetails {
+  const schemas = new Set<string>();
+  let endpointAccess = false;
+
+  for (const { message } of errors) {
+    for (const match of message.matchAll(SCHEMA_RE)) {
+      schemas.add(match[1]);
+    }
+    if (ENDPOINT_RE.test(message)) {
+      endpointAccess = true;
+    }
+  }
+
+  const parts: string[] = [];
+  if (schemas.size > 0) {
+    parts.push(
+      `Grant USE SCHEMA on: ${[...schemas].join(", ")}`
+    );
+  }
+  if (endpointAccess) {
+    parts.push("Grant CAN MONITOR on the SQL warehouse");
+  }
+
+  const summary =
+    parts.length > 0
+      ? `The service principal is missing required permissions. ${parts.join(". ")}.`
+      : "The service principal lacks the required Databricks permissions. Contact your workspace administrator.";
+
+  return { schemas: [...schemas], endpointAccess, summary };
+}

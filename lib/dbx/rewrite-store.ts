@@ -7,7 +7,7 @@
  * (cache misses, writes silently skipped).
  */
 
-import { prisma, isLakebaseEnabled } from "./prisma";
+import { withPrisma, isLakebaseEnabled } from "./prisma";
 import type { Prisma } from "../generated/prisma/client";
 
 export interface CachedRewrite {
@@ -30,12 +30,14 @@ export async function getCachedRewrite(fingerprint: string): Promise<CachedRewri
   if (!isLakebaseEnabled()) return null;
 
   try {
-    const row = await prisma.rewriteCache.findFirst({
-      where: {
-        fingerprint,
-        expiresAt: { gt: new Date() },
-      },
-    });
+    const row = await withPrisma((p) =>
+      p.rewriteCache.findFirst({
+        where: {
+          fingerprint,
+          expiresAt: { gt: new Date() },
+        },
+      })
+    );
 
     if (!row) return null;
 
@@ -78,30 +80,32 @@ export async function cacheRewrite(
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   try {
-    await prisma.rewriteCache.upsert({
-      where: { fingerprint },
-      create: {
-        fingerprint,
-        diagnosis: (result.diagnosis as Prisma.InputJsonValue) ?? undefined,
-        rewrittenSql: result.rewrittenSql,
-        rationale: result.rationale,
-        risks: result.risks,
-        validationPlan: result.validationPlan,
-        modelUsed: result.modelUsed,
-        createdAt: now,
-        expiresAt,
-      },
-      update: {
-        diagnosis: (result.diagnosis as Prisma.InputJsonValue) ?? undefined,
-        rewrittenSql: result.rewrittenSql,
-        rationale: result.rationale,
-        risks: result.risks,
-        validationPlan: result.validationPlan,
-        modelUsed: result.modelUsed,
-        createdAt: now,
-        expiresAt,
-      },
-    });
+    await withPrisma((p) =>
+      p.rewriteCache.upsert({
+        where: { fingerprint },
+        create: {
+          fingerprint,
+          diagnosis: (result.diagnosis as Prisma.InputJsonValue) ?? undefined,
+          rewrittenSql: result.rewrittenSql,
+          rationale: result.rationale,
+          risks: result.risks,
+          validationPlan: result.validationPlan,
+          modelUsed: result.modelUsed,
+          createdAt: now,
+          expiresAt,
+        },
+        update: {
+          diagnosis: (result.diagnosis as Prisma.InputJsonValue) ?? undefined,
+          rewrittenSql: result.rewrittenSql,
+          rationale: result.rationale,
+          risks: result.risks,
+          validationPlan: result.validationPlan,
+          modelUsed: result.modelUsed,
+          createdAt: now,
+          expiresAt,
+        },
+      })
+    );
   } catch (err) {
     console.error("[rewrite-store] Failed to cache rewrite:", err);
   }

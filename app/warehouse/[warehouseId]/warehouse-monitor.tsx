@@ -11,6 +11,7 @@ import React, {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowLeft,
   ChevronDown,
   ChevronLeft,
@@ -120,6 +121,7 @@ interface WarehouseMonitorProps {
   initialRangeMs: { start: number; end: number };
   rangeHours: number;
   fetchError: string | null;
+  partialErrors?: string[];
   workspaceUrl?: string;
 }
 
@@ -134,6 +136,7 @@ export function WarehouseMonitor({
   initialRangeMs,
   rangeHours: initialRangeHours,
   fetchError,
+  partialErrors = [],
   workspaceUrl,
 }: WarehouseMonitorProps) {
   const router = useRouter();
@@ -732,6 +735,25 @@ export function WarehouseMonitor({
 
           {/* Content */}
           <div className="p-4 space-y-3">
+
+          {partialErrors.length > 0 && (
+            <Card className="border-amber-200 dark:border-amber-800">
+              <CardContent className="flex items-start gap-3 py-3">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                    Some data could not be loaded
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {partialErrors.map((msg, i) => (
+                      <li key={i} className="text-xs text-muted-foreground">{msg}</li>
+                    ))}
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* ── Metrics timeline ─────────────────────────────── */}
           <Card>
             <CardContent className="pt-3 pb-3">

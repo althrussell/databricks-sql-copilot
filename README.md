@@ -462,80 +462,56 @@ Persistence is **disabled by default**. The app works fully without it. Enabling
 
 Without persistence, AI analysis runs fresh each time and dismissed queries reappear after restart.
 
-### Enabling persistence
+### Enabling persistence (Databricks Apps — auto-provisioned)
 
-#### 1. Create a Lakebase instance
+When deployed as a Databricks App, Lakebase is **auto-provisioned**. No manual database setup, no secrets, no resource bindings for the database. The app uses the platform-injected service principal credentials to create and manage its own Lakebase Autoscale project.
 
-1. In your workspace, go to **Compute** > **OLTP Database**
-2. Click **Create**
-3. Name: `dbsql-copilot-db` (or any name)
-4. Size: **XS** (sufficient for this app — stores only a few hundred rows)
-5. Click **Create** and wait for it to become active
+#### 1. Add `ENABLE_LAKEBASE` to `app.yaml`
 
-#### 2. Add the database resource to your app
-
-1. Go to your app's **Resources** / **Configure** page
-2. Click **+ Add resource**
-3. Select **Database**
-4. Choose your Lakebase instance and the `databricks_postgres` database
-5. Set **Permission** to: **Can connect**
-6. Set **Resource key** to: `lakebase`
-7. Click **Save**
-
-#### 3. Store the connection string
-
-Create a secret scope and store the connection URL:
-
-```bash
-# Create a secret scope (one-time)
-databricks secrets create-scope inspire-secrets
-
-# Store the pooler connection string
-# You can find this in your Lakebase instance > Connection Info > Pooler URL
-databricks secrets put-secret inspire-secrets DATABASE_URL
-```
-
-When prompted, paste the pooler connection URL (it looks like):
-```
-postgresql://USER:PASSWORD@HOST-pooler.database.REGION.cloud.databricks.com/databricks_postgres?sslmode=require
-```
-
-#### 4. Add the secret to app.yaml
-
-The `app.yaml` should reference the secret:
+Add the environment variable to your `app.yaml`:
 
 ```yaml
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
-  - name: DATABASE_URL
-    valueFrom: db-secret
   - name: ENABLE_LAKEBASE
     value: "true"
 ```
 
-#### 5. Grant schema permissions
+#### 2. Deploy
 
-The app's service principal needs permission to create tables. Open the **Lakebase SQL editor** (from your Lakebase instance > **New Query**) and run:
+Deploy (or re-deploy) the app. On first boot with `ENABLE_LAKEBASE=true`, the startup script will:
 
-```sql
--- Replace with your app's service principal client ID
--- (visible in the app's Settings tab or Environment tab as DATABRICKS_CLIENT_ID)
-GRANT ALL ON SCHEMA public TO "<your-app-client-id>";
+1. **Create a Lakebase Autoscale project** (`dbsql-copilot`) using the app's service principal
+2. **Generate short-lived OAuth DB credentials** (rotated automatically every ~50 minutes at runtime)
+3. **Push the Prisma schema** (`prisma db push`) to create all tables
+
+Subsequent deploys detect the existing project and skip creation (~1-2s).
+
+#### 3. Verify
+
+Check the health endpoint or app logs to confirm Lakebase is connected.
+
+### Enabling persistence (local development)
+
+For local dev, set `DATABASE_URL` directly in `.env.local`:
+
+```bash
+ENABLE_LAKEBASE=true
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/databricks_postgres?sslmode=require
 ```
 
-#### 6. Deploy
-
-Re-deploy the app. The Prisma client will auto-create the required tables on first use.
+No credential rotation is needed locally — the static URL is used directly.
 
 ### Persistence troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | App works but no caching | `ENABLE_LAKEBASE` not set to `true` | Add it to `app.yaml` env section |
-| `DATABASE_URL is not set` | Secret not configured | Run the `put-secret` command (step 3) |
-| `permission denied for schema` | GRANT not run | Run the GRANT statement (step 5) |
-| `P1010: User was denied access` | Using pooler URL for DDL | Use the direct (non-pooler) URL for migrations |
+| `Lakebase provisioning returned empty URL` | SP lacks permission to create Lakebase projects | Ensure the app's service principal can manage Lakebase resources |
+| `Create project failed (403)` | Lakebase Autoscale not available in region | Check supported regions; fall back to manual `DATABASE_URL` |
+| Schema push fails at startup | Lakebase compute still waking from scale-to-zero | Restart the app — compute wakes automatically and retries succeed |
+| `DATABASE_URL is not set` (local dev) | Missing `.env.local` | Set `DATABASE_URL` in `.env.local` for local dev |
 
 ---
 

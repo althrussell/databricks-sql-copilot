@@ -1,3 +1,18 @@
+# Databricks Apps configuration
+# Maps app resources to environment variables consumed by the Next.js backend.
+#
+# Required app resources (configure in Databricks App UI):
+# 1. SQL Warehouse — resource key: "sql-warehouse"
+#
+# Lakebase Autoscale is self-provisioned at startup when ENABLE_LAKEBASE=true,
+# using the platform-injected service principal credentials
+# (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET / DATABRICKS_HOST).
+# No secret scope or DATABASE_URL binding needed.
+
+command:
+  - "sh"
+  - "scripts/start.sh"
+
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse

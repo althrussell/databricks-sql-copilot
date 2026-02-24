@@ -6,6 +6,7 @@ import { Gauge } from "lucide-react";
 import { WarehouseTable } from "./warehouse-table";
 import type { WarehouseInfo } from "@/lib/dbx/rest-client";
 import type { WarehouseActivity } from "@/lib/domain/types";
+import { isPermissionError, extractPermissionDetails } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 60;
@@ -42,14 +43,29 @@ async function WarehouseListLoader() {
   const activity: WarehouseActivity[] =
     activityResult.status === "fulfilled" ? activityResult.value : [];
 
-  let fetchError: string | null = null;
+  const errors: Array<{ label: string; message: string }> = [];
+
   if (warehousesResult.status === "rejected") {
     const reason = warehousesResult.reason;
-    fetchError = reason instanceof Error ? reason.message : String(reason);
+    const msg = reason instanceof Error ? reason.message : String(reason);
     console.warn("[warehouse-monitor] warehouse list failed:", reason);
+    errors.push({ label: "warehouses", message: msg });
   }
   if (activityResult.status === "rejected") {
-    console.warn("[warehouse-monitor] activity fetch failed:", activityResult.reason);
+    const reason = activityResult.reason;
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    console.warn("[warehouse-monitor] activity fetch failed:", reason);
+    errors.push({ label: "activity", message: msg });
+  }
+
+  let fetchError: string | null = null;
+  if (errors.length > 0) {
+    const permErrors = errors.filter((e) => isPermissionError(new Error(e.message)));
+    if (permErrors.length > 0) {
+      fetchError = extractPermissionDetails(permErrors).summary;
+    } else {
+      fetchError = errors.map((e) => `${e.label}: ${e.message}`).join("; ");
+    }
   }
 
   return <WarehouseTable warehouses={warehouses} activity={activity} fetchError={fetchError} />;

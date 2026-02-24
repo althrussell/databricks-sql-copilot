@@ -8,6 +8,7 @@ import {
   getWarehouseLiveStats,
 } from "@/lib/dbx/rest-client";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
+import { isPermissionError, extractPermissionDetails } from "@/lib/errors";
 import type { WarehouseInfo } from "@/lib/dbx/rest-client";
 import type {
   EndpointMetric,
@@ -43,6 +44,7 @@ async function WarehouseMonitorLoader({
   let initialQueries: TimelineQuery[] = [];
   let liveStats: WarehouseLiveStats | null = null;
   let fetchError: string | null = null;
+  let partialErrors: string[] = [];
   let initialNextPageToken: string | undefined;
   let initialHasNextPage = false;
 
@@ -69,22 +71,39 @@ async function WarehouseMonitorLoader({
     liveStats =
       statsResult.status === "fulfilled" ? statsResult.value : null;
 
-    // Log any individual endpoint failures (non-fatal — page still renders)
-    if (metricsResult.status === "rejected") {
-      console.warn("[warehouse-monitor] endpoint-metrics failed:", metricsResult.reason);
-    }
-    if (queriesResult.status === "rejected") {
-      console.warn("[warehouse-monitor] query-history failed:", queriesResult.reason);
-    }
-    if (statsResult.status === "rejected") {
-      console.warn("[warehouse-monitor] live-stats failed (permission?):", statsResult.reason);
+    // Collect partial errors for sub-resources (non-fatal — page still renders)
+    const permIssues: Array<{ label: string; message: string }> = [];
+
+    for (const [label, result] of [
+      ["Endpoint metrics", metricsResult],
+      ["Query history", queriesResult],
+      ["Live stats", statsResult],
+    ] as const) {
+      if (result.status === "rejected") {
+        const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        console.warn(`[warehouse-monitor] ${label} failed:`, result.reason);
+        if (isPermissionError(result.reason)) {
+          permIssues.push({ label, message: msg });
+        }
+        partialErrors.push(`${label}: ${msg}`);
+      }
     }
 
     if (!warehouse) {
-      fetchError =
-        warehouseResult.status === "rejected"
-          ? String(warehouseResult.reason)
-          : "Warehouse not found";
+      if (warehouseResult.status === "rejected") {
+        const reason = warehouseResult.reason;
+        const msg = reason instanceof Error ? reason.message : String(reason);
+        if (isPermissionError(reason)) {
+          fetchError = extractPermissionDetails([{ label: "warehouse", message: msg }]).summary;
+        } else {
+          fetchError = msg;
+        }
+      } else {
+        fetchError = "Warehouse not found";
+      }
+    } else if (permIssues.length > 0) {
+      const details = extractPermissionDetails(permIssues);
+      partialErrors.unshift(details.summary);
     }
   } catch (err) {
     fetchError =
@@ -105,6 +124,7 @@ async function WarehouseMonitorLoader({
       initialRangeMs={{ start: startMs, end: endMs }}
       rangeHours={rangeHours}
       fetchError={fetchError}
+      partialErrors={partialErrors}
       workspaceUrl={workspaceUrl}
     />
   );

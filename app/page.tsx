@@ -19,6 +19,10 @@ import type {
   WarehouseActivity,
   QueryRun,
 } from "@/lib/domain/types";
+import {
+  isPermissionError,
+  extractPermissionDetails,
+} from "@/lib/errors";
 
 /**
  * Cache the page for 5 minutes. Since the data window is shifted back 6h
@@ -138,7 +142,7 @@ async function CoreDashboardLoader({
     candidates = buildCandidates(queryResult);
 
     coreHealth.push(
-      { name: "warehouses", status: warehouseResult.length > 0 ? "ok" : "ok", rowCount: warehouseResult.length },
+      { name: "warehouses", status: "ok", rowCount: warehouseResult.length },
       { name: "query_history", status: "ok", rowCount: queryResult.length }
     );
 
@@ -148,6 +152,22 @@ async function CoreDashboardLoader({
   } catch (err: unknown) {
     fetchError =
       err instanceof Error ? err.message : "Failed to load query data";
+  }
+
+  // When core data sources failed, surface a clear error to the user
+  if (!fetchError && coreFailed.length > 0) {
+    const permErrors = coreFailed.filter((h) =>
+      h.error && isPermissionError(new Error(h.error))
+    );
+    if (permErrors.length > 0) {
+      const details = extractPermissionDetails(
+        permErrors.map((h) => ({ label: h.name, message: h.error ?? "" }))
+      );
+      fetchError = details.summary;
+    } else {
+      const failedNames = coreFailed.map((h) => h.name.replace(/_/g, " ")).join(", ");
+      fetchError = `Failed to load core data sources: ${failedNames}. Check the service principal configuration.`;
+    }
   }
 
   const workspaceUrl = getWorkspaceBaseUrl();
@@ -160,7 +180,9 @@ async function CoreDashboardLoader({
       endTime: end,
     });
   } catch (err) {
-    console.error("[page] warehouse activity fetch failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[page] warehouse activity fetch failed:", msg);
+    coreFailed.push({ name: "warehouse_activity", status: "error", error: msg, rowCount: 0 });
   }
 
   // Fetch query actions from Lakebase (non-blocking — empty map on failure)
@@ -176,7 +198,9 @@ async function CoreDashboardLoader({
       };
     }
   } catch (err) {
-    console.error("[page] query actions fetch failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[page] query actions fetch failed:", msg);
+    coreFailed.push({ name: "query_actions", status: "error", error: msg, rowCount: 0 });
   }
 
   // Merge failed and ok sources (dedup by name, ok overrides error)

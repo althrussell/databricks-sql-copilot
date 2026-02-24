@@ -7,7 +7,7 @@
  * Requires ENABLE_LAKEBASE=true. When disabled, all functions are safe no-ops.
  */
 
-import { prisma, isLakebaseEnabled } from "./prisma";
+import { withPrisma, isLakebaseEnabled } from "./prisma";
 
 export type QueryActionType = "dismiss" | "watch" | "applied";
 
@@ -28,12 +28,14 @@ export async function getQueryActions(): Promise<Map<string, QueryAction>> {
   if (!isLakebaseEnabled()) return map;
 
   try {
-    const rows = await prisma.queryAction.findMany({
-      where: {
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { updatedAt: "desc" },
-    });
+    const rows = await withPrisma((p) =>
+      p.queryAction.findMany({
+        where: {
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { updatedAt: "desc" },
+      })
+    );
 
     for (const row of rows) {
       map.set(row.fingerprint, {
@@ -69,25 +71,27 @@ export async function setQueryAction(
   const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   try {
-    await prisma.queryAction.upsert({
-      where: { fingerprint },
-      create: {
-        fingerprint,
-        action,
-        note: note ?? null,
-        actedBy: actedBy ?? null,
-        actedAt: now,
-        updatedAt: now,
-        expiresAt,
-      },
-      update: {
-        action,
-        note: note ?? null,
-        actedBy: actedBy ?? null,
-        updatedAt: now,
-        expiresAt,
-      },
-    });
+    await withPrisma((p) =>
+      p.queryAction.upsert({
+        where: { fingerprint },
+        create: {
+          fingerprint,
+          action,
+          note: note ?? null,
+          actedBy: actedBy ?? null,
+          actedAt: now,
+          updatedAt: now,
+          expiresAt,
+        },
+        update: {
+          action,
+          note: note ?? null,
+          actedBy: actedBy ?? null,
+          updatedAt: now,
+          expiresAt,
+        },
+      })
+    );
   } catch (err) {
     console.error("[actions-store] Failed to set query action:", err);
     throw err;
@@ -101,9 +105,11 @@ export async function removeQueryAction(fingerprint: string): Promise<void> {
   if (!isLakebaseEnabled()) return;
 
   try {
-    await prisma.queryAction.delete({
-      where: { fingerprint },
-    });
+    await withPrisma((p) =>
+      p.queryAction.delete({
+        where: { fingerprint },
+      })
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("Record to delete does not exist")) return;

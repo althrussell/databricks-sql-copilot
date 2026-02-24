@@ -9,7 +9,7 @@
  * (saves skipped, lookups return null/empty).
  */
 
-import { prisma, isLakebaseEnabled } from "./prisma";
+import { withPrisma, isLakebaseEnabled } from "./prisma";
 import type { WarehouseRecommendation, WarehouseHealthMetrics } from "@/lib/domain/types";
 
 export interface HealthSnapshot {
@@ -37,37 +37,39 @@ export async function saveHealthSnapshot(
   const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
   try {
-    await prisma.healthSnapshot.create({
-      data: {
-        warehouseId,
-        severity: recommendation.severity,
-        headline: recommendation.headline,
-        action: recommendation.action,
-        metrics: {
-          totalQueries: metrics.totalQueries,
-          avgRuntimeSec: metrics.avgRuntimeSec,
-          totalSpillGiB: metrics.totalSpillGiB,
-          totalCapacityQueueMin: metrics.totalCapacityQueueMin,
-          totalColdStartMin: metrics.totalColdStartMin,
-          size: metrics.size,
-          maxClusters: metrics.maxClusters,
-          isServerless: metrics.isServerless,
-          activeDays: metrics.activeDays,
-        },
-        recommendation: {
+    await withPrisma((p) =>
+      p.healthSnapshot.create({
+        data: {
+          warehouseId,
           severity: recommendation.severity,
-          confidence: recommendation.confidence,
-          action: recommendation.action,
           headline: recommendation.headline,
-          wastedQueueCostEstimate: recommendation.wastedQueueCostEstimate,
-          currentWeeklyCost: recommendation.currentWeeklyCost,
-          targetSize: recommendation.targetSize,
-          targetMaxClusters: recommendation.targetMaxClusters,
-          targetAutoStop: recommendation.targetAutoStop,
+          action: recommendation.action,
+          metrics: {
+            totalQueries: metrics.totalQueries,
+            avgRuntimeSec: metrics.avgRuntimeSec,
+            totalSpillGiB: metrics.totalSpillGiB,
+            totalCapacityQueueMin: metrics.totalCapacityQueueMin,
+            totalColdStartMin: metrics.totalColdStartMin,
+            size: metrics.size,
+            maxClusters: metrics.maxClusters,
+            isServerless: metrics.isServerless,
+            activeDays: metrics.activeDays,
+          },
+          recommendation: {
+            severity: recommendation.severity,
+            confidence: recommendation.confidence,
+            action: recommendation.action,
+            headline: recommendation.headline,
+            wastedQueueCostEstimate: recommendation.wastedQueueCostEstimate,
+            currentWeeklyCost: recommendation.currentWeeklyCost,
+            targetSize: recommendation.targetSize,
+            targetMaxClusters: recommendation.targetMaxClusters,
+            targetAutoStop: recommendation.targetAutoStop,
+          },
+          expiresAt,
         },
-        expiresAt,
-      },
-    });
+      })
+    );
   } catch (err) {
     console.error("[health-store] Failed to save snapshot:", err);
   }
@@ -81,13 +83,15 @@ export async function getLastSnapshot(warehouseId: string): Promise<HealthSnapsh
   if (!isLakebaseEnabled()) return null;
 
   try {
-    const row = await prisma.healthSnapshot.findFirst({
-      where: {
-        warehouseId,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { snapshotAt: "desc" },
-    });
+    const row = await withPrisma((p) =>
+      p.healthSnapshot.findFirst({
+        where: {
+          warehouseId,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { snapshotAt: "desc" },
+      })
+    );
 
     if (!row) return null;
 
@@ -118,14 +122,16 @@ export async function getSnapshotHistory(
   if (!isLakebaseEnabled()) return [];
 
   try {
-    const rows = await prisma.healthSnapshot.findMany({
-      where: {
-        warehouseId,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { snapshotAt: "desc" },
-      take: limit,
-    });
+    const rows = await withPrisma((p) =>
+      p.healthSnapshot.findMany({
+        where: {
+          warehouseId,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { snapshotAt: "desc" },
+        take: limit,
+      })
+    );
 
     return rows.map((row) => ({
       id: row.id,
