@@ -15,6 +15,8 @@ import {
   fetchTriageTableContext,
   formatTriageTableContext,
 } from "@/lib/queries/table-metadata";
+import { aiSemaphore } from "@/lib/ai/semaphore";
+import { renderPrompt } from "@/lib/ai/prompts/registry";
 
 const TRIAGE_MODEL = "databricks-llama-4-maverick";
 const MAX_PATTERNS = 15;
@@ -196,35 +198,18 @@ export async function triageMonitorQueries(
     console.warn("[ai-triage-monitor] table metadata fetch failed, continuing without:", err);
   }
 
-  const patternLines = top
-    .map((p, i) => `[${i + 1}] ${patternSummaryLine(p)}`)
-    .join("\n\n");
+  const triageItems = top.map((p) => ({
+    id: p.fingerprint,
+    summaryLine: patternSummaryLine(p),
+  }));
 
-  const prompt = `You are a Databricks SQL performance triage expert. Below are ${top.length} query patterns from a SQL warehouse monitor. For each one, provide:
-1. A concise 1-2 sentence insight explaining the root cause and what to do
-2. An action category: "rewrite" (SQL can be improved), "cluster" (table needs Liquid Clustering), "optimize" (needs OPTIMIZE/VACUUM/compaction), "resize" (warehouse sizing issue), or "investigate" (needs deeper analysis)
+  const rendered = renderPrompt("triage", {
+    triageItems,
+    tableContextBlock: tableContextBlock || undefined,
+  });
 
-Key Databricks best practices to flag:
-- Low cache hit rates and large reads suggest missing clustering — recommend Liquid Clustering.
-- High spill relative to data read indicates the warehouse needs a LARGER size (more memory), not just query optimization. Recommend upsizing.
-- Many short-running queries from the same pattern may benefit from result caching or materialized views.
-- Always prefer Liquid Clustering over Z-ORDER on all tables.
-- If producedRows >> readRows (ratio > 2x), flag as Exploding Join — recommend adding join conditions or pre-filtering.
-- If readRows >> producedRows (ratio > 10x), flag as Filtering Join — recommend filtering before the join.
-- If queue wait is a significant portion of total duration, this is a SCALING problem — recommend adding clusters or Serverless, NOT query rewrites.
-- If client_application indicates a BI tool (Tableau, Power BI, Looker) and cache is low, the BI tool may not be pushing filters down.
-- For frequently repeated aggregation patterns on tables with frequent writes, recommend Materialized Views over result cache.
-
-Focus on the most impactful observation per pattern. Be specific — reference actual metrics.
-
-Respond with ONLY a valid JSON array (no markdown, no explanation outside JSON):
-[{"id":"<fingerprint>","insight":"<1-2 sentences>","action":"<category>"}]
-
-## Query Patterns
-
-${patternLines}${tableContextBlock}`;
-
-  const escapedPrompt = escapeForSql(prompt);
+  const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
+  const escapedPrompt = escapeForSql(combinedPrompt);
   const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}') AS response`;
 
   try {
@@ -233,15 +218,17 @@ ${patternLines}${tableContextBlock}`;
       `[ai-triage-monitor] calling ${TRIAGE_MODEL} for ${top.length} patterns (prompt ~${escapedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`
     );
 
-    // Race the query against a timeout
-    const resultPromise = executeQuery<{ response: string }>(sql);
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`AI triage timed out after ${TRIAGE_TIMEOUT_MS / 1000}s`)),
-        TRIAGE_TIMEOUT_MS
-      )
-    );
-    const result = await Promise.race([resultPromise, timeoutPromise]);
+    // Use semaphore for concurrency control
+    const result = await aiSemaphore.run(async () => {
+      const resultPromise = executeQuery<{ response: string }>(sql);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`AI triage timed out after ${TRIAGE_TIMEOUT_MS / 1000}s`)),
+          TRIAGE_TIMEOUT_MS
+        )
+      );
+      return Promise.race([resultPromise, timeoutPromise]);
+    });
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
     if (!result.rows.length || !result.rows[0].response) {

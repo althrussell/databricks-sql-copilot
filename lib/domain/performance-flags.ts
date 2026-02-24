@@ -3,9 +3,14 @@
  *
  * Binary flags that mark query patterns with specific performance problems.
  * Each flag has a configurable threshold.
+ *
+ * When table metadata is available, flags are enriched with context-aware
+ * recommendations (e.g. suppress LowPruning if already clustered, add
+ * ANALYZE TABLE recommendations, suggest PK/FK constraints for joins).
  */
 
 import type { Candidate } from "@/lib/domain/types";
+import type { TableSummaryForTriage } from "@/lib/queries/table-metadata";
 
 export type PerformanceFlag =
   | "LongRunning"
@@ -18,12 +23,12 @@ export type PerformanceFlag =
   | "FrequentPattern"
   | "CacheMiss"
   | "LargeWrite"
-  // New PRD-aligned flags
   | "ExplodingJoin"
   | "FilteringJoin"
   | "HighQueueRatio"
   | "ColdQuery"
-  | "CompilationHeavy";
+  | "CompilationHeavy"
+  | "MaterializedViewCandidate";
 
 export interface FlagThresholds {
   longRunningMs: number; // p95 above this
@@ -36,7 +41,6 @@ export interface FlagThresholds {
   frequentPatternCount: number; // count above this
   cacheMissRate: number; // cache hit rate below this
   largeWriteBytes: number; // total written bytes above this
-  // New PRD-aligned thresholds
   explodingJoinRatio: number; // producedRows/readRows above this
   filteringJoinRatio: number; // readRows/producedRows above this
   highQueueRatioPct: number; // queueWaitMs/executionMs above this (0-1)
@@ -57,7 +61,6 @@ export const DEFAULT_THRESHOLDS: FlagThresholds = {
   frequentPatternCount: 50,
   cacheMissRate: 0.2, // cache hit rate <20%
   largeWriteBytes: 1024 * 1024 * 1024, // 1 GB
-  // New PRD-aligned defaults
   explodingJoinRatio: 2.0, // produced > 2x read rows
   filteringJoinRatio: 10.0, // read > 10x produced rows
   highQueueRatioPct: 0.5, // queue > 50% of execution time
@@ -78,18 +81,31 @@ export interface FlagResult {
   estimatedImpactPct?: number;
 }
 
+/** Optional table metadata context for enriched flag computation */
+export interface FlagTableContext {
+  tables: Map<string, TableSummaryForTriage>;
+}
+
+const AGG_PATTERN = /\b(GROUP\s+BY|SUM\s*\(|COUNT\s*\(|AVG\s*\(|MIN\s*\(|MAX\s*\()\b/i;
+
 /**
  * Compute performance flags for a candidate, with estimated impact percentages.
+ * When tableContext is provided, flags are enriched with table-aware recommendations.
  */
 export function computeFlags(
   candidate: Candidate,
-  thresholds: FlagThresholds = DEFAULT_THRESHOLDS
+  thresholds: FlagThresholds = DEFAULT_THRESHOLDS,
+  tableContext?: FlagTableContext
 ): FlagResult[] {
   const flags: FlagResult[] = [];
   const ws = candidate.windowStats;
 
-  // Helper: total task time proxy (compilation + queue + execution + fetch)
   const totalTaskTimeMs = ws.avgCompilationMs + ws.avgQueueWaitMs + ws.avgComputeWaitMs + ws.avgExecutionMs + ws.avgFetchMs;
+
+  // Gather table metadata for enrichment
+  const tables = tableContext?.tables;
+  const hasClusteredTable = tables ? [...tables.values()].some(t => t.clusteringColumns.length > 0) : false;
+  const hasPredOptEnabled = tables ? [...tables.values()].some(t => t.predictiveOptEnabled) : false;
 
   if (ws.p95Ms > thresholds.longRunningMs) {
     flags.push({
@@ -97,7 +113,6 @@ export function computeFlags(
       label: "Long Running",
       severity: ws.p95Ms > thresholds.longRunningMs * 3 ? "critical" : "warning",
       detail: `P95 latency ${(ws.p95Ms / 1000).toFixed(1)}s exceeds ${(thresholds.longRunningMs / 1000).toFixed(0)}s threshold`,
-      // Long running is a meta-flag; impact is the full excess time
       estimatedImpactPct: totalTaskTimeMs > 0
         ? Math.min(100, Math.round(((ws.p95Ms - thresholds.longRunningMs) / ws.p95Ms) * 100))
         : undefined,
@@ -105,16 +120,26 @@ export function computeFlags(
   }
 
   if (ws.totalSpilledBytes > thresholds.highSpillBytes) {
-    // Impact: spill as fraction of total I/O
     const spillImpact =
       ws.totalReadBytes + ws.totalSpilledBytes > 0
         ? Math.round((ws.totalSpilledBytes / (ws.totalReadBytes + ws.totalSpilledBytes)) * 100)
         : undefined;
+    let spillDetail = `${formatSize(ws.totalSpilledBytes)} spilled to disk`;
+    // Enrich with table size context
+    if (tables) {
+      const tableSizes = [...tables.values()]
+        .filter(t => t.sizeInBytes != null)
+        .map(t => ({ name: t.tableName, size: t.sizeInBytes! }));
+      if (tableSizes.length > 0) {
+        const totalTableSize = tableSizes.reduce((s, t) => s + t.size, 0);
+        spillDetail += `. Tables total ${formatSize(totalTableSize)}`;
+      }
+    }
     flags.push({
       flag: "HighSpill",
       label: "High Spill",
       severity: ws.totalSpilledBytes > thresholds.highSpillBytes * 5 ? "critical" : "warning",
-      detail: `${formatSize(ws.totalSpilledBytes)} spilled to disk`,
+      detail: spillDetail,
       estimatedImpactPct: spillImpact,
     });
   }
@@ -125,7 +150,6 @@ export function computeFlags(
       label: "High Shuffle",
       severity: "warning",
       detail: `${formatSize(ws.totalShuffleBytes)} shuffled across nodes`,
-      // Shuffle impact approximated as shuffle proportion of total I/O
       estimatedImpactPct:
         ws.totalReadBytes > 0
           ? Math.min(100, Math.round((ws.totalShuffleBytes / ws.totalReadBytes) * 50))
@@ -139,7 +163,6 @@ export function computeFlags(
       label: "Low I/O Cache",
       severity: ws.avgIoCachePercent < 10 ? "critical" : "warning",
       detail: `I/O cache hit ${ws.avgIoCachePercent.toFixed(0)}% (threshold: ${thresholds.lowCacheHitPct}%)`,
-      // Impact: portion of reads not served from cache
       estimatedImpactPct: Math.round(100 - ws.avgIoCachePercent),
     });
   }
@@ -148,20 +171,29 @@ export function computeFlags(
     ws.avgPruningEfficiency < thresholds.lowPruningPct &&
     ws.totalReadRows > 0
   ) {
-    // Impact: (1 - pruning efficiency) * scan proportion of total time
-    // We estimate scan time as proportional to execution time
     const pruneImpact = Math.round((1 - ws.avgPruningEfficiency) * 100);
+    let pruneDetail = `Pruning efficiency ${(ws.avgPruningEfficiency * 100).toFixed(0)}% (threshold: ${(thresholds.lowPruningPct * 100).toFixed(0)}%)`;
+
+    // Enrich: suppress noise if tables already have clustering matching query filters
+    if (hasClusteredTable) {
+      pruneDetail += `. Tables have clustering — verify clustering columns match WHERE/JOIN filters`;
+    } else if (tables && tables.size > 0) {
+      pruneDetail += `. Recommend: ALTER TABLE ... CLUSTER BY (filter_columns)`;
+    }
+
+    // Add ANALYZE TABLE recommendation
+    pruneDetail += `. Run ANALYZE TABLE ... COMPUTE STATISTICS FOR COLUMNS on filtered columns`;
+
     flags.push({
       flag: "LowPruning",
       label: "Low Pruning",
       severity: "warning",
-      detail: `Pruning efficiency ${(ws.avgPruningEfficiency * 100).toFixed(0)}% (threshold: ${(thresholds.lowPruningPct * 100).toFixed(0)}%)`,
+      detail: pruneDetail,
       estimatedImpactPct: pruneImpact,
     });
   }
 
   if (ws.avgQueueWaitMs > thresholds.highQueueWaitMs) {
-    // Impact: queue wait as fraction of total task time
     const queueImpact = totalTaskTimeMs > 0
       ? Math.round((ws.avgQueueWaitMs / totalTaskTimeMs) * 100)
       : undefined;
@@ -175,15 +207,19 @@ export function computeFlags(
   }
 
   if (ws.avgCompilationMs > thresholds.highCompileMs) {
-    // Impact: compilation as fraction of total task time
     const compileImpact = totalTaskTimeMs > 0
       ? Math.round((ws.avgCompilationMs / totalTaskTimeMs) * 100)
       : undefined;
+    let compileDetail = `Avg ${(ws.avgCompilationMs / 1000).toFixed(1)}s compile time`;
+
+    // Add ANALYZE TABLE recommendation for compilation-heavy queries
+    compileDetail += `. Run ANALYZE TABLE ... COMPUTE STATISTICS FOR COLUMNS to help optimizer`;
+
     flags.push({
       flag: "HighCompileTime",
       label: "Slow Compile",
       severity: "warning",
-      detail: `Avg ${(ws.avgCompilationMs / 1000).toFixed(1)}s compile time`,
+      detail: compileDetail,
       estimatedImpactPct: compileImpact,
     });
   }
@@ -194,7 +230,6 @@ export function computeFlags(
       label: "Frequent",
       severity: "warning",
       detail: `${ws.count} executions in window`,
-      // FrequentPattern is about cumulative cost, not per-query impact — no % applicable
     });
   }
 
@@ -204,7 +239,6 @@ export function computeFlags(
       label: "Cache Miss",
       severity: "warning",
       detail: `Result cache hit rate ${(ws.cacheHitRate * 100).toFixed(0)}%`,
-      // Impact: portion of runs that could have been instant from cache
       estimatedImpactPct: Math.round((1 - ws.cacheHitRate) * 80),
     });
   }
@@ -218,7 +252,7 @@ export function computeFlags(
     });
   }
 
-  // ── New PRD-aligned flags ──
+  // ── PRD-aligned flags ──
 
   // Exploding Join: produced rows far exceed read rows
   if (
@@ -227,9 +261,13 @@ export function computeFlags(
     ws.totalProducedRows / ws.totalReadRows > thresholds.explodingJoinRatio
   ) {
     const ratio = (ws.totalProducedRows / ws.totalReadRows).toFixed(1);
-    // Impact: excess row amplification proportion
     const excessRows = ws.totalProducedRows - ws.totalReadRows;
     const explodingImpact = Math.min(100, Math.round((excessRows / ws.totalProducedRows) * 100));
+    let joinDetail = `Produces ${ratio}x more rows than read (${ws.totalProducedRows.toLocaleString()} produced vs ${ws.totalReadRows.toLocaleString()} read) — likely cross join or many-to-many`;
+
+    // Add PK/FK recommendation for join issues
+    joinDetail += `. Check PK/FK constraints on join keys — add them if missing for optimizer hints`;
+
     flags.push({
       flag: "ExplodingJoin",
       label: "Exploding Join",
@@ -237,7 +275,7 @@ export function computeFlags(
         ws.totalProducedRows / ws.totalReadRows > thresholds.explodingJoinRatio * 5
           ? "critical"
           : "warning",
-      detail: `Produces ${ratio}x more rows than read (${ws.totalProducedRows.toLocaleString()} produced vs ${ws.totalReadRows.toLocaleString()} read) — likely cross join or many-to-many`,
+      detail: joinDetail,
       estimatedImpactPct: explodingImpact,
     });
   }
@@ -249,25 +287,28 @@ export function computeFlags(
     ws.totalReadRows / ws.totalProducedRows > thresholds.filteringJoinRatio
   ) {
     const ratio = (ws.totalReadRows / ws.totalProducedRows).toFixed(1);
-    // Impact: proportion of wasted read rows
     const wastedRows = ws.totalReadRows - ws.totalProducedRows;
     const filterImpact = Math.min(100, Math.round((wastedRows / ws.totalReadRows) * 100));
+    let filterDetail = `Reads ${ratio}x more rows than produced (${ws.totalReadRows.toLocaleString()} read → ${ws.totalProducedRows.toLocaleString()} produced) — filter before join could reduce work`;
+
+    // Add PK/FK recommendation
+    filterDetail += `. Define PK/FK constraints on join keys for join elimination and predicate pushdown`;
+
     flags.push({
       flag: "FilteringJoin",
       label: "Filtering Join",
       severity: "warning",
-      detail: `Reads ${ratio}x more rows than produced (${ws.totalReadRows.toLocaleString()} read → ${ws.totalProducedRows.toLocaleString()} produced) — filter before join could reduce work`,
+      detail: filterDetail,
       estimatedImpactPct: filterImpact,
     });
   }
 
-  // High Queue-to-Execute Ratio: scaling problem, not query problem
+  // High Queue-to-Execute Ratio
   if (
     ws.avgExecutionMs > 0 &&
     ws.avgQueueWaitMs / ws.avgExecutionMs > thresholds.highQueueRatioPct
   ) {
     const pct = Math.round((ws.avgQueueWaitMs / ws.avgExecutionMs) * 100);
-    // Impact: queue wait as fraction of total time
     const queueRatioImpact = totalTaskTimeMs > 0
       ? Math.round((ws.avgQueueWaitMs / totalTaskTimeMs) * 100)
       : pct;
@@ -286,28 +327,32 @@ export function computeFlags(
     ws.cacheHitRate < thresholds.coldQueryCacheHitPct &&
     ws.avgIoCachePercent < thresholds.coldQueryIoCachePct
   ) {
-    // Impact: proportion of time that could be saved with warm cache
-    // Warm queries typically see 50-80% speedup; estimate conservatively
     const coldImpact = Math.min(80, Math.round((1 - ws.cacheHitRate) * (100 - ws.avgIoCachePercent)));
+    let coldDetail = `Result cache ${(ws.cacheHitRate * 100).toFixed(0)}%, IO cache ${ws.avgIoCachePercent.toFixed(0)}% — query never benefits from caching. Table may need OPTIMIZE or Liquid Clustering`;
+
+    // Enrich with Predictive Optimization recommendation
+    if (!hasPredOptEnabled && tables && tables.size > 0) {
+      coldDetail += `. Enable Predictive Optimization to automate OPTIMIZE, VACUUM, and ANALYZE`;
+    }
+
     flags.push({
       flag: "ColdQuery",
       label: "Always Cold",
       severity: "warning",
-      detail: `Result cache ${(ws.cacheHitRate * 100).toFixed(0)}%, IO cache ${ws.avgIoCachePercent.toFixed(0)}% — query never benefits from caching. Table may need OPTIMIZE or Liquid Clustering`,
+      detail: coldDetail,
       estimatedImpactPct: coldImpact,
     });
   }
 
-  // Compilation Heavy: compilation dominates execution
+  // Compilation Heavy
   if (ws.avgExecutionMs > 0 || ws.avgCompilationMs > 0) {
     const totalCompileExec = ws.avgCompilationMs + ws.avgExecutionMs;
     if (
       totalCompileExec > 0 &&
       ws.avgCompilationMs / totalCompileExec > thresholds.compilationHeavyPct &&
-      ws.avgCompilationMs > 1_000 // only flag if compilation > 1s
+      ws.avgCompilationMs > 1_000
     ) {
       const pct = Math.round((ws.avgCompilationMs / totalCompileExec) * 100);
-      // Impact: compilation time as fraction of total task time
       const compileHeavyImpact = totalTaskTimeMs > 0
         ? Math.round((ws.avgCompilationMs / totalTaskTimeMs) * 100)
         : pct;
@@ -315,10 +360,26 @@ export function computeFlags(
         flag: "CompilationHeavy",
         label: "Compilation Heavy",
         severity: "warning",
-        detail: `Compilation is ${pct}% of processing time (${(ws.avgCompilationMs / 1000).toFixed(1)}s) — complex views, many small tables, or deeply nested CTEs`,
+        detail: `Compilation is ${pct}% of processing time (${(ws.avgCompilationMs / 1000).toFixed(1)}s) — complex views, many small tables, or deeply nested CTEs. Run ANALYZE TABLE to improve optimizer statistics`,
         estimatedImpactPct: compileHeavyImpact,
       });
     }
+  }
+
+  // MaterializedViewCandidate: frequent aggregation patterns with poor caching
+  if (
+    ws.count > thresholds.frequentPatternCount &&
+    ws.cacheHitRate < thresholds.cacheMissRate &&
+    candidate.statementType === "SELECT" &&
+    AGG_PATTERN.test(candidate.sampleQueryText)
+  ) {
+    flags.push({
+      flag: "MaterializedViewCandidate",
+      label: "MV Candidate",
+      severity: "warning",
+      detail: `${ws.count} executions with ${(ws.cacheHitRate * 100).toFixed(0)}% cache hit rate on an aggregation query. CREATE MATERIALIZED VIEW would precompute results and auto-refresh on data changes`,
+      estimatedImpactPct: Math.round((1 - ws.cacheHitRate) * 70),
+    });
   }
 
   return flags;
@@ -340,7 +401,6 @@ export function filterAndRankFlags(
   flags: FlagResult[],
   minImpactPct: number = MIN_IMPACT_PCT
 ): FlagResult[] {
-  // Separate flags with and without impact estimates
   const measured: FlagResult[] = [];
   const unmeasured: FlagResult[] = [];
 
@@ -349,17 +409,13 @@ export function filterAndRankFlags(
       if (f.estimatedImpactPct >= minImpactPct) {
         measured.push(f);
       }
-      // Drop below-threshold flags silently
     } else {
-      // Keep unmeasured flags (FrequentPattern, LargeWrite, etc.)
       unmeasured.push(f);
     }
   }
 
-  // Sort measured flags by impact descending
   measured.sort((a, b) => (b.estimatedImpactPct ?? 0) - (a.estimatedImpactPct ?? 0));
 
-  // Measured first, then unmeasured
   return [...measured, ...unmeasured];
 }
 

@@ -28,7 +28,8 @@ export async function GET() {
     return NextResponse.json(obj);
   } catch (err) {
     console.error("[api/query-actions] GET failed:", err);
-    return NextResponse.json({}, { status: 200 }); // graceful empty
+    const msg = err instanceof Error ? err.message : "Failed to fetch query actions";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 

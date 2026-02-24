@@ -1,5 +1,10 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { QueryRun, QuerySource, QueryOrigin } from "@/lib/domain/types";
+import {
+  validateIdentifier,
+  validateTimestamp,
+  validateLimit,
+} from "@/lib/validation";
 
 export interface ListRecentQueriesParams {
   /** Optional — if omitted, queries from ALL warehouses are returned */
@@ -54,10 +59,6 @@ interface QueryHistoryRow {
   executed_as: string | null;
 }
 
-function escapeString(value: string): string {
-  return value.replace(/'/g, "''");
-}
-
 /**
  * Fetch recent queries from system.query.history, optionally filtered by warehouse.
  * Joins to system.compute.warehouses for warehouse names and
@@ -74,8 +75,12 @@ export async function listRecentQueries(
 ): Promise<QueryRun[]> {
   const { warehouseId, startTime, endTime, limit = 500 } = params;
 
+  const validStart = validateTimestamp(startTime, "startTime");
+  const validEnd = validateTimestamp(endTime, "endTime");
+  const validLimit = validateLimit(limit, 1, 1000);
+
   const warehouseFilter = warehouseId
-    ? `AND h.compute.warehouse_id = '${escapeString(warehouseId)}'`
+    ? `AND h.compute.warehouse_id = '${validateIdentifier(warehouseId, "warehouseId")}'`
     : "";
 
   const sql = `
@@ -123,8 +128,8 @@ export async function listRecentQueries(
       ON h.compute.warehouse_id = w.warehouse_id
     LEFT JOIN system.access.workspaces_latest wk
       ON h.workspace_id = wk.workspace_id
-    WHERE h.start_time >= '${escapeString(startTime)}'
-      AND h.start_time <= '${escapeString(endTime)}'
+    WHERE h.start_time >= '${validStart}'
+      AND h.start_time <= '${validEnd}'
       AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
       AND h.statement_type IN ('SELECT', 'INSERT', 'MERGE', 'UPDATE', 'DELETE', 'COPY')
       AND h.statement_text NOT LIKE '%system.%'
@@ -134,7 +139,7 @@ export async function listRecentQueries(
       AND h.statement_text NOT LIKE '-- This is a system generated query %'
       ${warehouseFilter}
     ORDER BY h.total_duration_ms DESC
-    LIMIT ${Math.min(Math.max(1, limit), 1000)}
+    LIMIT ${validLimit}
   `;
 
   const result = await executeQuery<QueryHistoryRow>(sql);

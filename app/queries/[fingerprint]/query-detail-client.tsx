@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect, useRef } from "react";
+import { notifyError } from "@/lib/errors";
 import {
   Clock,
   Database,
@@ -483,9 +484,14 @@ export function QueryDetailClient({
   /** Run a full AI analysis (rewrite mode gives diagnosis + rewrite in one shot) */
   function runAnalysis(forceRefresh = false) {
     startAnalyse(async () => {
-      const result = await rewriteQuery(candidate, forceRefresh);
-      setAiResult(result);
-      setActiveAiTab("summary");
+      try {
+        const result = await rewriteQuery(candidate, forceRefresh);
+        setAiResult(result);
+        setActiveAiTab("summary");
+      } catch (err) {
+        notifyError("AI analysis", err);
+        setAiResult({ status: "error", message: err instanceof Error ? err.message : "Analysis failed" });
+      }
     });
   }
 

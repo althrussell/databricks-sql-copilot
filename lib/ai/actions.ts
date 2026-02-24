@@ -18,6 +18,7 @@ import type { Candidate } from "@/lib/domain/types";
 import { fetchAllTableMetadata } from "@/lib/queries/table-metadata";
 import { listWarehouses } from "@/lib/queries/warehouses";
 import { getCachedRewrite, cacheRewrite } from "@/lib/dbx/rewrite-store";
+import { validateWithExplain } from "./explain-validator";
 
 export type { AiResult } from "./aiClient";
 
@@ -103,6 +104,36 @@ export async function rewriteQuery(
     warehouseConfig,
   };
   const result = await callAi("rewrite", context);
+
+  // Validate the rewritten SQL via EXPLAIN before presenting to user
+  if (result.status === "success" && result.mode === "rewrite") {
+    const rewrittenSql = result.data.rewrittenSql;
+    if (
+      rewrittenSql &&
+      !rewrittenSql.startsWith("(Response truncated") &&
+      rewrittenSql !== candidate.sampleQueryText
+    ) {
+      try {
+        const validation = await validateWithExplain(rewrittenSql);
+        if (!validation.valid) {
+          console.warn(
+            `[ai-actions] EXPLAIN validation failed for rewrite: ${validation.error}`
+          );
+          result.data.risks = [
+            ...(result.data.risks ?? []),
+            {
+              risk: `EXPLAIN validation failed: ${validation.error}`,
+              mitigation: "Review the rewritten SQL carefully before executing. The AI-generated SQL may have syntax or semantic errors.",
+            },
+          ];
+        } else {
+          console.log("[ai-actions] EXPLAIN validation passed for rewrite");
+        }
+      } catch (err) {
+        console.warn("[ai-actions] EXPLAIN validation skipped:", err);
+      }
+    }
+  }
 
   // Cache the result in Lakebase for future lookups
   if (result.status === "success" && result.mode === "rewrite") {

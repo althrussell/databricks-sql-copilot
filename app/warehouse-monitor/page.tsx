@@ -42,14 +42,17 @@ async function WarehouseListLoader() {
   const activity: WarehouseActivity[] =
     activityResult.status === "fulfilled" ? activityResult.value : [];
 
+  let fetchError: string | null = null;
   if (warehousesResult.status === "rejected") {
-    console.warn("[warehouse-monitor] warehouse list failed:", warehousesResult.reason);
+    const reason = warehousesResult.reason;
+    fetchError = reason instanceof Error ? reason.message : String(reason);
+    console.warn("[warehouse-monitor] warehouse list failed:", reason);
   }
   if (activityResult.status === "rejected") {
     console.warn("[warehouse-monitor] activity fetch failed:", activityResult.reason);
   }
 
-  return <WarehouseTable warehouses={warehouses} activity={activity} />;
+  return <WarehouseTable warehouses={warehouses} activity={activity} fetchError={fetchError} />;
 }
 
 export default function WarehouseMonitorPage() {

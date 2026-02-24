@@ -10,6 +10,9 @@ import { triageCandidates } from "@/lib/ai/triage";
 import { getQueryActions } from "@/lib/dbx/actions-store";
 import { getWarehouseActivityBuckets } from "@/lib/queries/warehouse-activity";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
+import {
+  fetchTriageTableContext,
+} from "@/lib/queries/table-metadata";
 import type {
   Candidate,
   WarehouseCost,
@@ -80,16 +83,15 @@ export interface DataSourceHealth {
   rowCount: number;
 }
 
-const failedSources: DataSourceHealth[] = [];
-
 function catchAndLogTracked<T>(
   label: string,
-  fallback: T
+  fallback: T,
+  target: DataSourceHealth[]
 ): (err: unknown) => T {
   return (err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[${label}] fetch failed:`, msg);
-    failedSources.push({ name: label, status: "error", error: msg, rowCount: 0 });
+    target.push({ name: label, status: "error", error: msg, rowCount: 0 });
     return fallback;
   };
 }
@@ -118,14 +120,15 @@ async function CoreDashboardLoader({
   let fetchError: string | null = null;
 
   const coreHealth: DataSourceHealth[] = [];
+  const coreFailed: DataSourceHealth[] = [];
 
   try {
     const [warehouseResult, queryResult] = await Promise.all([
       listWarehouses().catch(
-        catchAndLogTracked("warehouses", [] as WarehouseOption[])
+        catchAndLogTracked("warehouses", [] as WarehouseOption[], coreFailed)
       ),
       listRecentQueries({ startTime: start, endTime: end, limit: 1000 }).catch(
-        catchAndLogTracked("query_history", [] as QueryRun[])
+        catchAndLogTracked("query_history", [] as QueryRun[], coreFailed)
       ),
     ]);
 
@@ -176,11 +179,10 @@ async function CoreDashboardLoader({
     console.error("[page] query actions fetch failed:", err);
   }
 
-  // Merge with any failed sources tracked by catchAndLogTracked (dedup by name)
-  const coreFailedEntries = failedSources.splice(0);
+  // Merge failed and ok sources (dedup by name, ok overrides error)
   const coreHealthMap = new Map<string, DataSourceHealth>();
-  for (const h of coreFailedEntries) coreHealthMap.set(h.name, h);
-  for (const h of coreHealth) coreHealthMap.set(h.name, h); // ok overrides error
+  for (const h of coreFailed) coreHealthMap.set(h.name, h);
+  for (const h of coreHealth) coreHealthMap.set(h.name, h);
   const allCoreHealth = [...coreHealthMap.values()];
 
   return (
@@ -218,7 +220,8 @@ function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
   label: string,
-  fallback: T
+  fallback: T,
+  target: DataSourceHealth[]
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
@@ -229,7 +232,7 @@ function withTimeout<T>(
     new Promise<T>((resolve) => {
       timer = setTimeout(() => {
         console.warn(`[${label}] timed out after ${timeoutMs / 1000}s`);
-        failedSources.push({
+        target.push({
           name: label,
           status: "error",
           error: `Timed out after ${timeoutMs / 1000}s`,
@@ -257,35 +260,42 @@ async function EnrichmentLoader({
   queryRuns: QueryRun[];
 }) {
   const enrichHealth: DataSourceHealth[] = [];
+  const enrichFailed: DataSourceHealth[] = [];
   const TIMEOUT_MS = 600_000; // 10 minutes per enrichment query
 
-  // Enrichment: only costs now — events/utilization removed for speed
-  const costResult = await withTimeout(
-    getWarehouseCosts({ startTime: start, endTime: end }).catch(
-      catchAndLogTracked("billing_costs", [] as WarehouseCost[])
+  // Enrichment: costs + table metadata in parallel
+  const sqlTexts = queryRuns.map(r => r.queryText).filter(t => t.length > 0);
+
+  const [costResult, tableContextMap] = await Promise.all([
+    withTimeout(
+      getWarehouseCosts({ startTime: start, endTime: end }).catch(
+        catchAndLogTracked("billing_costs", [] as WarehouseCost[], enrichFailed)
+      ),
+      TIMEOUT_MS,
+      "billing_costs",
+      [] as WarehouseCost[],
+      enrichFailed
     ),
-    TIMEOUT_MS,
-    "billing_costs",
-    [] as WarehouseCost[]
-  );
+    fetchTriageTableContext(sqlTexts).catch((err) => {
+      console.warn("[phase2] table metadata fetch failed:", err);
+      return new Map() as Awaited<ReturnType<typeof fetchTriageTableContext>>;
+    }),
+  ]);
 
   enrichHealth.push(
     { name: "billing_costs", status: "ok", rowCount: costResult.length }
   );
 
-  // Merge with any failed sources — ok entries take priority over error entries
-  // (if we got data, the source is ok even if the timeout race also fired)
-  const failedEntries = failedSources.splice(0);
+  // Merge failed and ok sources (ok overrides error)
   const enrichHealthMap = new Map<string, DataSourceHealth>();
-  for (const h of failedEntries) enrichHealthMap.set(h.name, h);
-  // ok entries overwrite error entries (last-write-wins, ok comes second)
+  for (const h of enrichFailed) enrichHealthMap.set(h.name, h);
   for (const h of enrichHealth) enrichHealthMap.set(h.name, h);
-  // Remove warehouse_events — no longer tracked
   enrichHealthMap.delete("warehouse_events");
   const finalEnrichHealth = [...enrichHealthMap.values()];
 
-  // Re-build candidates with cost allocation
-  const candidates = buildCandidates(queryRuns, costResult);
+  // Re-build candidates with cost allocation and table context for performance flags
+  const flagTableContext = tableContextMap.size > 0 ? { tables: tableContextMap } : undefined;
+  const candidates = buildCandidates(queryRuns, costResult, flagTableContext);
 
   console.log(`[phase2] costs=${costResult.length}`);
 
@@ -320,12 +330,14 @@ async function AiTriageLoader({
   const TRIAGE_TIMEOUT_MS = 60_000; // 60 seconds max
 
   let triageMap: Record<string, { insight: string; action: string }> = {};
+  const triageFailed: DataSourceHealth[] = [];
   try {
     triageMap = await withTimeout(
       triageCandidates(candidates),
       TRIAGE_TIMEOUT_MS,
       "ai_triage",
-      {} as Record<string, { insight: string; action: string }>
+      {} as Record<string, { insight: string; action: string }>,
+      triageFailed
     );
   } catch (err) {
     console.error("[ai-triage] loader failed:", err);

@@ -60,6 +60,7 @@ import {
   fetchMonitorInsights,
 } from "@/lib/dbx/rest-actions";
 import type { TriageInsight } from "@/lib/ai/triage";
+import { notifyError } from "@/lib/errors";
 
 // ── Query filter types ─────────────────────────────────────────────
 
@@ -234,7 +235,7 @@ export function WarehouseMonitor({
           // Bump tick so the timeline range recalculates with fresh Date.now()
           setRefreshTick((t) => t + 1);
         } catch (err) {
-          console.error("[warehouse-monitor] refresh failed:", err);
+          notifyError("Refresh warehouse data", err);
         }
       });
     },
@@ -258,7 +259,7 @@ export function WarehouseMonitor({
       setNextPageToken(result.nextPageToken);
       setHasNextPage(result.hasNextPage);
     } catch (err) {
-      console.error("[warehouse-monitor] load more failed:", err);
+      notifyError("Load more queries", err);
     } finally {
       setIsLoadingMore(false);
     }
@@ -300,8 +301,8 @@ export function WarehouseMonitor({
         setInsightsMessage("AI returned no actionable insights");
       }
     } catch (err) {
+      notifyError("Fetch AI insights", err);
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[warehouse-monitor] insights failed:", msg);
       setInsightsMessage(`Error: ${msg.slice(0, 100)}`);
     } finally {
       setIsLoadingInsights(false);
@@ -426,7 +427,7 @@ export function WarehouseMonitor({
           setNextPageToken(newQueries.nextPageToken);
           setHasNextPage(newQueries.hasNextPage);
         } catch (err) {
-          console.error("[warehouse-monitor] zoom refetch failed:", err);
+          notifyError("Update timeline", err);
         }
       });
     },

@@ -1,15 +1,15 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { WarehouseCost } from "@/lib/domain/types";
+import {
+  validateIdentifier,
+  validateTimestamp,
+} from "@/lib/validation";
 
 export interface GetWarehouseCostsParams {
   startTime: string; // ISO timestamp
   endTime: string; // ISO timestamp
   /** Optional — if omitted, costs from ALL warehouses are returned */
   warehouseId?: string;
-}
-
-function escapeString(value: string): string {
-  return value.replace(/'/g, "''");
 }
 
 /**
@@ -29,22 +29,23 @@ export async function getWarehouseCosts(
 ): Promise<WarehouseCost[]> {
   const { startTime, endTime, warehouseId } = params;
 
+  const validStart = validateTimestamp(startTime, "startTime");
+  const validEnd = validateTimestamp(endTime, "endTime");
+
   const warehouseFilter = warehouseId
-    ? `AND u.usage_metadata.warehouse_id = '${escapeString(warehouseId)}'`
+    ? `AND u.usage_metadata.warehouse_id = '${validateIdentifier(warehouseId, "warehouseId")}'`
     : "";
 
   // Derive date bounds for partition pruning
-  const startDate = startTime.slice(0, 10); // YYYY-MM-DD
-  const endDate = endTime.slice(0, 10);
+  const startDate = validStart.slice(0, 10); // YYYY-MM-DD
+  const endDate = validEnd.slice(0, 10);
 
   // Midpoint of the time window — used to pick the effective price
   const midpointMs =
-    (new Date(startTime).getTime() + new Date(endTime).getTime()) / 2;
+    (new Date(validStart).getTime() + new Date(validEnd).getTime()) / 2;
   const midpoint = new Date(midpointMs).toISOString();
 
   // ── Query 1: DBU totals per warehouse + SKU ──
-  // Uses usage_date (DATE column) for partition pruning — NOT CAST(usage_start_time AS DATE).
-  // The schema says: "usage_date: this field can be used for faster aggregation by date"
   const dbuSql = `
     SELECT
       u.usage_metadata.warehouse_id AS warehouse_id,
@@ -56,8 +57,8 @@ export async function getWarehouseCosts(
       AND u.usage_unit = 'DBU'
       AND u.sku_name LIKE '%SQL_COMPUTE%'
       AND u.usage_metadata.warehouse_id IS NOT NULL
-      AND u.usage_start_time >= '${escapeString(startTime)}'
-      AND u.usage_start_time <= '${escapeString(endTime)}'
+      AND u.usage_start_time >= '${validStart}'
+      AND u.usage_start_time <= '${validEnd}'
       ${warehouseFilter}
     GROUP BY
       u.usage_metadata.warehouse_id,
@@ -65,7 +66,7 @@ export async function getWarehouseCosts(
     ORDER BY total_dbus DESC
   `;
 
-  // ── Query 2: effective price per SKU at the window midpoint (tiny) ──
+  // ── Query 2: effective price per SKU at the window midpoint ──
   const priceSql = `
     SELECT
       sku_name,
@@ -73,8 +74,8 @@ export async function getWarehouseCosts(
     FROM system.billing.list_prices
     WHERE sku_name LIKE '%SQL_COMPUTE%'
       AND pricing.effective_list.\`default\` IS NOT NULL
-      AND price_start_time <= '${escapeString(midpoint)}'
-      AND (price_end_time IS NULL OR price_end_time > '${escapeString(midpoint)}')
+      AND price_start_time <= '${midpoint}'
+      AND (price_end_time IS NULL OR price_end_time > '${midpoint}')
     QUALIFY ROW_NUMBER() OVER (PARTITION BY sku_name ORDER BY price_start_time DESC) = 1
   `;
 

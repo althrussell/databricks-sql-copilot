@@ -1,5 +1,9 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { WarehouseActivity } from "@/lib/domain/types";
+import {
+  validateIdentifier,
+  validateTimestamp,
+} from "@/lib/validation";
 
 /**
  * Raw row from the time-bucketed activity query.
@@ -8,13 +12,6 @@ interface ActivityRow {
   warehouse_id: string;
   bucket: string; // ISO timestamp
   query_count: number;
-}
-
-/**
- * Escape a string for safe SQL interpolation.
- */
-function escapeString(value: string): string {
-  return value.replace(/'/g, "''");
 }
 
 /**
@@ -37,12 +34,13 @@ export async function getWarehouseActivityBuckets(params: {
     bucketIntervalMinutes = 60,
   } = params;
 
+  const validStart = validateTimestamp(startTime, "startTime");
+  const validEnd = validateTimestamp(endTime, "endTime");
+
   const warehouseFilter = warehouseId
-    ? `AND h.compute.warehouse_id = '${escapeString(warehouseId)}'`
+    ? `AND h.compute.warehouse_id = '${validateIdentifier(warehouseId, "warehouseId")}'`
     : "";
 
-  // Use FLOOR + division to bucket into arbitrary intervals
-  // For hourly (60 min), date_trunc('hour', ...) is cleaner
   const bucketExpr =
     bucketIntervalMinutes === 60
       ? "date_trunc('hour', h.start_time)"
@@ -54,8 +52,8 @@ export async function getWarehouseActivityBuckets(params: {
       ${bucketExpr} AS bucket,
       COUNT(*) AS query_count
     FROM system.query.history h
-    WHERE h.start_time >= '${escapeString(startTime)}'
-      AND h.start_time < '${escapeString(endTime)}'
+    WHERE h.start_time >= '${validStart}'
+      AND h.start_time < '${validEnd}'
       ${warehouseFilter}
     GROUP BY h.compute.warehouse_id, bucket
     ORDER BY h.compute.warehouse_id, bucket

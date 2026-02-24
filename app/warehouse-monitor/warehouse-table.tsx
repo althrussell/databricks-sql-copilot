@@ -5,13 +5,14 @@ import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { MiniStepChart } from "@/components/charts/mini-step-chart";
-import { Search, Server } from "lucide-react";
+import { AlertTriangle, Search, Server } from "lucide-react";
 import type { WarehouseInfo } from "@/lib/dbx/rest-client";
 import type { WarehouseActivity } from "@/lib/domain/types";
 
 interface WarehouseTableProps {
   warehouses: WarehouseInfo[];
   activity: WarehouseActivity[];
+  fetchError?: string | null;
 }
 
 /** Green/red/amber dot based on warehouse state */
@@ -32,7 +33,7 @@ function StateDot({ state }: { state: string }) {
   return <span className="inline-flex rounded-full h-2.5 w-2.5 bg-muted-foreground/40 shrink-0" />;
 }
 
-export function WarehouseTable({ warehouses, activity }: WarehouseTableProps) {
+export function WarehouseTable({ warehouses, activity, fetchError }: WarehouseTableProps) {
   const [search, setSearch] = useState("");
 
   // Build activity sparkline data and total counts by warehouse
@@ -68,6 +69,20 @@ export function WarehouseTable({ warehouses, activity }: WarehouseTableProps) {
       return a.name.localeCompare(b.name);
     });
   }, [warehouses, search]);
+
+  if (fetchError) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
+          <p className="text-sm font-medium text-destructive mb-1">
+            Failed to load warehouses
+          </p>
+          <p className="text-xs text-muted-foreground">{fetchError}</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (warehouses.length === 0) {
     return (

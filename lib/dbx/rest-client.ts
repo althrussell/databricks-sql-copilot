@@ -11,6 +11,8 @@
 
 import { getConfig } from "@/lib/config";
 import { fingerprint as computeFingerprint } from "@/lib/domain/sql-fingerprint";
+import { fetchWithTimeout, TIMEOUTS } from "@/lib/dbx/fetch-with-timeout";
+import { validateIdentifier } from "@/lib/validation";
 import type {
   WarehouseLiveStats,
   EndpointMetric,
@@ -26,11 +28,38 @@ let _tokenExpiresAt = 0;
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
+ * On-behalf-of-user (OBO) token from the Databricks Apps proxy.
+ * When deployed as a Databricks App, the proxy forwards the logged-in
+ * user's token via the x-forwarded-access-token header.
+ * Set this per-request to run queries under user identity.
+ */
+let _oboToken: string | null = null;
+
+/**
+ * Set the on-behalf-of-user token for the current request context.
+ * Call from middleware or request handlers when deployed as a Databricks App.
+ */
+export function setOboToken(token: string | null): void {
+  _oboToken = token;
+}
+
+/**
+ * Get the current OBO token, if set.
+ */
+export function getOboToken(): string | null {
+  return _oboToken;
+}
+
+/**
  * Get a bearer token for REST API calls.
- * - PAT mode: returns the token directly.
- * - OAuth mode: exchanges client credentials for an access token, caches it.
+ * Priority: OBO token > PAT > OAuth client credentials.
  */
 async function getBearerToken(): Promise<string> {
+  // OBO token takes priority when available (runs as the logged-in user)
+  if (_oboToken) {
+    return _oboToken;
+  }
+
   const config = getConfig();
 
   if (config.auth.mode === "pat") {
@@ -54,14 +83,14 @@ async function getBearerToken(): Promise<string> {
     `${config.auth.clientId}:${config.auth.clientSecret}`
   );
 
-  const response = await fetch(tokenUrl, {
+  const response = await fetchWithTimeout(tokenUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Authorization: `Basic ${credentials}`,
     },
     body: body.toString(),
-  });
+  }, { timeoutMs: TIMEOUTS.AUTH });
 
   if (!response.ok) {
     const text = await response.text();
@@ -131,12 +160,12 @@ async function dbxFetchInner<T>(
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: options.method ?? "GET",
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     cache: "no-store",
-  });
+  }, { timeoutMs: TIMEOUTS.REST_API });
 
   if (!response.ok) {
     const text = await response.text();
@@ -309,8 +338,9 @@ export async function listWarehousesRest(): Promise<WarehouseInfo[]> {
 export async function getWarehouseDetail(
   warehouseId: string
 ): Promise<WarehouseInfo> {
+  const validId = validateIdentifier(warehouseId, "warehouseId");
   const w = await dbxFetch<WarehouseApiResponse>(
-    `/api/2.0/sql/warehouses/${warehouseId}`
+    `/api/2.0/sql/warehouses/${validId}`
   );
 
   return {
@@ -335,9 +365,9 @@ export async function getWarehouseDetail(
 export async function getWarehouseLiveStats(
   warehouseId: string
 ): Promise<WarehouseLiveStats> {
-  // The stats endpoint path can vary — try the standard one
+  const validId = validateIdentifier(warehouseId, "warehouseId");
   const data = await dbxFetch<WarehouseStatsResponse>(
-    `/api/2.0/sql/warehouses/${warehouseId}/stats`
+    `/api/2.0/sql/warehouses/${validId}/stats`
   );
 
   return {

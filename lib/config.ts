@@ -9,32 +9,41 @@
  *
  * Local-dev vars (.env.local):
  *   DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_WAREHOUSE_ID
+ *
+ * All env vars are validated with Zod at startup for early, descriptive errors.
  */
 
+import { z } from "zod";
+
+const HOST_RE = /^https?:\/\/.+\..+/;
+const WAREHOUSE_ID_RE = /^[a-f0-9-]+$/i;
+
+const EnvSchema = z.object({
+  DATABRICKS_HOST: z
+    .string({ error: "Missing DATABRICKS_HOST. Set it to your workspace URL (e.g. https://my-workspace.cloud.databricks.com)." })
+    .min(1, "DATABRICKS_HOST cannot be empty")
+    .refine((v) => HOST_RE.test(v), {
+      message: "DATABRICKS_HOST must be a valid URL (e.g. https://my-workspace.cloud.databricks.com)",
+    }),
+  DATABRICKS_WAREHOUSE_ID: z
+    .string({ error: "Missing DATABRICKS_WAREHOUSE_ID. Set it to your SQL warehouse ID." })
+    .min(1, "DATABRICKS_WAREHOUSE_ID cannot be empty")
+    .refine((v) => WAREHOUSE_ID_RE.test(v), {
+      message: "DATABRICKS_WAREHOUSE_ID must be alphanumeric with hyphens (e.g. abc123def456)",
+    }),
+  DATABRICKS_CLIENT_ID: z.string().optional(),
+  DATABRICKS_CLIENT_SECRET: z.string().optional(),
+  DATABRICKS_TOKEN: z.string().optional(),
+});
+
 export interface AppConfig {
-  /** Workspace hostname without protocol, e.g. "my-workspace.cloud.databricks.com" */
   serverHostname: string;
-  /** Full workspace URL, e.g. "https://my-workspace.cloud.databricks.com" */
   host: string;
-  /** SQL warehouse ID */
   warehouseId: string;
-  /** HTTP path for the SQL driver: /sql/1.0/warehouses/<id> */
   httpPath: string;
-  /** Auth mode determined from available env vars */
   auth:
     | { mode: "oauth"; clientId: string; clientSecret: string }
     | { mode: "pat"; token: string };
-}
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `Missing required environment variable: ${name}. ` +
-        `See .env.local.example for local dev setup or docs/07_DEPLOYMENT.md for Databricks Apps.`
-    );
-  }
-  return value;
 }
 
 function stripProtocol(url: string): string {
@@ -46,27 +55,38 @@ let _config: AppConfig | null = null;
 export function getConfig(): AppConfig {
   if (_config) return _config;
 
-  const host = requireEnv("DATABRICKS_HOST");
-  const serverHostname = stripProtocol(host);
-  const warehouseId = requireEnv("DATABRICKS_WAREHOUSE_ID");
-  const httpPath = `/sql/1.0/warehouses/${warehouseId}`;
+  const result = EnvSchema.safeParse({
+    DATABRICKS_HOST: process.env.DATABRICKS_HOST,
+    DATABRICKS_WAREHOUSE_ID: process.env.DATABRICKS_WAREHOUSE_ID,
+    DATABRICKS_CLIENT_ID: process.env.DATABRICKS_CLIENT_ID,
+    DATABRICKS_CLIENT_SECRET: process.env.DATABRICKS_CLIENT_SECRET,
+    DATABRICKS_TOKEN: process.env.DATABRICKS_TOKEN,
+  });
 
-  // Determine auth: OAuth (deployed on Databricks Apps) or PAT (local dev)
-  const clientId = process.env.DATABRICKS_CLIENT_ID;
-  const clientSecret = process.env.DATABRICKS_CLIENT_SECRET;
-  const token = process.env.DATABRICKS_TOKEN;
+  if (!result.success) {
+    const messages = result.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
+    throw new Error(
+      `Configuration validation failed:\n${messages}\n\nSee .env.local.example for local dev setup or docs/07_DEPLOYMENT.md for Databricks Apps.`
+    );
+  }
+
+  const env = result.data;
+  const host = env.DATABRICKS_HOST;
+  const serverHostname = stripProtocol(host);
+  const warehouseId = env.DATABRICKS_WAREHOUSE_ID;
+  const httpPath = `/sql/1.0/warehouses/${warehouseId}`;
 
   let auth: AppConfig["auth"];
 
-  if (clientId && clientSecret) {
-    auth = { mode: "oauth", clientId, clientSecret };
-  } else if (token) {
-    auth = { mode: "pat", token };
+  if (env.DATABRICKS_CLIENT_ID && env.DATABRICKS_CLIENT_SECRET) {
+    auth = { mode: "oauth", clientId: env.DATABRICKS_CLIENT_ID, clientSecret: env.DATABRICKS_CLIENT_SECRET };
+  } else if (env.DATABRICKS_TOKEN) {
+    auth = { mode: "pat", token: env.DATABRICKS_TOKEN };
   } else {
     throw new Error(
-      "No auth credentials found. " +
-        "Set DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET (Databricks Apps) " +
-        "or DATABRICKS_TOKEN (local dev)."
+      "No auth credentials found.\n" +
+        "  Set DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET (Databricks Apps)\n" +
+        "  or DATABRICKS_TOKEN (local dev with PAT)."
     );
   }
 

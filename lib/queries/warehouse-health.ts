@@ -6,6 +6,8 @@ import { executeQuery } from "@/lib/dbx/sql-client";
  *
  * This module is called on-demand (not on every page load)
  * when the admin clicks "Warehouse Health".
+ *
+ * NOTE: Pre-computes timestamps in TypeScript to enable query result caching.
  * ────────────────────────────────────────────── */
 
 /** One row per warehouse per day from the aggregation query */
@@ -36,6 +38,8 @@ export interface WarehouseUserRow {
  * groups and aggregates them.
  */
 export async function fetchWarehouseHealthMetrics(): Promise<WarehouseHealthRow[]> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
   const sql = `
     SELECT
       h.compute.warehouse_id AS warehouse_id,
@@ -48,7 +52,7 @@ export async function fetchWarehouseHealthMetrics(): Promise<WarehouseHealthRow[
       AVG(h.total_duration_ms) / 1000.0 AS avg_runtime_sec,
       PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY h.total_duration_ms) / 1000.0 AS p95_sec
     FROM system.query.history h
-    WHERE h.start_time >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())
+    WHERE h.start_time >= '${sevenDaysAgo}'
       AND h.compute.warehouse_id IS NOT NULL
       AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
       AND h.statement_text NOT LIKE '-- This is a system generated query %'
@@ -88,6 +92,8 @@ export async function fetchWarehouseHealthMetrics(): Promise<WarehouseHealthRow[
  * Used to populate the "Who's Affected" section of each recommendation.
  */
 export async function fetchWarehouseTopUsers(): Promise<WarehouseUserRow[]> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
   const sql = `
     SELECT
       h.compute.warehouse_id AS warehouse_id,
@@ -106,7 +112,7 @@ export async function fetchWarehouseTopUsers(): Promise<WarehouseUserRow[]> {
         ELSE 'ad-hoc'
       END AS source_type
     FROM system.query.history h
-    WHERE h.start_time >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())
+    WHERE h.start_time >= '${sevenDaysAgo}'
       AND h.compute.warehouse_id IS NOT NULL
       AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
       AND h.statement_text NOT LIKE '-- This is a system generated query %'
@@ -148,6 +154,8 @@ export interface WarehouseHourlyRow {
  * Aggregates across all 7 days for each hour bucket to show busy patterns.
  */
 export async function fetchWarehouseHourlyActivity(): Promise<WarehouseHourlyRow[]> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
   const sql = `
     SELECT
       h.compute.warehouse_id AS warehouse_id,
@@ -158,7 +166,7 @@ export async function fetchWarehouseHourlyActivity(): Promise<WarehouseHourlyRow
       SUM(COALESCE(h.spilled_local_bytes, 0)) / POWER(1024, 3) AS spill_gib,
       AVG(h.total_duration_ms) / 1000.0 AS avg_runtime_sec
     FROM system.query.history h
-    WHERE h.start_time >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())
+    WHERE h.start_time >= '${sevenDaysAgo}'
       AND h.compute.warehouse_id IS NOT NULL
       AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
       AND h.statement_text NOT LIKE '-- This is a system generated query %'

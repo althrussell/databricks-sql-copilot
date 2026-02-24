@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LayoutDashboard, HeartPulse, Monitor } from "lucide-react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -95,6 +96,7 @@ export default function RootLayout({
 
           {/* ── Main content — L0 canvas ── */}
           <main>{children}</main>
+          <Toaster richColors position="top-right" closeButton />
         </ThemeProvider>
       </body>
     </html>

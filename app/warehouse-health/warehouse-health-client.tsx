@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { notifyError } from "@/lib/errors";
 import {
   Activity,
   AlertTriangle,
@@ -595,6 +596,7 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
       setRecommendations(null);
+      notifyError("Warehouse health analysis", err);
     } finally {
       setLoading(false);
     }

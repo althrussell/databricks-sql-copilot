@@ -11,6 +11,7 @@
  */
 
 import { executeQuery } from "@/lib/dbx/sql-client";
+import { validateIdentifier } from "@/lib/validation";
 
 /* ── Types ── */
 
@@ -101,7 +102,7 @@ export function extractTableNames(sql: string): string[] {
 
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(sql)) !== null) {
-    let name = match[1].trim();
+    const name = match[1].trim();
 
     // Skip system tables, CTEs, subquery aliases, and keywords
     const bare = name.replace(/`/g, "").toLowerCase();
@@ -152,7 +153,7 @@ async function fetchDescribeDetail(
         } catch {
           // Not JSON — try comma-separated
           return val
-            .replace(/[\[\]]/g, "")
+            .replace(/[[\]]/g, "")
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean);
@@ -237,7 +238,7 @@ async function fetchColumns(
     }
 
     const catalogFilter = catalog
-      ? `AND table_catalog = '${escape(catalog)}'`
+      ? `AND table_catalog = '${escapeIdentifierPart(catalog)}'`
       : "";
 
     const sql = `
@@ -248,9 +249,9 @@ async function fetchColumns(
         ordinal_position,
         comment,
         partition_ordinal_position
-      FROM ${catalog ? `${escape(catalog)}.` : ""}information_schema.columns
-      WHERE table_schema = '${escape(schema)}'
-        AND table_name = '${escape(table)}'
+      FROM ${catalog ? `${escapeIdentifierPart(catalog)}.` : ""}information_schema.columns
+      WHERE table_schema = '${escapeIdentifierPart(schema)}'
+        AND table_name = '${escapeIdentifierPart(table)}'
         ${catalogFilter}
       ORDER BY ordinal_position
       LIMIT 100
@@ -338,7 +339,7 @@ async function fetchMaintenanceHistory(
   try {
     const sql = `
       SELECT timestamp, operation
-      FROM TABLE(describe_history('${escape(tableName)}'))
+      FROM TABLE(describe_history('${tableName}'))
       WHERE operation IN ('OPTIMIZE', 'VACUUM', 'VACUUM START', 'VACUUM END', 'ANALYZE')
       ORDER BY timestamp DESC
       LIMIT 20
@@ -629,6 +630,10 @@ export function formatTriageTableContext(
 
 /* ── Helpers ── */
 
-function escape(s: string): string {
-  return s.replace(/'/g, "''");
+/**
+ * Validate and sanitize a table name part for use in SQL.
+ * Uses validateIdentifier for strict injection prevention.
+ */
+function escapeIdentifierPart(s: string): string {
+  return validateIdentifier(s, "table name part");
 }

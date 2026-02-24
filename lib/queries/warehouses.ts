@@ -42,8 +42,11 @@ interface WarehouseRow {
  *
  * NOTE: system.compute.warehouses uses `warehouse_name` (not `name`)
  * NOTE: system.query.history stores warehouse_id inside `compute` struct
+ * NOTE: Pre-computes the 7-day cutoff timestamp in TypeScript to enable query result caching
  */
 export async function listWarehouses(): Promise<WarehouseOption[]> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
   const sql = `
     SELECT
       w.warehouse_id,
@@ -62,7 +65,7 @@ export async function listWarehouses(): Promise<WarehouseOption[]> {
         compute.warehouse_id AS warehouse_id,
         COUNT(*) AS recent_query_count
       FROM system.query.history
-      WHERE start_time >= DATEADD(DAY, -7, CURRENT_TIMESTAMP())
+      WHERE start_time >= '${sevenDaysAgo}'
         AND execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
         AND statement_type IN ('SELECT', 'INSERT', 'MERGE', 'UPDATE', 'DELETE', 'COPY')
       GROUP BY compute.warehouse_id

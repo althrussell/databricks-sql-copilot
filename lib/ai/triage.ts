@@ -9,14 +9,20 @@
  *   - Compact prompt (~100 tokens per candidate)
  *   - No table metadata fetch (keeps it fast)
  *   - Graceful degradation: returns empty map on failure
+ *   - PII protection: all SQL text is normalized before sending to AI
  */
 
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { Candidate } from "@/lib/domain/types";
+import { normalizeSql } from "@/lib/domain/sql-fingerprint";
 import {
   fetchTriageTableContext,
   formatTriageTableContext,
 } from "@/lib/queries/table-metadata";
+import { TriageItemSchema, validateLLMArray } from "@/lib/validation";
+import { aiSemaphore } from "@/lib/ai/semaphore";
+import { renderPrompt } from "@/lib/ai/prompts/registry";
+import { writePromptLog } from "@/lib/ai/prompt-logger";
 
 const TRIAGE_MODEL = "databricks-llama-4-maverick";
 const MAX_CANDIDATES = 15;
@@ -52,10 +58,11 @@ function fmtMs(ms: number): string {
 
 /**
  * Build a compact summary line for one candidate (~80-120 tokens).
+ * SQL text is normalized to mask literals (PII protection).
  */
 function candidateSummary(c: Candidate): string {
   const ws = c.windowStats;
-  const sqlSnippet = c.sampleQueryText
+  const sqlSnippet = normalizeSql(c.sampleQueryText)
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 200);
@@ -120,76 +127,100 @@ export async function triageCandidates(
     console.warn("[ai-triage] table metadata fetch failed, continuing without:", err);
   }
 
-  const candidateLines = top
-    .map((c, i) => `[${i + 1}] ${candidateSummary(c)}`)
-    .join("\n\n");
+  const triageItems = top.map((c) => ({
+    id: c.fingerprint,
+    summaryLine: candidateSummary(c),
+  }));
 
-  const prompt = `You are a Databricks SQL performance triage expert. Below are ${top.length} slow query patterns from a SQL warehouse. For each one, provide:
-1. A concise 1-2 sentence insight explaining the root cause and what to do
-2. An action category: "rewrite" (SQL can be improved), "cluster" (table needs Liquid Clustering), "optimize" (needs OPTIMIZE/VACUUM/compaction), "resize" (warehouse sizing issue), or "investigate" (needs deeper analysis)
+  const rendered = renderPrompt("triage", {
+    triageItems,
+    tableContextBlock: tableContextBlock || undefined,
+  });
 
-Key Databricks best practices to flag:
-- Low pruning efficiency (<50%) almost always means the table needs Liquid Clustering — recommend it explicitly.
-- Large full table scans suggest missing clustering or partitioning — recommend Liquid Clustering and Predictive Optimization.
-- If a query reads many GB with poor cache hit rates, the table likely needs OPTIMIZE and Predictive Optimization enabled.
-- Always prefer Liquid Clustering over Z-ORDER on all tables.
-- If producedRows >> readRows (ratio > 2x), flag as Exploding Join — recommend adding join conditions or pre-filtering.
-- If readRows >> producedRows (ratio > 10x), flag as Filtering Join — recommend filtering before the join.
-- If queueWaitMs > 50% of executionMs, this is a SCALING problem — recommend adding clusters or Serverless, NOT query rewrites.
-- High spill relative to data read suggests the warehouse needs a LARGER size (more memory per node), not just query optimization.
-- If the query is from a BI tool (Tableau, Power BI, Looker) and has low pruning, the BI tool may not be pushing filters down — recommend checking BI connection settings.
-- For frequently repeated aggregation patterns with low cache hit rates on tables with frequent writes, recommend Materialized Views over result cache.
-
-Focus on the most impactful observation per query. Be specific — reference actual metrics.
-
-Respond with ONLY a valid JSON array (no markdown, no explanation outside JSON):
-[{"id":"<fingerprint>","insight":"<1-2 sentences>","action":"<category>"}]
-
-## Query Patterns
-
-${candidateLines}${tableContextBlock}`;
-
-  const escapedPrompt = escapeForSql(prompt);
+  const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
+  const escapedPrompt = escapeForSql(combinedPrompt);
 
   const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}') AS response`;
 
+  const t0 = Date.now();
   try {
-    const t0 = Date.now();
     console.log(`[ai-triage] calling ${TRIAGE_MODEL} for ${top.length} candidates${tableContextBlock ? ` (with table context)` : ""}`);
 
+    // Use semaphore for concurrency control
+    const result = await aiSemaphore.run(async () => {
+      // Race the query against a timeout
+      const resultPromise = executeQuery<{ response: string }>(sql);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`AI triage timed out after ${TRIAGE_TIMEOUT_MS / 1000}s`)),
+          TRIAGE_TIMEOUT_MS
+        )
+      );
+      return Promise.race([resultPromise, timeoutPromise]);
+    });
 
-    // Race the query against a timeout
-    const resultPromise = executeQuery<{ response: string }>(sql);
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`AI triage timed out after ${TRIAGE_TIMEOUT_MS / 1000}s`)),
-        TRIAGE_TIMEOUT_MS
-      )
-    );
-    const result = await Promise.race([resultPromise, timeoutPromise]);
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    const durationMs = Date.now() - t0;
+    const elapsed = (durationMs / 1000).toFixed(1);
 
     if (!result.rows.length || !result.rows[0].response) {
       console.warn(`[ai-triage] empty response (${elapsed}s)`);
+      writePromptLog({
+        timestamp: new Date().toISOString(),
+        promptKey: "triage",
+        promptVersion: rendered.version,
+        model: TRIAGE_MODEL,
+        estimatedInputTokens: rendered.estimatedTokens,
+        outputChars: 0,
+        durationMs,
+        success: false,
+        errorMessage: "Empty response",
+      });
       return {};
     }
 
     const raw = result.rows[0].response;
     const parsed = parseTriageResponse(raw, top);
+    const insightCount = Object.keys(parsed).length;
+
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "triage",
+      promptVersion: rendered.version,
+      model: TRIAGE_MODEL,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: raw.length,
+      durationMs,
+      success: insightCount > 0,
+      renderedPrompt: combinedPrompt,
+      rawResponse: raw,
+    });
+
     console.log(
-      `[ai-triage] got insights for ${Object.keys(parsed).length}/${top.length} candidates in ${elapsed}s`
+      `[ai-triage] got insights for ${insightCount}/${top.length} candidates in ${elapsed}s`
     );
     return parsed;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    const durationMs = Date.now() - t0;
     console.error("[ai-triage] failed:", msg);
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "triage",
+      promptVersion: rendered.version,
+      model: TRIAGE_MODEL,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: 0,
+      durationMs,
+      success: false,
+      errorMessage: msg,
+    });
     return {};
   }
 }
 
 /**
  * Parse the AI response into a TriageMap.
- * Handles markdown fences, partial JSON, and missing fields gracefully.
+ * Uses Zod schema validation for graceful handling of partial/malformed responses.
  */
 function parseTriageResponse(
   raw: string,
@@ -210,33 +241,19 @@ function parseTriageResponse(
     jsonStr = jsonStr.slice(firstBracket, lastBracket + 1);
   }
 
-  // Valid action categories
-  const validActions = new Set([
-    "rewrite",
-    "cluster",
-    "optimize",
-    "resize",
-    "investigate",
-  ]);
-  // Valid fingerprints from the input
   const validFingerprints = new Set(candidates.map((c) => c.fingerprint));
 
   try {
     const arr = JSON.parse(jsonStr);
     if (!Array.isArray(arr)) return {};
 
+    const validItems = validateLLMArray(arr, TriageItemSchema, "ai-triage");
+
     const result: TriageMap = {};
-    for (const item of arr) {
+    for (const item of validItems) {
       const fp = item.id ?? item.fingerprint;
       if (!fp || !validFingerprints.has(fp)) continue;
-      const action = validActions.has(item.action) ? item.action : "investigate";
-      const insight =
-        typeof item.insight === "string" && item.insight.length > 0
-          ? item.insight
-          : null;
-      if (insight) {
-        result[fp] = { insight, action };
-      }
+      result[fp] = { insight: item.insight, action: item.action };
     }
     return result;
   } catch {

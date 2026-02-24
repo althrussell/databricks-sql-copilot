@@ -9,7 +9,7 @@
 import type { QueryRun, Candidate, QueryOrigin, WarehouseCost } from "@/lib/domain/types";
 import { fingerprint } from "@/lib/domain/sql-fingerprint";
 import { scoreCandidate, type ScoreInput } from "@/lib/domain/scoring";
-import { computeFlags, filterAndRankFlags } from "@/lib/domain/performance-flags";
+import { computeFlags, filterAndRankFlags, type FlagTableContext } from "@/lib/domain/performance-flags";
 import {
   isDbtQuery,
   extractDbtMetadata,
@@ -67,7 +67,8 @@ function avg(values: number[]): number {
  */
 export function buildCandidates(
   runs: QueryRun[],
-  warehouseCosts: WarehouseCost[] = []
+  warehouseCosts: WarehouseCost[] = [],
+  tableContext?: FlagTableContext
 ): Candidate[] {
   // Aggregate costs per warehouse (dollars come pre-computed from SQL join)
   const whDollarCost = new Map<string, number>();
@@ -307,7 +308,7 @@ export function buildCandidates(
     };
 
     // ── P4: Performance flags (with impact-based filtering & ranking) ──
-    const rawFlags = computeFlags(candidate);
+    const rawFlags = computeFlags(candidate, undefined, tableContext);
     candidate.performanceFlags = filterAndRankFlags(rawFlags);
 
     candidates.push(candidate);

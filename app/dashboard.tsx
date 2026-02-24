@@ -128,6 +128,7 @@ import type {
   WarehouseActivity,
 } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
+import { notifyError, notifySuccess } from "@/lib/errors";
 
 /* ── Constants ── */
 
@@ -1460,13 +1461,16 @@ export function Dashboard({
       [fingerprint]: { action, note: null, actedBy: null, actedAt: new Date().toISOString() },
     }));
     try {
-      await fetch("/api/query-actions", {
+      const res = await fetch("/api/query-actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fingerprint, action }),
       });
+      if (!res.ok) throw new Error(`Server error (${res.status})`);
+      const actionLabels: Record<string, string> = { dismiss: "Query dismissed", watch: "Query marked as watched", applied: "Recommendation applied" };
+      notifySuccess(actionLabels[action] ?? "Action saved");
     } catch (err) {
-      console.error("[query-actions] set failed:", err);
+      notifyError("Update query action", err);
     }
   }, []);
 
@@ -1477,13 +1481,15 @@ export function Dashboard({
       return next;
     });
     try {
-      await fetch("/api/query-actions", {
+      const res = await fetch("/api/query-actions", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fingerprint }),
       });
+      if (!res.ok) throw new Error(`Server error (${res.status})`);
+      notifySuccess("Action cleared");
     } catch (err) {
-      console.error("[query-actions] clear failed:", err);
+      notifyError("Clear query action", err);
     }
   }, []);
 

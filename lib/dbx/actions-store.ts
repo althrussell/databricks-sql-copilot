@@ -47,6 +47,7 @@ export async function getQueryActions(): Promise<Map<string, QueryAction>> {
     }
   } catch (err) {
     console.error("[actions-store] Failed to fetch query actions:", err);
+    throw err;
   }
 
   return map;
@@ -89,6 +90,7 @@ export async function setQueryAction(
     });
   } catch (err) {
     console.error("[actions-store] Failed to set query action:", err);
+    throw err;
   }
 }
 
@@ -103,10 +105,9 @@ export async function removeQueryAction(fingerprint: string): Promise<void> {
       where: { fingerprint },
     });
   } catch (err) {
-    // Ignore "record not found" errors
     const message = err instanceof Error ? err.message : String(err);
-    if (!message.includes("Record to delete does not exist")) {
-      console.error("[actions-store] Failed to remove query action:", err);
-    }
+    if (message.includes("Record to delete does not exist")) return;
+    console.error("[actions-store] Failed to remove query action:", err);
+    throw err;
   }
 }

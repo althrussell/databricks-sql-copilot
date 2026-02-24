@@ -1,5 +1,10 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { WarehouseEvent } from "@/lib/domain/types";
+import {
+  validateIdentifier,
+  validateTimestamp,
+  validateLimit,
+} from "@/lib/validation";
 
 export interface ListWarehouseEventsParams {
   startTime: string; // ISO timestamp
@@ -16,29 +21,28 @@ interface WarehouseEventRow {
   event_time: string;
 }
 
-function escapeString(value: string): string {
-  return value.replace(/'/g, "''");
-}
-
 /**
  * Fetch warehouse scaling/lifecycle events from system.compute.warehouse_events.
  *
  * Event types: SCALED_UP, SCALED_DOWN, STOPPING, RUNNING, STARTING, STOPPED
  *
  * See docs/schemas/system_compute_warehouse_events.csv for full schema.
+ *
+ * NOTE: Previously used CAST(event_time AS DATE) which defeated partition pruning.
+ * Now uses direct timestamp comparisons which allow the optimizer to use data-skipping.
  */
 export async function listWarehouseEvents(
   params: ListWarehouseEventsParams
 ): Promise<WarehouseEvent[]> {
   const { startTime, endTime, warehouseId, limit = 200 } = params;
 
-  const warehouseFilter = warehouseId
-    ? `AND warehouse_id = '${escapeString(warehouseId)}'`
-    : "";
+  const validStart = validateTimestamp(startTime, "startTime");
+  const validEnd = validateTimestamp(endTime, "endTime");
+  const validLimit = validateLimit(limit, 1, 500);
 
-  // Use date cast for partition pruning on system tables
-  const startDate = startTime.slice(0, 10); // YYYY-MM-DD
-  const endDate = endTime.slice(0, 10);
+  const warehouseFilter = warehouseId
+    ? `AND warehouse_id = '${validateIdentifier(warehouseId, "warehouseId")}'`
+    : "";
 
   const sql = `
     SELECT
@@ -47,13 +51,11 @@ export async function listWarehouseEvents(
       cluster_count,
       event_time
     FROM system.compute.warehouse_events
-    WHERE CAST(event_time AS DATE) >= '${startDate}'
-      AND CAST(event_time AS DATE) <= '${endDate}'
-      AND event_time >= '${escapeString(startTime)}'
-      AND event_time <= '${escapeString(endTime)}'
+    WHERE event_time >= '${validStart}'
+      AND event_time <= '${validEnd}'
       ${warehouseFilter}
     ORDER BY event_time DESC
-    LIMIT ${Math.min(Math.max(1, limit), 500)}
+    LIMIT ${validLimit}
   `;
 
   const result = await executeQuery<WarehouseEventRow>(sql);

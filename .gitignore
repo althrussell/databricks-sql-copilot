@@ -49,3 +49,6 @@ dbsql-monitor-main
 /lib/generated/prisma
 
 .databricks
+
+# runtime prompt logs
+logs/
