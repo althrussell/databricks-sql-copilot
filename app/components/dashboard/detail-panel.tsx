@@ -268,7 +268,7 @@ export function DetailPanel({
             <Button
               onClick={() => {
                 onOpenChange(false);
-                window.location.href = `/queries/${candidate.fingerprint}?action=analyse`;
+                window.location.href = `/queries/${candidate.fingerprint}?action=analyse&warehouse=${candidate.warehouseId}`;
               }}
               className="flex-1 gap-1.5"
               size="sm"
@@ -281,7 +281,7 @@ export function DetailPanel({
               size="sm"
               onClick={() => {
                 onOpenChange(false);
-                window.location.href = `/queries/${candidate.fingerprint}`;
+                window.location.href = `/queries/${candidate.fingerprint}?warehouse=${candidate.warehouseId}`;
               }}
               className="gap-1.5"
             >

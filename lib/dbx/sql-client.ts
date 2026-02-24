@@ -4,6 +4,7 @@ import type IOperation from "@databricks/sql/dist/contracts/IOperation";
 import { getConfig } from "@/lib/config";
 import { getOboToken } from "@/lib/dbx/obo";
 import { isAuthError } from "@/lib/dbx/retry";
+import { getCurrentSession, withSession } from "@/lib/dbx/session-context";
 
 /**
  * Databricks SQL client module.
@@ -182,16 +183,22 @@ async function executeQueryInner<T>(
   oboToken: string | null,
 ): Promise<QueryResult<T>> {
   const maxRows = options.maxRows ?? DEFAULT_MAX_ROWS;
-  let session: IDBSQLSession | null = null;
+
+  // Reuse shared session from withSharedSession() if available
+  const sharedSession = getCurrentSession();
+  let session: IDBSQLSession | null = sharedSession ?? null;
+  const ownsSession = !sharedSession;
   let isObo = false;
   let operation: IOperation | null = null;
 
   try {
-    const opened = await openSession(isRetry, oboToken);
-    session = opened.session;
-    isObo = opened.isObo;
+    if (ownsSession) {
+      const opened = await openSession(isRetry, oboToken);
+      session = opened.session;
+      isObo = opened.isObo;
+    }
 
-    operation = await session.executeStatement(sql, {
+    operation = await session!.executeStatement(sql, {
       runAsync: true,
       maxRows,
     });
@@ -208,8 +215,7 @@ async function executeQueryInner<T>(
 
     return { rows, rowCount: rows.length, truncated };
   } catch (error: unknown) {
-    // Only retry SP/PAT connections — OBO tokens are per-request, retrying won't help
-    if (!isRetry && !oboToken && isAuthError(error)) {
+    if (!isRetry && !oboToken && ownsSession && isAuthError(error)) {
       console.warn(
         "[sql-client] Auth error detected, rotating client and retrying:",
         error instanceof Error ? error.message : String(error)
@@ -229,15 +235,34 @@ async function executeQueryInner<T>(
         /* best-effort cleanup */
       }
     }
-    if (session) {
+    // Only close the session if we opened it ourselves
+    if (ownsSession && session) {
       try {
         await session.close();
       } catch {
         /* best-effort cleanup */
       }
     }
-    if (isObo) {
+    if (ownsSession && isObo) {
       releaseOboClient();
     }
   }
+}
+
+/**
+ * Run multiple queries within a single shared session.
+ * Opens one session, stores it in AsyncLocalStorage, and all
+ * `executeQuery` calls within `fn` reuse that session.
+ */
+export async function withSharedSession<T>(fn: () => Promise<T>): Promise<T> {
+  const oboToken = await getOboToken();
+  const isObo = !!oboToken;
+  return withSession(
+    async () => {
+      const { session } = await openSession(false, oboToken);
+      return session;
+    },
+    fn,
+    isObo ? releaseOboClient : undefined,
+  );
 }

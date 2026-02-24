@@ -44,6 +44,7 @@ import {
   CheckCheck,
   Flame,
   Hourglass,
+  Terminal,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -91,8 +92,22 @@ import type {
 } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import { notifyError, notifySuccess, isPermissionError, extractPermissionDetails } from "@/lib/errors";
-import { CustomRangePicker } from "./components/dashboard/custom-range-picker";
-import { DetailPanel } from "./components/dashboard/detail-panel";
+import dynamic from "next/dynamic";
+
+const CustomRangePicker = dynamic(
+  () => import("./components/dashboard/custom-range-picker").then((m) => m.CustomRangePicker),
+  { ssr: false, loading: () => <span className="h-7 w-24 rounded bg-muted animate-pulse inline-block" /> }
+);
+
+const DetailPanel = dynamic(
+  () => import("./components/dashboard/detail-panel").then((m) => m.DetailPanel),
+  { ssr: false }
+);
+export {
+  type QueryActionType,
+  type QueryActionEntry,
+  type DataSourceHealth,
+} from "./components/dashboard/helpers";
 import {
   type QueryActionType,
   type QueryActionEntry,
@@ -117,6 +132,20 @@ import {
   originIcon,
   originLabel,
 } from "./components/dashboard/helpers";
+
+function DeepLinkIcon({ href, label }: { href: string | null; label: string }) {
+  if (!href) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:text-primary/80 transition-colors" onClick={(e) => e.stopPropagation()}>
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 /* ── AI Triage cell ── */
 
@@ -512,31 +541,35 @@ export function Dashboard({
   const [enrichmentLoaded, setEnrichmentLoaded] = useState(false);
   const [enrichmentHealth, setEnrichmentHealth] = useState<DataSourceHealth[]>([]);
 
-  // Watch for enrichment data to appear in the DOM (streamed from server)
+  // Watch for streamed server data via MutationObserver (replaces polling)
   useEffect(() => {
-    const check = () => {
-      const el = document.getElementById("enrichment-data");
-      if (el) {
-        try {
-          const data = JSON.parse(el.textContent ?? "{}");
-          if (data.candidates) setEnrichedCandidates(data.candidates);
-          if (data.warehouseCosts) setEnrichedCosts(data.warehouseCosts);
-          if (data.dataSourceHealth) setEnrichmentHealth(data.dataSourceHealth);
-          setEnrichmentLoaded(true);
-        } catch {
-          // ignore parse errors
-        }
-        return true;
-      }
-      return false;
-    };
+    function consumeEnrichment(el: Element) {
+      try {
+        const data = JSON.parse(el.textContent ?? "{}");
+        if (data.candidates) setEnrichedCandidates(data.candidates);
+        if (data.warehouseCosts) setEnrichedCosts(data.warehouseCosts);
+        if (data.dataSourceHealth) setEnrichmentHealth(data.dataSourceHealth);
+        setEnrichmentLoaded(true);
+      } catch { /* ignore parse errors */ }
+    }
 
-    if (check()) return;
-    // Poll for the script tag to appear (streaming)
-    const interval = setInterval(() => {
-      if (check()) clearInterval(interval);
-    }, 200);
-    return () => clearInterval(interval);
+    // Already present (SSR or fast stream)
+    const existing = document.getElementById("enrichment-data");
+    if (existing) { consumeEnrichment(existing); return; }
+
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node instanceof HTMLElement && node.id === "enrichment-data") {
+            consumeEnrichment(node);
+            observer.disconnect();
+            return;
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
 
   // ── AI Triage insights (streamed in from Phase 3) ──
@@ -544,26 +577,30 @@ export function Dashboard({
   const [triageLoaded, setTriageLoaded] = useState(false);
 
   useEffect(() => {
-    const check = () => {
-      const el = document.getElementById("ai-triage-data");
-      if (el) {
-        try {
-          const data = JSON.parse(el.textContent ?? "{}");
-          setTriageInsights(data);
-          setTriageLoaded(true);
-        } catch {
-          // ignore parse errors
-        }
-        return true;
-      }
-      return false;
-    };
+    function consumeTriage(el: Element) {
+      try {
+        const data = JSON.parse(el.textContent ?? "{}");
+        setTriageInsights(data);
+        setTriageLoaded(true);
+      } catch { /* ignore parse errors */ }
+    }
 
-    if (check()) return;
-    const interval = setInterval(() => {
-      if (check()) clearInterval(interval);
-    }, 500);
-    return () => clearInterval(interval);
+    const existing = document.getElementById("ai-triage-data");
+    if (existing) { consumeTriage(existing); return; }
+
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node instanceof HTMLElement && node.id === "ai-triage-data") {
+            consumeTriage(node);
+            observer.disconnect();
+            return;
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
 
   // Combine health info — enrichment entries override initial ones (dedup by name)
@@ -1674,7 +1711,7 @@ export function Dashboard({
                                         size="icon-xs"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          router.push(`/queries/${c.fingerprint}?action=analyse`);
+                                          router.push(`/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`);
                                         }}
                                       >
                                         <Sparkles className="h-3.5 w-3.5" />
@@ -1691,11 +1728,11 @@ export function Dashboard({
                               <Search className="mr-2 h-4 w-4" />
                               Quick View
                             </ContextMenuItem>
-                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}`)}>
+                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?warehouse=${c.warehouseId}`)}>
                               <Maximize2 className="mr-2 h-4 w-4" />
                               Full Details
                             </ContextMenuItem>
-                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?action=analyse`)}>
+                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`)}>
                               <Sparkles className="mr-2 h-4 w-4" />
                               AI Analyse &amp; Optimise
                             </ContextMenuItem>

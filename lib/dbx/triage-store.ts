@@ -43,7 +43,7 @@ export async function getCachedTriage(fingerprintHash: string): Promise<TriageMa
     if (!row) return null;
 
     console.log(`[triage-store] cache hit for hash ${fingerprintHash.slice(0, 8)}…`);
-    return row.insights as TriageMap;
+    return row.insights as unknown as TriageMap;
   } catch (err) {
     console.error("[triage-store] Failed to get cached triage:", err);
     return null;
