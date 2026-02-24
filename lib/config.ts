@@ -18,10 +18,17 @@ import { z } from "zod";
 const HOST_RE = /^https?:\/\/.+\..+/;
 const WAREHOUSE_ID_RE = /^[a-f0-9-]+$/i;
 
+/** Databricks Apps may inject DATABRICKS_HOST with or without protocol. */
+function normalizeHost(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 const EnvSchema = z.object({
   DATABRICKS_HOST: z
     .string({ error: "Missing DATABRICKS_HOST. Set it to your workspace URL (e.g. https://my-workspace.cloud.databricks.com)." })
     .min(1, "DATABRICKS_HOST cannot be empty")
+    .transform(normalizeHost)
     .refine((v) => HOST_RE.test(v), {
       message: "DATABRICKS_HOST must be a valid URL (e.g. https://my-workspace.cloud.databricks.com)",
     }),
@@ -55,9 +62,19 @@ let _config: AppConfig | null = null;
 export function getConfig(): AppConfig {
   if (_config) return _config;
 
+  const rawHost = process.env.DATABRICKS_HOST;
+  const rawWarehouse = process.env.DATABRICKS_WAREHOUSE_ID;
+
+  console.log(
+    `[config] env check — DATABRICKS_HOST=${rawHost ? `"${rawHost.substring(0, 30)}..."` : "MISSING"}, ` +
+      `WAREHOUSE_ID=${rawWarehouse ? "set" : "MISSING"}, ` +
+      `CLIENT_ID=${process.env.DATABRICKS_CLIENT_ID ? "set" : "MISSING"}, ` +
+      `TOKEN=${process.env.DATABRICKS_TOKEN ? "set" : "MISSING"}`
+  );
+
   const result = EnvSchema.safeParse({
-    DATABRICKS_HOST: process.env.DATABRICKS_HOST,
-    DATABRICKS_WAREHOUSE_ID: process.env.DATABRICKS_WAREHOUSE_ID,
+    DATABRICKS_HOST: rawHost,
+    DATABRICKS_WAREHOUSE_ID: rawWarehouse,
     DATABRICKS_CLIENT_ID: process.env.DATABRICKS_CLIENT_ID,
     DATABRICKS_CLIENT_SECRET: process.env.DATABRICKS_CLIENT_SECRET,
     DATABRICKS_TOKEN: process.env.DATABRICKS_TOKEN,
