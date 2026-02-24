@@ -117,6 +117,7 @@ export async function fetchWarehouseTopUsers(): Promise<WarehouseUserRow[]> {
       AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
       AND h.statement_text NOT LIKE '-- This is a system generated query %'
     GROUP BY h.compute.warehouse_id, h.executed_by, source_id, source_type
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY h.compute.warehouse_id ORDER BY COUNT(*) DESC) <= 20
     ORDER BY query_count DESC
   `;
 

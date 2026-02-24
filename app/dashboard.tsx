@@ -5,42 +5,18 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Clock,
-  Database,
   AlertTriangle,
-  Zap,
   Warehouse,
-  Users,
-  LayoutDashboard,
-  FileCode2,
-  BriefcaseBusiness,
-  Bell,
-  Terminal,
-  Bot,
-  HelpCircle,
   Search,
   ChevronRight,
-  Timer,
-  HardDrive,
   Cpu,
   BarChart3,
-  User,
-  Hourglass,
-  Flame,
-  Network,
-  FilterX,
-  Rows3,
-  ArrowDownToLine,
-  Layers,
-  MonitorSmartphone,
   Coins,
   Settings2,
   Globe,
   ExternalLink,
   DollarSign,
   ShieldAlert,
-  Package,
-  Tag,
-  Flag,
   Loader2,
   Maximize2,
   CheckCircle2,
@@ -66,19 +42,14 @@ import {
   Ban,
   Bookmark,
   CheckCheck,
+  Flame,
+  Hourglass,
+  Terminal,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { format, subDays, startOfDay, endOfDay, setHours, setMinutes } from "date-fns";
-import type { DateRange } from "react-day-picker";
 import {
   Select,
   SelectContent,
@@ -103,13 +74,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -123,292 +87,67 @@ import { explainScore } from "@/lib/domain/scoring";
 import { MiniStepChart } from "@/components/charts/mini-step-chart";
 import type {
   Candidate,
-  QueryOrigin,
   WarehouseCost,
   WarehouseActivity,
 } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import { notifyError, notifySuccess, isPermissionError, extractPermissionDetails } from "@/lib/errors";
+import dynamic from "next/dynamic";
 
-/* ── Constants ── */
+const CustomRangePicker = dynamic(
+  () => import("./components/dashboard/custom-range-picker").then((m) => m.CustomRangePicker),
+  { ssr: false, loading: () => <span className="h-7 w-24 rounded bg-muted animate-pulse inline-block" /> }
+);
 
-/**
- * Billing data in system.billing.usage lags ~6 hours behind real-time.
- * All time windows are shifted back by this amount so that every data
- * source (queries, events, costs, audit) covers the same fully-populated
- * period. E.g. "1 hour" = the hour from 7h ago to 6h ago.
- */
-const BILLING_LAG_HOURS = 6;
+const DetailPanel = dynamic(
+  () => import("./components/dashboard/detail-panel").then((m) => m.DetailPanel),
+  { ssr: false }
+);
+export {
+  type QueryActionType,
+  type QueryActionEntry,
+  type DataSourceHealth,
+} from "./components/dashboard/helpers";
+import {
+  type QueryActionType,
+  type QueryActionEntry,
+  type DataSourceHealth,
+  BILLING_LAG_HOURS,
+  TIME_PRESETS,
+  TRIAGE_ACTION_STYLE,
+  TIME_SEGMENT_COLORS,
+  describeWindow,
+  formatCustomRangeLabel,
+  buildLink,
+  formatDuration,
+  formatBytes,
+  truncateQuery,
+  formatCount,
+  formatDBUs,
+  formatDollars,
+  scoreColor,
+  scoreTextColor,
+  flagSeverityColor,
+  tagToStatus,
+  originIcon,
+  originLabel,
+} from "./components/dashboard/helpers";
 
-const TIME_PRESETS = [
-  { label: "1 hour", value: "1h", icon: Clock },
-  { label: "6 hours", value: "6h", icon: Clock },
-  { label: "24 hours", value: "24h", icon: Clock },
-  { label: "7 days", value: "7d", icon: Clock },
-] as const;
-
-/** Compute the human-readable window description for the current preset */
-function describeWindow(preset: string): string {
-  const knownHours: Record<string, number> = {
-    "1h": 1, "6h": 6, "24h": 24, "7d": 168,
-  };
-  let hrs = knownHours[preset];
-  if (hrs === undefined) {
-    const match = preset.match(/^(\d+)h$/);
-    hrs = match ? parseInt(match[1], 10) : 1;
-  }
-  const endAgo = BILLING_LAG_HOURS;
-  const startAgo = endAgo + hrs;
-  if (startAgo <= 48) {
-    return `${startAgo}h ago → ${endAgo}h ago`;
-  }
-  const startDays = Math.round(startAgo / 24);
-  return `~${startDays}d ago → ${endAgo}h ago`;
-}
-
-/* ── Custom range label formatter ── */
-
-function formatCustomRangeLabel(range: { from: string; to: string }): string {
-  const from = new Date(range.from);
-  const to = new Date(range.to);
-  const sameDay =
-    from.getFullYear() === to.getFullYear() &&
-    from.getMonth() === to.getMonth() &&
-    from.getDate() === to.getDate();
-  if (sameDay) {
-    return `${format(from, "MMM d")} ${format(from, "HH:mm")} \u2013 ${format(to, "HH:mm")}`;
-  }
-  return `${format(from, "MMM d, HH:mm")} \u2013 ${format(to, "MMM d, HH:mm")}`;
-}
-
-/* ── Custom Range Picker ── */
-
-function CustomRangePicker({
-  isActive,
-  customRange,
-  onApply,
-}: {
-  isActive: boolean;
-  customRange: { from: string; to: string } | null;
-  onApply: (from: Date, to: Date) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const today = new Date();
-
-  // Local state for the picker
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
-    if (customRange) {
-      return { from: new Date(customRange.from), to: new Date(customRange.to) };
-    }
-    // Default: yesterday
-    const yesterday = subDays(today, 1);
-    return { from: startOfDay(yesterday), to: endOfDay(yesterday) };
-  });
-  const [startTime, setStartTime] = useState(() => {
-    if (customRange) return format(new Date(customRange.from), "HH:mm");
-    return "09:00";
-  });
-  const [endTime, setEndTime] = useState(() => {
-    if (customRange) return format(new Date(customRange.to), "HH:mm");
-    return "17:00";
-  });
-
-  function handleApply() {
-    if (!dateRange?.from) return;
-    const endDate = dateRange.to ?? dateRange.from;
-    const [sh, sm] = startTime.split(":").map(Number);
-    const [eh, em] = endTime.split(":").map(Number);
-    const from = setMinutes(setHours(dateRange.from, sh), sm);
-    const to = setMinutes(setHours(endDate, eh), em);
-    if (from >= to) return; // invalid range
-    onApply(from, to);
-    setOpen(false);
-  }
-
-  const triggerLabel = isActive && customRange
-    ? formatCustomRangeLabel(customRange)
-    : "Custom range";
-
+function DeepLinkIcon({ href, label }: { href: string | null; label: string }) {
+  if (!href) return null;
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant={isActive ? "default" : "outline"}
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
-        >
-          <CalendarDays className="h-3 w-3" />
-          {triggerLabel}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <div className="p-4 space-y-4">
-          <div>
-            <p className="text-xs font-medium">Select date range</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              Pick start and end dates, then set the time window.
-            </p>
-          </div>
-
-          <Calendar
-            mode="range"
-            defaultMonth={dateRange?.from}
-            selected={dateRange}
-            onSelect={setDateRange}
-            numberOfMonths={2}
-            disabled={{ after: today, before: subDays(today, 30) }}
-            initialFocus
-          />
-
-          {/* Time inputs */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 space-y-1">
-              <label className="text-[10px] font-medium text-muted-foreground">Start time</label>
-              <input
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <span className="text-muted-foreground mt-4">{"\u2013"}</span>
-            <div className="flex-1 space-y-1">
-              <label className="text-[10px] font-medium text-muted-foreground">End time</label>
-              <input
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-          </div>
-
-          {/* Warning */}
-          <p className="text-[10px] text-amber-600 dark:text-amber-400">
-            Billing data may be incomplete for the last ~6 hours.
-          </p>
-
-          {/* Apply */}
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="ghost" size="sm" className="text-xs" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="text-xs"
-              disabled={!dateRange?.from}
-              onClick={handleApply}
-            >
-              Apply range
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:text-primary/80 transition-colors" onClick={(e) => e.stopPropagation()}>
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
-/* ── Deep link helpers (client-side, using workspaceUrl prop) ── */
-
-function buildLink(
-  base: string,
-  type: string,
-  id: string | null | undefined,
-  extras?: { queryStartTimeMs?: number }
-): string | null {
-  if (!id || !base) return null;
-  switch (type) {
-    case "query-profile": {
-      const params = new URLSearchParams({ queryId: id });
-      if (extras?.queryStartTimeMs) {
-        params.set("queryStartTimeMs", String(extras.queryStartTimeMs));
-      }
-      return `${base}/sql/history?${params.toString()}`;
-    }
-    case "warehouse":
-      return `${base}/sql/warehouses/${id}`;
-    case "dashboard":
-      return `${base}/sql/dashboardsv3/${id}`;
-    case "legacy-dashboard":
-      return `${base}/sql/dashboards/${id}`;
-    case "notebook":
-      return `${base}/editor/notebooks/${id}`;
-    case "job":
-      return `${base}/jobs/${id}`;
-    case "alert":
-      return `${base}/sql/alerts/${id}`;
-    case "sql-query":
-      return `${base}/sql/queries/${id}`;
-    case "genie":
-      return `${base}/genie/rooms/${id}`;
-    default:
-      return null;
-  }
-}
-
-/* ── Helpers ── */
-
-function formatDuration(ms: number): string {
-  if (ms < 1_000) return `${Math.round(ms)}ms`;
-  if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
-  if (ms < 3_600_000) return `${(ms / 60_000).toFixed(1)}m`;
-  return `${(ms / 3_600_000).toFixed(1)}h`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`;
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)} KB`;
-  return `${bytes} B`;
-}
-
-function truncateQuery(text: string, maxLen = 60): string {
-  const cleaned = text.replace(/\s+/g, " ").trim();
-  return cleaned.length > maxLen
-    ? cleaned.slice(0, maxLen) + "\u2026"
-    : cleaned;
-}
-
-function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toString();
-}
-
-function formatDBUs(dbus: number): string {
-  if (dbus >= 1_000) return `${(dbus / 1_000).toFixed(1)}k`;
-  if (dbus >= 1) return dbus.toFixed(1);
-  return dbus.toFixed(2);
-}
-
-function formatDollars(dollars: number): string {
-  if (dollars >= 1_000) return `$${(dollars / 1_000).toFixed(1)}k`;
-  if (dollars >= 1) return `$${dollars.toFixed(2)}`;
-  if (dollars > 0) return `$${dollars.toFixed(3)}`;
-  return "$0";
-}
-
-function timeAgo(isoTime: string): string {
-  const diff = Date.now() - new Date(isoTime).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
-
 /* ── AI Triage cell ── */
-
-const TRIAGE_ACTION_STYLE: Record<string, string> = {
-  rewrite: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800",
-  cluster: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200 dark:border-teal-800",
-  optimize: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800",
-  resize: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800",
-  investigate: "bg-muted text-muted-foreground border-border",
-};
 
 function TriageCell({
   insight,
@@ -450,33 +189,7 @@ function TriageCell({
   );
 }
 
-function scoreColor(score: number): string {
-  if (score >= 70) return "bg-red-500";
-  if (score >= 40) return "bg-amber-500";
-  return "bg-emerald-500";
-}
-
-function scoreTextColor(score: number): string {
-  if (score >= 70) return "text-red-600 dark:text-red-400";
-  if (score >= 40) return "text-amber-600 dark:text-amber-400";
-  return "text-emerald-600 dark:text-emerald-400";
-}
-
-function flagSeverityColor(severity: "warning" | "critical"): string {
-  if (severity === "critical")
-    return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800";
-  return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800";
-}
-
 /* ── Expanded row inline content ── */
-
-const TIME_SEGMENT_COLORS = [
-  { key: "compilation", color: "bg-blue-400 dark:bg-blue-600", label: "Compile" },
-  { key: "queue", color: "bg-amber-400 dark:bg-amber-600", label: "Queue" },
-  { key: "compute", color: "bg-purple-400 dark:bg-purple-600", label: "Compute Wait" },
-  { key: "execution", color: "bg-emerald-400 dark:bg-emerald-600", label: "Execute" },
-  { key: "fetch", color: "bg-rose-400 dark:bg-rose-600", label: "Fetch" },
-];
 
 function ExpandedRowContent({
   candidate,
@@ -687,65 +400,6 @@ function ExpandedRowContent({
   );
 }
 
-function tagToStatus(
-  tag: string
-): "default" | "warning" | "error" | "info" | "cached" {
-  switch (tag) {
-    case "slow":
-      return "error";
-    case "high-spill":
-      return "warning";
-    case "capacity-bound":
-      return "warning";
-    case "frequent":
-      return "info";
-    case "mostly-cached":
-      return "cached";
-    case "quick-win":
-      return "info";
-    default:
-      return "default";
-  }
-}
-
-function originIcon(origin: QueryOrigin) {
-  switch (origin) {
-    case "dashboard":
-      return LayoutDashboard;
-    case "notebook":
-      return FileCode2;
-    case "job":
-      return BriefcaseBusiness;
-    case "alert":
-      return Bell;
-    case "sql-editor":
-      return Terminal;
-    case "genie":
-      return Bot;
-    default:
-      return HelpCircle;
-  }
-}
-
-function originLabel(origin: QueryOrigin): string {
-  switch (origin) {
-    case "dashboard":
-      return "Dashboard";
-    case "notebook":
-      return "Notebook";
-    case "job":
-      return "Job";
-    case "alert":
-      return "Alert";
-    case "sql-editor":
-      return "SQL Editor";
-    case "genie":
-      return "Genie";
-    default:
-      return "Unknown";
-  }
-}
-
 /* ── Sub-components ── */
 
 
@@ -767,31 +421,6 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-function DeepLinkIcon({
-  href,
-  label,
-}: {
-  href: string | null;
-  label: string;
-}) {
-  if (!href) return null;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-primary hover:text-primary/80 transition-colors"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <ExternalLink className="h-3 w-3" />
-        </a>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
 
 /* ── Empty / Error states ── */
 
@@ -868,503 +497,11 @@ function ErrorBanner({ message }: { message: string }) {
   );
 }
 
-/* ── Detail Panel helpers ── */
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-      {children}
-    </h4>
-  );
-}
-
-function StatCell({
-  icon: Icon,
-  label,
-  value,
-  href,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  href?: string | null;
-}) {
-  const content = (
-    <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
-      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] text-muted-foreground">{label}</p>
-        <p className="text-sm font-semibold tabular-nums truncate">{value}</p>
-      </div>
-      {href && <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />}
-    </div>
-  );
-
-  if (href) {
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
-        {content}
-      </a>
-    );
-  }
-  return content;
-}
-
-function TimeBar({
-  label,
-  ms,
-  maxMs,
-  icon: Icon,
-}: {
-  label: string;
-  ms: number;
-  maxMs: number;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
-  const pct = maxMs > 0 ? Math.max(1, (ms / maxMs) * 100) : 0;
-  return (
-    <div className="flex items-center gap-2">
-      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <span className="text-xs text-muted-foreground w-24 shrink-0">
-        {label}
-      </span>
-      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-        <div
-          className="h-full rounded-full bg-primary/60 transition-all"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-xs font-medium tabular-nums w-14 text-right">
-        {formatDuration(ms)}
-      </span>
-    </div>
-  );
-}
-
-/* ── Detail Panel (Sheet) ── */
-
-function DetailPanel({
-  candidate,
-  open,
-  onOpenChange,
-  workspaceUrl,
-  currentAction,
-  onSetAction,
-  onClearAction,
-}: {
-  candidate: Candidate | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  workspaceUrl: string;
-  currentAction?: QueryActionType | null;
-  onSetAction: (fp: string, action: QueryActionType) => void;
-  onClearAction: (fp: string) => void;
-}) {
-  if (!candidate) return null;
-  const reasons = explainScore(candidate.scoreBreakdown);
-  const OriginIcon = originIcon(candidate.queryOrigin);
-  const ws = candidate.windowStats;
-  const maxTimeSegment = Math.max(
-    ws.avgCompilationMs,
-    ws.avgQueueWaitMs,
-    ws.avgComputeWaitMs,
-    ws.avgExecutionMs,
-    ws.avgFetchMs,
-    1
-  );
-
-  // Use per-candidate workspace URL if available, fallback to global
-  const effectiveWsUrl = candidate.workspaceUrl || workspaceUrl;
-
-  // Build source deep link
-  const src = candidate.querySource;
-  const sourceLink = src.dashboardId
-    ? buildLink(effectiveWsUrl, "dashboard", src.dashboardId)
-    : src.legacyDashboardId
-      ? buildLink(effectiveWsUrl, "legacy-dashboard", src.legacyDashboardId)
-      : src.jobId
-        ? buildLink(effectiveWsUrl, "job", src.jobId)
-        : src.notebookId
-          ? buildLink(effectiveWsUrl, "notebook", src.notebookId)
-          : src.alertId
-            ? buildLink(effectiveWsUrl, "alert", src.alertId)
-            : src.sqlQueryId
-              ? buildLink(effectiveWsUrl, "sql-query", src.sqlQueryId)
-              : null;
-
-  const queryProfileLink = buildLink(
-    effectiveWsUrl,
-    "query-profile",
-    candidate.sampleStatementId,
-    { queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime() }
-  );
-  const warehouseLink = buildLink(
-    effectiveWsUrl,
-    "warehouse",
-    candidate.warehouseId
-  );
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
-        <SheetHeader className="pb-2">
-          <div className="flex items-center gap-2">
-            <div
-              className={`rounded-lg p-2 ${candidate.impactScore >= 60 ? "bg-red-100 dark:bg-red-900/30" : "bg-amber-100 dark:bg-amber-900/30"}`}
-            >
-              <Zap
-                className={`h-4 w-4 ${candidate.impactScore >= 60 ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <SheetTitle>
-                Impact Score: {candidate.impactScore}
-              </SheetTitle>
-              <SheetDescription>
-                {candidate.statementType} &middot;{" "}
-                {candidate.warehouseName}
-                {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
-                  <> &middot; {candidate.workspaceName}</>
-                )}
-                {candidate.allocatedCostDollars > 0 ? (
-                  <> &middot; {formatDollars(candidate.allocatedCostDollars)}</>
-                ) : candidate.allocatedDBUs > 0 ? (
-                  <> &middot; {formatDBUs(candidate.allocatedDBUs)} DBUs</>
-                ) : null}
-              </SheetDescription>
-            </div>
-            {queryProfileLink && (
-              <a
-                href={queryProfileLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/5 transition-colors flex items-center gap-1.5"
-              >
-                <ExternalLink className="h-3 w-3" />
-                Query Profile
-              </a>
-            )}
-          </div>
-
-          {/* ── CTA — pinned right under header, always visible ── */}
-          <div className="flex items-center gap-2 pt-2 mt-1 border-t border-border">
-            <Button
-              onClick={() => {
-                onOpenChange(false);
-                window.location.href = `/queries/${candidate.fingerprint}?action=analyse`;
-              }}
-              className="flex-1 gap-1.5"
-              size="sm"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              AI Analyse
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                onOpenChange(false);
-                window.location.href = `/queries/${candidate.fingerprint}`;
-              }}
-              className="gap-1.5"
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-              Details
-            </Button>
-          </div>
-
-          {/* ── Actions ── */}
-          <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-border">
-            {currentAction === "dismiss" ? (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={() => onClearAction(candidate.fingerprint)}>
-                <Eye className="h-3 w-3" /> Undismiss
-              </Button>
-            ) : (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "dismiss")}>
-                <Ban className="h-3 w-3" /> Dismiss
-              </Button>
-            )}
-            {currentAction === "watch" ? (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-amber-600 dark:text-amber-400" onClick={() => onClearAction(candidate.fingerprint)}>
-                <Bookmark className="h-3 w-3 fill-current" /> Watching
-              </Button>
-            ) : (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "watch")}>
-                <Bookmark className="h-3 w-3" /> Watch
-              </Button>
-            )}
-            {currentAction === "applied" ? (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-emerald-600 dark:text-emerald-400" onClick={() => onClearAction(candidate.fingerprint)}>
-                <CheckCheck className="h-3 w-3" /> Applied
-              </Button>
-            ) : (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "applied")}>
-                <CheckCheck className="h-3 w-3" /> Mark Applied
-              </Button>
-            )}
-          </div>
-        </SheetHeader>
-
-        <div className="space-y-5 px-4 pb-6">
-          {/* Performance Flags */}
-          {candidate.performanceFlags.length > 0 && (
-            <div>
-              <SectionLabel>
-                <span className="flex items-center gap-1">
-                  <Activity className="h-3 w-3 opacity-50" />
-                  Performance Flags
-                </span>
-              </SectionLabel>
-              <div className="flex flex-wrap gap-1.5">
-                {candidate.performanceFlags.map((pf) => (
-                  <Tooltip key={pf.flag}>
-                    <TooltipTrigger asChild>
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium cursor-help ${flagSeverityColor(pf.severity)}`}
-                      >
-                        <Flag className="h-3 w-3" />
-                        {pf.label}
-                        {pf.estimatedImpactPct != null && (
-                          <span className="opacity-60 text-[10px]">{pf.estimatedImpactPct}%</span>
-                        )}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-xs">
-                      <p className="text-xs">{pf.detail}</p>
-                      {pf.estimatedImpactPct != null && (
-                        <p className="text-[10px] text-muted-foreground mt-1">Estimated impact: {pf.estimatedImpactPct}% of task time</p>
-                      )}
-                      <p className="text-[10px] text-muted-foreground opacity-70">Source: rule-based detection</p>
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Cost Allocation */}
-          {(candidate.allocatedCostDollars > 0 || candidate.allocatedDBUs > 0) && (
-            <div>
-              <SectionLabel>Estimated Cost (Window)</SectionLabel>
-              <div className="flex items-baseline gap-2 rounded-lg bg-muted/30 border border-border p-3">
-                <DollarSign className="h-5 w-5 text-emerald-600 shrink-0" />
-                <div>
-                  <p className="text-2xl font-bold tabular-nums">
-                    {candidate.allocatedCostDollars > 0
-                      ? formatDollars(candidate.allocatedCostDollars)
-                      : `${formatDBUs(candidate.allocatedDBUs)} DBUs`}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Proportional to compute time on{" "}
-                    {candidate.warehouseName}
-                    {candidate.allocatedCostDollars <= 0 && candidate.allocatedDBUs > 0
-                      ? " ($ prices unavailable)"
-                      : ""}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* SQL Preview */}
-          <div>
-            <SectionLabel>Sample SQL</SectionLabel>
-            <div className="rounded-lg bg-muted/50 border border-border p-3 max-h-48 overflow-y-auto">
-              <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed text-foreground/80">
-                {candidate.sampleQueryText}
-              </pre>
-            </div>
-          </div>
-
-          {/* dbt Metadata */}
-          {candidate.dbtMeta.isDbt && (
-            <div>
-              <SectionLabel>dbt Metadata</SectionLabel>
-              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">dbt Model</span>
-                </div>
-                {candidate.dbtMeta.nodeId && (
-                  <p className="text-xs font-mono text-blue-600 dark:text-blue-400">
-                    {candidate.dbtMeta.nodeId}
-                  </p>
-                )}
-                {candidate.dbtMeta.queryTag && (
-                  <div className="flex items-center gap-1.5">
-                    <Tag className="h-3 w-3 text-blue-500" />
-                    <span className="text-xs text-blue-600 dark:text-blue-400">
-                      {candidate.dbtMeta.queryTag}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Time Breakdown */}
-          <div>
-            <SectionLabel>Time Breakdown (avg per execution)</SectionLabel>
-            <div className="space-y-2">
-              <TimeBar
-                label="Compilation"
-                ms={ws.avgCompilationMs}
-                maxMs={maxTimeSegment}
-                icon={Layers}
-              />
-              <TimeBar
-                label="Queue Wait"
-                ms={ws.avgQueueWaitMs}
-                maxMs={maxTimeSegment}
-                icon={Hourglass}
-              />
-              <TimeBar
-                label="Compute Wait"
-                ms={ws.avgComputeWaitMs}
-                maxMs={maxTimeSegment}
-                icon={Clock}
-              />
-              <TimeBar
-                label="Execution"
-                ms={ws.avgExecutionMs}
-                maxMs={maxTimeSegment}
-                icon={Cpu}
-              />
-              <TimeBar
-                label="Result Fetch"
-                ms={ws.avgFetchMs}
-                maxMs={maxTimeSegment}
-                icon={ArrowDownToLine}
-              />
-            </div>
-          </div>
-
-          {/* I/O Stats */}
-          <div>
-            <SectionLabel>I/O</SectionLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <StatCell icon={HardDrive} label="Data Read" value={formatBytes(ws.totalReadBytes)} />
-              <StatCell icon={ArrowDownToLine} label="Data Written" value={formatBytes(ws.totalWrittenBytes)} />
-              <StatCell icon={Rows3} label="Rows Read" value={formatCount(ws.totalReadRows)} />
-              <StatCell icon={Rows3} label="Rows Produced" value={formatCount(ws.totalProducedRows)} />
-              <StatCell icon={Flame} label="Spill to Disk" value={formatBytes(ws.totalSpilledBytes)} />
-              <StatCell icon={Network} label="Shuffle" value={formatBytes(ws.totalShuffleBytes)} />
-              <StatCell icon={Database} label="IO Cache Hit" value={`${Math.round(ws.avgIoCachePercent)}%`} />
-              <StatCell icon={FilterX} label="Pruning Eff." value={`${Math.round(ws.avgPruningEfficiency * 100)}%`} />
-            </div>
-          </div>
-
-          {/* Execution Summary */}
-          <div>
-            <SectionLabel>Execution</SectionLabel>
-            <div className="grid grid-cols-2 gap-2">
-              <StatCell icon={Timer} label="p95 Latency" value={formatDuration(ws.p95Ms)} />
-              <StatCell icon={BarChart3} label="Executions" value={ws.count.toString()} />
-              <StatCell icon={Cpu} label="Total Time" value={formatDuration(ws.totalDurationMs)} />
-              <StatCell icon={Zap} label="Parallelism" value={`${ws.avgTaskParallelism.toFixed(1)}x`} />
-            </div>
-          </div>
-
-          {/* Context */}
-          <div>
-            <SectionLabel>Context</SectionLabel>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
-                <OriginIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-muted-foreground">Source</p>
-                  <p className="text-sm font-medium truncate">{originLabel(candidate.queryOrigin)}</p>
-                </div>
-                <DeepLinkIcon href={sourceLink} label={`Open ${originLabel(candidate.queryOrigin)} in Databricks`} />
-              </div>
-              <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
-                <MonitorSmartphone className="h-4 w-4 text-muted-foreground shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">Client App</p>
-                  <p className="text-sm font-medium truncate">{candidate.clientApplication}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
-                <Warehouse className="h-4 w-4 text-muted-foreground shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-muted-foreground">Warehouse</p>
-                  <p className="text-sm font-medium truncate">{candidate.warehouseName}</p>
-                  <p className="text-[11px] text-muted-foreground font-mono">{candidate.warehouseId}</p>
-                </div>
-                <DeepLinkIcon href={warehouseLink} label="Open Warehouse in Databricks" />
-              </div>
-              {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
-                <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
-                  <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-muted-foreground">Workspace</p>
-                    <p className="text-sm font-medium truncate">{candidate.workspaceName}</p>
-                  </div>
-                  {candidate.workspaceUrl && (
-                    <a href={candidate.workspaceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 shrink-0">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Why Ranked */}
-          <div>
-            <SectionLabel>Why Ranked</SectionLabel>
-            <div className="space-y-1.5">
-              {reasons.map((r, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <ChevronRight className="h-3.5 w-3.5 mt-0.5 text-primary shrink-0" />
-                  <span>{r}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {candidate.tags.map((tag) => (
-                <StatusBadge key={tag} status={tagToStatus(tag)}>{tag}</StatusBadge>
-              ))}
-            </div>
-          </div>
-
-          {/* Users */}
-          <div>
-            <SectionLabel>Top Users ({candidate.uniqueUserCount} total)</SectionLabel>
-            <div className="space-y-1.5">
-              {candidate.topUsers.map((user) => (
-                <div key={user} className="flex items-center gap-2 text-sm">
-                  <User className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="truncate">{user}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
 
 /* ── Main Dashboard ── */
 
 /* ── Main Dashboard ── */
-
-export interface DataSourceHealth {
-  name: string;
-  status: "ok" | "error";
-  error?: string;
-  rowCount: number;
-}
-
-export type QueryActionType = "dismiss" | "watch" | "applied";
-export interface QueryActionEntry {
-  action: QueryActionType;
-  note: string | null;
-  actedBy: string | null;
-  actedAt: string;
-}
 
 interface DashboardProps {
   warehouses: WarehouseOption[];
@@ -1404,31 +541,35 @@ export function Dashboard({
   const [enrichmentLoaded, setEnrichmentLoaded] = useState(false);
   const [enrichmentHealth, setEnrichmentHealth] = useState<DataSourceHealth[]>([]);
 
-  // Watch for enrichment data to appear in the DOM (streamed from server)
+  // Watch for streamed server data via MutationObserver (replaces polling)
   useEffect(() => {
-    const check = () => {
-      const el = document.getElementById("enrichment-data");
-      if (el) {
-        try {
-          const data = JSON.parse(el.textContent ?? "{}");
-          if (data.candidates) setEnrichedCandidates(data.candidates);
-          if (data.warehouseCosts) setEnrichedCosts(data.warehouseCosts);
-          if (data.dataSourceHealth) setEnrichmentHealth(data.dataSourceHealth);
-          setEnrichmentLoaded(true);
-        } catch {
-          // ignore parse errors
-        }
-        return true;
-      }
-      return false;
-    };
+    function consumeEnrichment(el: Element) {
+      try {
+        const data = JSON.parse(el.textContent ?? "{}");
+        if (data.candidates) setEnrichedCandidates(data.candidates);
+        if (data.warehouseCosts) setEnrichedCosts(data.warehouseCosts);
+        if (data.dataSourceHealth) setEnrichmentHealth(data.dataSourceHealth);
+        setEnrichmentLoaded(true);
+      } catch { /* ignore parse errors */ }
+    }
 
-    if (check()) return;
-    // Poll for the script tag to appear (streaming)
-    const interval = setInterval(() => {
-      if (check()) clearInterval(interval);
-    }, 200);
-    return () => clearInterval(interval);
+    // Already present (SSR or fast stream)
+    const existing = document.getElementById("enrichment-data");
+    if (existing) { consumeEnrichment(existing); return; }
+
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node instanceof HTMLElement && node.id === "enrichment-data") {
+            consumeEnrichment(node);
+            observer.disconnect();
+            return;
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
 
   // ── AI Triage insights (streamed in from Phase 3) ──
@@ -1436,26 +577,30 @@ export function Dashboard({
   const [triageLoaded, setTriageLoaded] = useState(false);
 
   useEffect(() => {
-    const check = () => {
-      const el = document.getElementById("ai-triage-data");
-      if (el) {
-        try {
-          const data = JSON.parse(el.textContent ?? "{}");
-          setTriageInsights(data);
-          setTriageLoaded(true);
-        } catch {
-          // ignore parse errors
-        }
-        return true;
-      }
-      return false;
-    };
+    function consumeTriage(el: Element) {
+      try {
+        const data = JSON.parse(el.textContent ?? "{}");
+        setTriageInsights(data);
+        setTriageLoaded(true);
+      } catch { /* ignore parse errors */ }
+    }
 
-    if (check()) return;
-    const interval = setInterval(() => {
-      if (check()) clearInterval(interval);
-    }, 500);
-    return () => clearInterval(interval);
+    const existing = document.getElementById("ai-triage-data");
+    if (existing) { consumeTriage(existing); return; }
+
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node instanceof HTMLElement && node.id === "ai-triage-data") {
+            consumeTriage(node);
+            observer.disconnect();
+            return;
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
 
   // Combine health info — enrichment entries override initial ones (dedup by name)
@@ -2566,7 +1711,7 @@ export function Dashboard({
                                         size="icon-xs"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          router.push(`/queries/${c.fingerprint}?action=analyse`);
+                                          router.push(`/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`);
                                         }}
                                       >
                                         <Sparkles className="h-3.5 w-3.5" />
@@ -2583,11 +1728,11 @@ export function Dashboard({
                               <Search className="mr-2 h-4 w-4" />
                               Quick View
                             </ContextMenuItem>
-                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}`)}>
+                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?warehouse=${c.warehouseId}`)}>
                               <Maximize2 className="mr-2 h-4 w-4" />
                               Full Details
                             </ContextMenuItem>
-                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?action=analyse`)}>
+                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`)}>
                               <Sparkles className="mr-2 h-4 w-4" />
                               AI Analyse &amp; Optimise
                             </ContextMenuItem>

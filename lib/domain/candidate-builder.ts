@@ -85,11 +85,16 @@ export function buildCandidates(
     whTotalDurationMs.set(whId, (whTotalDurationMs.get(whId) ?? 0) + run.durationMs);
   }
 
-  // 1. Group by fingerprint
+  // 1. Group by fingerprint (with memoization to avoid rehashing identical SQL)
   const groups = new Map<string, RunGroup>();
+  const fpCache = new Map<string, string>();
 
   for (const run of runs) {
-    const fp = fingerprint(run.queryText);
+    let fp = fpCache.get(run.queryText);
+    if (fp === undefined) {
+      fp = fingerprint(run.queryText);
+      fpCache.set(run.queryText, fp);
+    }
     let group = groups.get(fp);
     if (!group) {
       group = { fingerprint: fp, runs: [] };

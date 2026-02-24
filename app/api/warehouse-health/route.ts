@@ -11,7 +11,7 @@ import {
   aggregateByWarehouse,
   generateRecommendations,
 } from "@/lib/domain/warehouse-recommendations";
-import { saveHealthSnapshot, getLastSnapshot } from "@/lib/dbx/health-store";
+import { saveHealthSnapshot, getLastSnapshots } from "@/lib/dbx/health-store";
 import type { WarehouseRecommendation } from "@/lib/domain/types";
 
 /**
@@ -94,24 +94,23 @@ export async function POST(): Promise<NextResponse> {
         b.metrics.weeklyCostDollars - a.metrics.weeklyCostDollars
     );
 
-    // Save snapshots to Lakebase and look up previous severity for trend indicators
+    // Batch-fetch previous snapshots for trend indicators (single DB round-trip)
     const metricsMap = new Map(metrics.map((m) => [m.warehouseId, m]));
-    const previousSeverities: Record<string, { severity: string; snapshotAt: string } | null> = {};
+    const warehouseIds = recommendations.map((r) => r.metrics.warehouseId);
+    const prevSnapshots = await getLastSnapshots(warehouseIds);
 
+    const previousSeverities: Record<string, { severity: string; snapshotAt: string } | null> = {};
+    for (const whId of warehouseIds) {
+      const prev = prevSnapshots.get(whId);
+      previousSeverities[whId] = prev
+        ? { severity: prev.severity, snapshotAt: prev.snapshotAt }
+        : null;
+    }
+
+    // Save new snapshots (fire in parallel)
     await Promise.all(
       recommendations.map(async (rec) => {
         const whId = rec.metrics.warehouseId;
-        // Fetch previous snapshot BEFORE saving the new one
-        try {
-          const prev = await getLastSnapshot(whId);
-          previousSeverities[whId] = prev
-            ? { severity: prev.severity, snapshotAt: prev.snapshotAt }
-            : null;
-        } catch {
-          previousSeverities[whId] = null;
-        }
-
-        // Save the new snapshot
         const m = metricsMap.get(whId);
         if (m) {
           try {

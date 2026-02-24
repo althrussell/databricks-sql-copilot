@@ -224,7 +224,12 @@ async function CoreDashboardLoader({
       initialQueryActions={queryActionsObj}
     >
       {/* Phase 2 enrichment streams in via nested Suspense */}
-      <Suspense fallback={null}>
+      <Suspense fallback={
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          Loading cost data…
+        </div>
+      }>
         <EnrichmentLoader
           start={start}
           end={end}
@@ -232,7 +237,12 @@ async function CoreDashboardLoader({
         />
       </Suspense>
       {/* Phase 3: AI triage insights (fast model, streams in last) */}
-      <Suspense fallback={null}>
+      <Suspense fallback={
+        <div className="fixed bottom-14 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          Generating AI insights…
+        </div>
+      }>
         <AiTriageLoader candidates={candidates} />
       </Suspense>
     </Dashboard>

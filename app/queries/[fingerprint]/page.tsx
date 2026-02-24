@@ -19,7 +19,7 @@ export const revalidate = 300; // cache for 5 minutes
 
 interface QueryDetailPageProps {
   params: Promise<{ fingerprint: string }>;
-  searchParams: Promise<{ start?: string; end?: string; action?: string }>;
+  searchParams: Promise<{ start?: string; end?: string; action?: string; warehouse?: string }>;
 }
 
 function DetailSkeleton() {
@@ -70,11 +70,13 @@ async function QueryDetailLoader({
   start,
   end,
   autoAnalyse,
+  warehouseId,
 }: {
   fingerprint: string;
   start: string;
   end: string;
   autoAnalyse: boolean;
+  warehouseId?: string;
 }) {
   const catchAndLog =
     <T,>(label: string, fallback: T) =>
@@ -87,7 +89,12 @@ async function QueryDetailLoader({
     };
 
   const [queryResult, costResult] = await Promise.all([
-    listRecentQueries({ startTime: start, endTime: end, limit: 1000 }),
+    listRecentQueries({
+      startTime: start,
+      endTime: end,
+      limit: 500,
+      warehouseId,
+    }),
     getWarehouseCosts({ startTime: start, endTime: end }).catch(
       catchAndLog("costs", [] as WarehouseCost[])
     ),
@@ -123,6 +130,7 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
   const start = searchParams.start ?? lagStart.toISOString();
   const end = searchParams.end ?? lagEnd.toISOString();
   const autoAnalyse = searchParams.action === "analyse";
+  const warehouseId = searchParams.warehouse;
 
   return (
     <div className="px-6 py-8 space-y-6">
@@ -141,6 +149,7 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
           start={start}
           end={end}
           autoAnalyse={autoAnalyse}
+          warehouseId={warehouseId}
         />
       </Suspense>
     </div>

@@ -6,7 +6,7 @@
 
 A Databricks App that surfaces slow and expensive SQL queries, diagnoses performance bottlenecks, and generates AI-powered query rewrites — all from data you already have in system tables.
 
-Built with Next.js, shadcn/ui, and the Databricks SQL Node.js driver. Deploys natively to [Databricks Apps](https://docs.databricks.com/en/apps/index.html) with automatic OAuth authentication.
+Built with Next.js, shadcn/ui, and the Databricks SQL Node.js driver. Deploys natively to [Databricks Apps](https://docs.databricks.com/en/apps/index.html) with on-behalf-of-user (OBO) authentication — queries run under the logged-in user's identity with their Unity Catalog permissions.
 
 <p align="center">
   <img src="public/1.png" alt="DBSQL Co-Pilot Dashboard" width="100%" />
@@ -102,7 +102,7 @@ The app runs `SELECT` queries against these system tables via your SQL Warehouse
 | `system.compute.warehouses` | Warehouse names, sizes, config | Warehouse health recommendations |
 | `system.billing.usage` | DBU consumption per warehouse | Cost estimation per query pattern |
 | `system.billing.list_prices` | SKU pricing | Converts DBUs to dollar amounts |
-| `system.access.workspaces_latest` | Workspace names and URLs | Multi-workspace support and deep links |
+| `system.access.workspaces_latest` | Workspace names and URLs | Multi-workspace support and deep links (optional — dashboard works without it) |
 | `INFORMATION_SCHEMA.COLUMNS` | Column names and types | Provides context for AI analysis |
 
 The app also calls `DESCRIBE DETAIL`, `DESCRIBE TABLE EXTENDED`, and `describe_history()` on tables referenced by slow queries to gather maintenance history for AI context.
@@ -121,7 +121,7 @@ The Warehouse Monitor uses these REST APIs for real-time data:
 | `GET /api/2.0/sql/history/queries` | Recent query history with metadata | Timeline and query table |
 | `GET /api/2.0/sql/history/endpoint-metrics` | Slot utilisation and throughput metrics | Warehouse metrics charts |
 
-All REST API calls are authenticated using the service principal's OAuth token (automatically injected by Databricks Apps).
+REST API calls are authenticated using the logged-in user's OBO token (default) or the service principal's OAuth token (when `AUTH_MODE=sp`).
 
 ### AI models (via `ai_query()` — pay-per-token)
 
@@ -282,47 +282,53 @@ The app needs access to a SQL Warehouse to run queries.
 
 ### Step 5: Configure user authorization scopes
 
-The Warehouse Monitor uses Databricks REST APIs (query history, warehouse stats) which require user-authorized API access. You must add the `sql` scope so the app can make these calls on behalf of the logged-in user.
+The app uses **on-behalf-of-user (OBO) authentication** by default — all SQL queries and REST API calls run under the logged-in user's identity with their Unity Catalog permissions. This requires user authorization scopes to be configured.
 
 1. On your app's page, click the **Resources** tab (or **Configure**)
 2. Scroll down to **User authorization** (Preview section)
-3. Click **+ Add scope**
-4. Add the following scope:
+3. Click **+ Add scope** and add the following scopes:
 
 | Scope | Description |
 |---|---|
-| `sql` | Allow the app to execute SQL and manage SQL related resources in Databricks |
+| `sql` | Allow the app to execute SQL and manage SQL related resources |
+| `catalog.tables:read` | Allow the app to read tables in Unity Catalog |
+| `catalog.schemas:read` | Allow the app to read schemas in Unity Catalog |
+| `catalog.catalogs:read` | Allow the app to read catalogs in Unity Catalog |
 
-5. Click **Save**
+4. Click **Save**
 
-> **What does this do?** When a user opens the app for the first time, they will be prompted to consent to this scope. This allows the app to call Databricks REST APIs (warehouse list, query history, endpoint metrics) on behalf of that user. Without this scope, the Warehouse Monitor page will not be able to load real-time data.
+> **What does this do?** When a user opens the app for the first time, they will be prompted to consent to these scopes. Once consented, all queries run as that user — their Unity Catalog permissions (including row-level filters and column masks) are enforced automatically. This also enables proper audit trails in `system.query.history`.
+>
+> **Service principal fallback:** If you prefer all users to share the service principal's permissions (pre-OBO behaviour), set `AUTH_MODE=sp` in the app's environment variables. See [Environment variables](#environment-variables) below.
 
 ### Step 6: Grant system table permissions
 
-The app runs as a **service principal** that Databricks creates automatically. This service principal needs `SELECT` access to system tables.
+Permission requirements depend on your `AUTH_MODE`:
 
-1. On your app's page, go to the **Settings** tab
-2. Find the **Service principal** name (it looks like something like `dbsql-copilot-app-sp`)
-3. Open a SQL editor in your workspace (or use the Databricks CLI)
-4. Run the following SQL grants:
+- **OBO mode (default):** Each user who opens the app needs `SELECT` access to the system tables below. The service principal only needs **Can use** on the SQL Warehouse. Granting permissions to a **group** (e.g., `platform-admins`) is the easiest approach.
+- **SP mode (`AUTH_MODE=sp`):** The service principal needs all the permissions itself, since it runs every query.
+
+In both cases, find the service principal name on your app's **Settings** tab (looks like `dbsql-copilot-app-sp`).
 
 ```sql
--- Required: Core query and warehouse data
-GRANT SELECT ON system.query.history TO `<service-principal-name>`;
-GRANT SELECT ON system.compute.warehouses TO `<service-principal-name>`;
+-- Service principal: warehouse access (required in both modes)
+-- (This is configured via the resource binding in Step 4, but verify CAN USE is granted)
 
--- Required: Cost estimation
-GRANT SELECT ON system.billing.usage TO `<service-principal-name>`;
-GRANT SELECT ON system.billing.list_prices TO `<service-principal-name>`;
+-- Grant to users (OBO mode) or to the service principal (SP mode).
+-- Replace <principal> with a group name, user email, or the service principal name.
+GRANT SELECT ON system.query.history TO `<principal>`;
+GRANT SELECT ON system.compute.warehouses TO `<principal>`;
 
--- Required: Multi-workspace support
-GRANT SELECT ON system.access.workspaces_latest TO `<service-principal-name>`;
+-- Cost estimation
+GRANT SELECT ON system.billing.usage TO `<principal>`;
+GRANT SELECT ON system.billing.list_prices TO `<principal>`;
 
--- Optional: AI features (skip if you don't want AI analysis)
-GRANT EXECUTE ON FUNCTION ai_query TO `<service-principal-name>`;
+-- Multi-workspace support (optional — dashboard works without it)
+GRANT SELECT ON system.access.workspaces_latest TO `<principal>`;
+
+-- AI features (optional — skip if you don't want AI analysis)
+GRANT EXECUTE ON FUNCTION ai_query TO `<principal>`;
 ```
-
-Replace `<service-principal-name>` with the actual service principal name from your app's Settings tab.
 
 > **Note**: If you are a **metastore admin**, you can grant these permissions. If not, ask your metastore admin to run these statements.
 
@@ -448,7 +454,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-> **Note**: For local development, the personal access token is used for authentication instead of OAuth. Ensure the token belongs to a user with the same system table permissions listed in Step 5 of the deployment guide.
+> **Note**: For local development, the personal access token (PAT) is used for authentication regardless of the `AUTH_MODE` setting — OBO tokens are only available when the app is deployed to Databricks Apps. Ensure your PAT belongs to a user with the system table permissions listed in Step 6 of the deployment guide.
 
 ---
 
@@ -517,9 +523,24 @@ No credential rotation is needed locally — the static URL is used directly.
 
 ## Permissions reference
 
-### Required permissions
+### OBO mode (default — `AUTH_MODE=obo`)
 
-The app's service principal needs these permissions to function:
+In OBO mode, queries execute under the **logged-in user's** identity. Each user must have the necessary permissions on system tables. The service principal still needs warehouse access for the initial connection.
+
+| Who | Permission | Resource | Purpose |
+|---|---|---|---|
+| **Service principal** | **Can use** | Your SQL Warehouse | Establish SQL connections |
+| **Each user** | **SELECT** | `system.query.history` | Read query execution data |
+| **Each user** | **SELECT** | `system.compute.warehouses` | Read warehouse configurations |
+| **Each user** | **SELECT** | `system.billing.usage` | Read DBU consumption data |
+| **Each user** | **SELECT** | `system.billing.list_prices` | Read pricing data for cost estimation |
+| **Each user** | **SELECT** | `system.access.workspaces_latest` | Read workspace names (optional — dashboard works without it) |
+
+> **Tip:** Granting system table access to a group (e.g., `platform-admins`) is easier than granting per-user. Users who lack a specific permission see graceful degradation (e.g., cost columns show "N/A", workspace names show "Unknown").
+
+### Service principal mode (`AUTH_MODE=sp`)
+
+In SP mode, all queries run as the service principal regardless of who is logged in. Grant the same permissions above to the service principal instead.
 
 | Permission | Resource | Purpose |
 |---|---|---|
@@ -528,9 +549,9 @@ The app's service principal needs these permissions to function:
 | **SELECT** | `system.compute.warehouses` | Read warehouse configurations |
 | **SELECT** | `system.billing.usage` | Read DBU consumption data |
 | **SELECT** | `system.billing.list_prices` | Read pricing data for cost estimation |
-| **SELECT** | `system.access.workspaces_latest` | Read workspace names for multi-workspace support |
+| **SELECT** | `system.access.workspaces_latest` | Read workspace names (optional) |
 
-### Optional permissions
+### Optional permissions (both modes)
 
 | Permission | Resource | Purpose |
 |---|---|---|
@@ -539,7 +560,7 @@ The app's service principal needs these permissions to function:
 | **SELECT** | `describe_history()` on user tables | Table maintenance history for AI context |
 | **Can connect** | Lakebase database | Persistent caching (when `ENABLE_LAKEBASE=true`) |
 
-> **What happens if a permission is missing?** The app degrades gracefully. Missing cost data means cost columns show "N/A". Missing AI permissions means AI buttons show an error message. Missing Lakebase means no persistence. The dashboard and warehouse monitor always work as long as the core system table permissions are granted.
+> **What happens if a permission is missing?** The app degrades gracefully. Missing cost data means cost columns show "N/A". Missing workspace data means workspace names show "Unknown". Missing AI permissions means AI buttons show an error message. Missing Lakebase means no persistence. The dashboard and warehouse monitor always work as long as the core system table permissions are granted.
 
 ---
 
@@ -565,6 +586,7 @@ The app's service principal needs these permissions to function:
 
 | Variable | Where | Description |
 |---|---|---|
+| `AUTH_MODE` | `app.yaml` or `.env.local` | `obo` (default) = use logged-in user's token; `sp` = always use service principal |
 | `ENABLE_LAKEBASE` | `app.yaml` or `.env.local` | Set to `true` to enable persistence (default: `false`) |
 | `DATABRICKS_TOKEN` | `.env.local` only | Personal access token for local development |
 
@@ -585,8 +607,9 @@ app/                              Next.js App Router pages
 
 lib/
 ├── dbx/
-│   ├── sql-client.ts             Databricks SQL connection (OAuth + PAT)
-│   ├── rest-client.ts            Databricks REST API client
+│   ├── sql-client.ts             Databricks SQL connection (OBO + OAuth + PAT)
+│   ├── rest-client.ts            Databricks REST API client (OBO-aware)
+│   ├── obo.ts                    On-behalf-of-user token helper
 │   ├── prisma.ts                 Prisma client (optional Lakebase)
 │   ├── rewrite-store.ts          AI rewrite cache
 │   ├── actions-store.ts          Query actions CRUD
@@ -635,10 +658,12 @@ components/
 
 | Problem | Cause | Solution |
 |---|---|---|
-| Dashboard shows no data | Service principal lacks system table access | Grant `SELECT` on system tables (see Step 5) |
+| Dashboard shows no data | User (OBO) or service principal (SP) lacks system table access | Grant `SELECT` on system tables — see [Permissions reference](#permissions-reference) |
+| "INSUFFICIENT_PERMISSIONS" on `workspaces_latest` | User lacks access to `system.access.workspaces_latest` | Grant `SELECT` or ignore — workspace names show "Unknown" but dashboard still loads |
 | Cost columns show "N/A" | Missing billing table permissions | Grant `SELECT` on `system.billing.usage` and `system.billing.list_prices` |
 | AI buttons show errors | `ai_query()` not available | Grant `EXECUTE` on `ai_query()`, or ignore (AI is optional) |
-| "PERMISSION_DENIED" in logs | Service principal lacks a specific permission | Check which API/table failed and grant the corresponding permission |
+| "The service principal lacks the required Databricks permissions" | OBO is not active; app fell back to SP which lacks permissions | Ensure user authorization scopes are configured (Step 5) and `AUTH_MODE` is `obo` (or unset) |
+| "PERMISSION_DENIED" in logs | User or SP lacks a specific permission | Check which API/table failed and grant the corresponding permission |
 | App stuck on "Starting" | Build failed | Check the **Logs** tab for npm or TypeScript errors |
 | Blank page after deploy | Missing warehouse resource | Ensure `sql-warehouse` resource is added (Step 4) |
 
@@ -655,7 +680,8 @@ components/
 
 - **Read-only**: The app only reads system tables and REST APIs. It does not write to Unity Catalog, modify warehouses, or create compute resources.
 - **No external calls**: All data stays within your Databricks workspace. The app makes no calls to external services.
-- **OAuth authentication**: When deployed to Databricks Apps, authentication is handled automatically via the platform's OAuth flow. No tokens are stored in the app.
+- **On-behalf-of-user (OBO) authentication**: By default, all SQL queries and REST API calls execute under the logged-in user's identity via the Databricks Apps `x-forwarded-access-token` proxy. This means each user's Unity Catalog permissions (including row-level filters and column masks) are enforced automatically. OBO tokens are per-request and never stored — the Databricks Apps proxy handles token refresh. Set `AUTH_MODE=sp` to fall back to service principal identity if needed.
+- **Audit trail**: In OBO mode, queries appear in `system.query.history` under the actual user's identity, not the service principal — providing accurate attribution for compliance and audit.
 - **PII handling**: Query text from `system.query.history` is displayed in the UI. If your queries contain sensitive data in string literals, the AI triage feature normalises literals in SQL fingerprints. Consider row-level security on system tables if needed.
 - **No secrets in code**: All credentials are injected via environment variables or Databricks secret scopes.
 

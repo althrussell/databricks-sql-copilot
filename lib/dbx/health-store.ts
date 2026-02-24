@@ -76,6 +76,45 @@ export async function saveHealthSnapshot(
 }
 
 /**
+ * Batch-fetch the most recent non-expired snapshot for multiple warehouses.
+ * Returns a Map of warehouseId → HealthSnapshot. Missing entries mean no snapshot.
+ */
+export async function getLastSnapshots(warehouseIds: string[]): Promise<Map<string, HealthSnapshot>> {
+  const result = new Map<string, HealthSnapshot>();
+  if (!isLakebaseEnabled() || warehouseIds.length === 0) return result;
+
+  try {
+    const rows = await withPrisma((p) =>
+      p.healthSnapshot.findMany({
+        where: {
+          warehouseId: { in: warehouseIds },
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { snapshotAt: "desc" },
+        distinct: ["warehouseId"],
+      })
+    );
+
+    for (const row of rows) {
+      result.set(row.warehouseId, {
+        id: row.id,
+        warehouseId: row.warehouseId,
+        snapshotAt: row.snapshotAt.toISOString(),
+        severity: row.severity ?? "",
+        headline: row.headline ?? "",
+        action: row.action ?? "",
+        metrics: (row.metrics as Record<string, unknown>) ?? {},
+        recommendation: (row.recommendation as Record<string, unknown>) ?? {},
+      });
+    }
+  } catch (err) {
+    console.error("[health-store] Failed to batch-get snapshots:", err);
+  }
+
+  return result;
+}
+
+/**
  * Get the most recent non-expired snapshot for a warehouse.
  * Returns null when Lakebase is disabled.
  */

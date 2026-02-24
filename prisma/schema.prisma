@@ -47,6 +47,21 @@ model RewriteCache {
   @@schema("dbsql_copilot")
 }
 
+// ── Triage Cache ──────────────────────────────────────────────────
+// Caches AI triage insights by a hash of the top-N fingerprints.
+// Avoids redundant LLM calls when the same candidates appear on refresh.
+// 1-hour TTL (triage insights are ephemeral by nature).
+
+model TriageCache {
+  fingerprintHash String   @id @map("fingerprint_hash")
+  insights        Json
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt       DateTime @default(dbgenerated("NOW() + INTERVAL '1 hour'")) @map("expires_at") @db.Timestamptz
+
+  @@map("triage_cache")
+  @@schema("dbsql_copilot")
+}
+
 // ── Health Snapshots ───────────────────────────────────────────────
 // Stores a snapshot each time warehouse health is analysed.
 // Enables trend comparison between runs. 90-day TTL.
