@@ -4,15 +4,11 @@ import { notFound } from "next/navigation";
 import { listRecentQueries } from "@/lib/queries/query-history";
 import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
-import { explainScore } from "@/lib/domain/scoring";
-import { getWorkspaceBaseUrl, buildDeepLink } from "@/lib/utils/deep-links";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
-import { StatusBadge } from "@/components/ui/status-badge";
-import type { Candidate, WarehouseCost } from "@/lib/domain/types";
+import type { WarehouseCost } from "@/lib/domain/types";
 import { QueryDetailClient } from "./query-detail-client";
 
 export const revalidate = 300; // cache for 5 minutes

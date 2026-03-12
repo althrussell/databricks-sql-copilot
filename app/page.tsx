@@ -186,7 +186,7 @@ async function CoreDashboardLoader({
   }
 
   // Fetch query actions from Lakebase (non-blocking — empty map on failure)
-  let queryActionsObj: Record<string, { action: "dismiss" | "watch" | "applied"; note: string | null; actedBy: string | null; actedAt: string }> = {};
+  const queryActionsObj: Record<string, { action: "dismiss" | "watch" | "applied"; note: string | null; actedBy: string | null; actedAt: string }> = {};
   try {
     const actionsMap = await getQueryActions();
     for (const [fp, act] of actionsMap) {

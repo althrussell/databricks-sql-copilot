@@ -800,7 +800,6 @@ function AiResultsPanel({
   result,
   activeTab,
   onTabChange,
-  fingerprint,
   originalSql,
   sqlEditorLink,
   cached,
