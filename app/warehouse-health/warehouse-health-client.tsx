@@ -39,7 +39,6 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { ScalingEfficiencyEntry, PeakOffPeakEntry, WarehouseComparisonEntry } from "@/lib/queries/warehouse-insights";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {

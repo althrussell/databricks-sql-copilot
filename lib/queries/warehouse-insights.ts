@@ -64,7 +64,8 @@ export async function getScalingEfficiency(): Promise<ScalingEfficiencyEntry[]> 
     LEFT JOIN system.compute.warehouses w ON m.warehouse_id = w.id
     ORDER BY ROUND(GREATEST(0, 100 - (m.avg_queue_sec * 5) - (m.avg_cold_start_sec * 3) - (CASE WHEN m.avg_utilization_pct < 50 THEN (50 - m.avg_utilization_pct) ELSE 0 END)), 0) ASC
   `;
-  return executeQuery<ScalingEfficiencyEntry>(sql);
+  const result = await executeQuery<ScalingEfficiencyEntry>(sql);
+  return result.rows;
 }
 
 export interface PeakOffPeakEntry {
@@ -111,7 +112,8 @@ export async function getPeakOffPeak(): Promise<PeakOffPeakEntry[]> {
     HAVING COUNT(*) >= 5
     ORDER BY q.warehouse_id, period
   `;
-  return executeQuery<PeakOffPeakEntry>(sql);
+  const result = await executeQuery<PeakOffPeakEntry>(sql);
+  return result.rows;
 }
 
 export interface WarehouseComparisonEntry {
@@ -159,5 +161,6 @@ export async function getWarehouseComparison(): Promise<WarehouseComparisonEntry
     HAVING COUNT(*) >= 10
     ORDER BY COUNT(*) DESC
   `;
-  return executeQuery<WarehouseComparisonEntry>(sql);
+  const result = await executeQuery<WarehouseComparisonEntry>(sql);
+  return result.rows;
 }

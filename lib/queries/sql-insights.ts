@@ -82,8 +82,8 @@ export async function getQueryRegressions(
     ORDER BY (c.p95_ms - b.p95_ms) * c.runs DESC
     LIMIT 20
   `;
-  const rows = await executeQuery<RegressionEntry>(sql);
-  return rows;
+  const result = await executeQuery<RegressionEntry>(sql);
+  return result.rows;
 }
 
 export interface UserLeaderboardEntry {
@@ -123,7 +123,8 @@ export async function getUserLeaderboard(
     ORDER BY SUM(total_duration_ms) DESC
     LIMIT 20
   `;
-  return executeQuery<UserLeaderboardEntry>(sql);
+  const result = await executeQuery<UserLeaderboardEntry>(sql);
+  return result.rows;
 }
 
 export interface SourceBreakdownEntry {
@@ -182,5 +183,6 @@ export async function getSourceBreakdown(
     GROUP BY c.source_type, t.total_queries
     ORDER BY SUM(c.total_duration_ms) DESC
   `;
-  return executeQuery<SourceBreakdownEntry>(sql);
+  const result = await executeQuery<SourceBreakdownEntry>(sql);
+  return result.rows;
 }
