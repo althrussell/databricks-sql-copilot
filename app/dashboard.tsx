@@ -47,8 +47,16 @@ import {
   Terminal,
   Trophy,
   OctagonAlert,
+  ChevronDown,
+  ChevronUp,
+  TrendingUp,
+  TrendingDown,
+  Users,
+  BarChart,
+  Layers,
 } from "lucide-react";
 import { ActionsPanel } from "./actions-panel";
+import type { RegressionEntry, UserLeaderboardEntry, SourceBreakdownEntry } from "@/lib/queries/sql-insights";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -663,6 +671,57 @@ export function Dashboard({
       return next;
     });
   }
+
+  // ── Collapsible insight panels (lazy-loaded) ──
+  interface PanelState<T> { open: boolean; loading: boolean; data: T | null; error: string | null }
+  const [regressionPanel, setRegressionPanel] = useState<PanelState<RegressionEntry[]>>({ open: false, loading: false, data: null, error: null });
+  const [userPanel, setUserPanel] = useState<PanelState<UserLeaderboardEntry[]>>({ open: false, loading: false, data: null, error: null });
+  const [sourcePanel, setSourcePanel] = useState<PanelState<SourceBreakdownEntry[]>>({ open: false, loading: false, data: null, error: null });
+
+  const toggleRegressionPanel = useCallback(async () => {
+    setRegressionPanel((prev) => {
+      if (prev.open) return { ...prev, open: false };
+      if (prev.data) return { ...prev, open: true };
+      return { open: true, loading: true, data: null, error: null };
+    });
+    if (regressionPanel.data || regressionPanel.open) return;
+    try {
+      const res = await fetch("/api/sql-regressions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startTime: serverStartTime, endTime: serverEndTime }) });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setRegressionPanel((p) => ({ ...p, loading: false, data: Array.isArray(data) ? data : [], error: null }));
+    } catch (err) { setRegressionPanel((p) => ({ ...p, loading: false, error: err instanceof Error ? err.message : String(err) })); }
+  }, [regressionPanel.data, regressionPanel.open, serverStartTime, serverEndTime]);
+
+  const toggleUserPanel = useCallback(async () => {
+    setUserPanel((prev) => {
+      if (prev.open) return { ...prev, open: false };
+      if (prev.data) return { ...prev, open: true };
+      return { open: true, loading: true, data: null, error: null };
+    });
+    if (userPanel.data || userPanel.open) return;
+    try {
+      const res = await fetch("/api/sql-user-leaderboard", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startTime: serverStartTime, endTime: serverEndTime }) });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setUserPanel((p) => ({ ...p, loading: false, data: Array.isArray(data) ? data : [], error: null }));
+    } catch (err) { setUserPanel((p) => ({ ...p, loading: false, error: err instanceof Error ? err.message : String(err) })); }
+  }, [userPanel.data, userPanel.open, serverStartTime, serverEndTime]);
+
+  const toggleSourcePanel = useCallback(async () => {
+    setSourcePanel((prev) => {
+      if (prev.open) return { ...prev, open: false };
+      if (prev.data) return { ...prev, open: true };
+      return { open: true, loading: true, data: null, error: null };
+    });
+    if (sourcePanel.data || sourcePanel.open) return;
+    try {
+      const res = await fetch("/api/sql-source-breakdown", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ startTime: serverStartTime, endTime: serverEndTime }) });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setSourcePanel((p) => ({ ...p, loading: false, data: Array.isArray(data) ? data : [], error: null }));
+    } catch (err) { setSourcePanel((p) => ({ ...p, loading: false, error: err instanceof Error ? err.message : String(err) })); }
+  }, [sourcePanel.data, sourcePanel.open, serverStartTime, serverEndTime]);
 
   // Table: search, sort, pagination, min duration filter
   const [tableSearch, setTableSearch] = useState("");
@@ -1434,6 +1493,200 @@ export function Dashboard({
         {/* ── Operator Actions Summary ── */}
         {!fetchError && serverStartTime && serverEndTime && (
           <ActionsPanel startTime={serverStartTime} endTime={serverEndTime} />
+        )}
+
+        {/* ── Query Regression Detection ── */}
+        {!fetchError && serverStartTime && serverEndTime && (
+          <Card className="overflow-hidden">
+            <button onClick={toggleRegressionPanel} className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+              <div className="flex items-center gap-2">
+                <TrendingDown className="h-4 w-4 text-red-500" />
+                <span className="text-sm font-semibold">Query Regressions</span>
+                <span className="text-xs text-muted-foreground">Queries that got 1.5x+ slower vs prior period</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {regressionPanel.data && <Badge variant="outline" className="text-xs">{regressionPanel.data.length} found</Badge>}
+                {regressionPanel.open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </button>
+            {regressionPanel.open && (
+              <CardContent className="pt-0 pb-4 px-4">
+                {regressionPanel.loading && <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Comparing against prior period...</div>}
+                {regressionPanel.error && <p className="text-sm text-destructive py-2">{regressionPanel.error}</p>}
+                {regressionPanel.data && regressionPanel.data.length === 0 && <p className="text-sm text-muted-foreground py-2">No significant regressions detected. All queries are performing within baseline.</p>}
+                {regressionPanel.data && regressionPanel.data.length > 0 && (
+                  <div className="overflow-x-auto rounded-md border border-border/40">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableHead className="text-xs font-semibold px-3 py-2">Query</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Baseline p95</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Current p95</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Regression</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Runs</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2">User</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {regressionPanel.data.map((r) => (
+                          <TableRow key={r.fingerprint} className="hover:bg-muted/20">
+                            <TableCell className="text-xs px-3 py-1.5 max-w-[300px] truncate font-mono">{r.querySnippet}</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{formatDuration(r.baselineP95Ms)}</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums font-semibold text-red-600 dark:text-red-400">{formatDuration(r.currentP95Ms)}</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right">
+                              <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400 font-semibold">
+                                <TrendingUp className="h-3 w-3" />+{r.regressionPct}%
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{r.currentRuns}</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 truncate max-w-[150px]">{r.executedBy.split("@")[0]}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        )}
+
+        {/* ── User Leaderboard ── */}
+        {!fetchError && serverStartTime && serverEndTime && (
+          <Card className="overflow-hidden">
+            <button onClick={toggleUserPanel} className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-blue-500" />
+                <span className="text-sm font-semibold">User Leaderboard</span>
+                <span className="text-xs text-muted-foreground">Top users by total query duration</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {userPanel.data && <Badge variant="outline" className="text-xs">{userPanel.data.length} users</Badge>}
+                {userPanel.open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </button>
+            {userPanel.open && (
+              <CardContent className="pt-0 pb-4 px-4">
+                {userPanel.loading && <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading user consumption data...</div>}
+                {userPanel.error && <p className="text-sm text-destructive py-2">{userPanel.error}</p>}
+                {userPanel.data && userPanel.data.length > 0 && (
+                  <div className="overflow-x-auto rounded-md border border-border/40">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableHead className="text-xs font-semibold px-3 py-2">#</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2">User</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Total Duration</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Queries</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Failed</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">p95</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Read</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">Spill</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">DBU·h</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {userPanel.data.map((u, i) => (
+                          <TableRow key={u.executedBy} className="hover:bg-muted/20">
+                            <TableCell className="text-xs px-3 py-1.5 tabular-nums text-muted-foreground">{i + 1}</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 font-medium truncate max-w-[200px]">{u.executedBy.split("@")[0]}</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums font-semibold">{u.totalDurationMin}m</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{formatCount(u.queryCount)}</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {u.failedCount > 0 ? <span className="text-red-600 dark:text-red-400">{formatCount(u.failedCount)}</span> : "0"}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{formatDuration(u.p95DurationMs)}</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{u.totalReadGiB} GiB</TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {u.totalSpillGiB > 0.1 ? <span className="text-amber-600 dark:text-amber-400">{u.totalSpillGiB} GiB</span> : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{u.estimatedCostDbu}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        )}
+
+        {/* ── Query Source Breakdown ── */}
+        {!fetchError && serverStartTime && serverEndTime && (
+          <Card className="overflow-hidden">
+            <button onClick={toggleSourcePanel} className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-purple-500" />
+                <span className="text-sm font-semibold">Query Source Breakdown</span>
+                <span className="text-xs text-muted-foreground">Duration &amp; cost by origin (dashboard, job, notebook, ad-hoc)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {sourcePanel.data && <Badge variant="outline" className="text-xs">{sourcePanel.data.length} sources</Badge>}
+                {sourcePanel.open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </button>
+            {sourcePanel.open && (
+              <CardContent className="pt-0 pb-4 px-4">
+                {sourcePanel.loading && <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Analyzing query sources...</div>}
+                {sourcePanel.error && <p className="text-sm text-destructive py-2">{sourcePanel.error}</p>}
+                {sourcePanel.data && sourcePanel.data.length > 0 && (
+                  <div className="space-y-3">
+                    {/* Visual bar chart */}
+                    <div className="space-y-1.5">
+                      {sourcePanel.data.map((s) => {
+                        const maxDuration = Math.max(...sourcePanel.data!.map((x) => x.totalDurationMin));
+                        const pct = maxDuration > 0 ? (s.totalDurationMin / maxDuration) * 100 : 0;
+                        return (
+                          <div key={s.sourceType} className="flex items-center gap-3">
+                            <span className="text-xs w-24 shrink-0 text-right text-muted-foreground">{s.sourceType}</span>
+                            <div className="flex-1 h-5 bg-muted/30 rounded overflow-hidden relative">
+                              <div className="h-full bg-primary/60 rounded transition-all" style={{ width: `${pct}%` }} />
+                              <span className="absolute inset-0 flex items-center px-2 text-[10px] font-medium">{s.totalDurationMin}m · {s.pctOfTotal}%</span>
+                            </div>
+                            <span className="text-xs tabular-nums text-muted-foreground w-16 text-right">{formatCount(s.queryCount)} queries</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Detail table */}
+                    <div className="overflow-x-auto rounded-md border border-border/40">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                            <TableHead className="text-xs font-semibold px-3 py-2">Source</TableHead>
+                            <TableHead className="text-xs font-semibold px-3 py-2 text-right">Queries</TableHead>
+                            <TableHead className="text-xs font-semibold px-3 py-2 text-right">% of Total</TableHead>
+                            <TableHead className="text-xs font-semibold px-3 py-2 text-right">Total Duration</TableHead>
+                            <TableHead className="text-xs font-semibold px-3 py-2 text-right">Avg Duration</TableHead>
+                            <TableHead className="text-xs font-semibold px-3 py-2 text-right">Failed</TableHead>
+                            <TableHead className="text-xs font-semibold px-3 py-2 text-right">Read</TableHead>
+                            <TableHead className="text-xs font-semibold px-3 py-2 text-right">Users</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sourcePanel.data.map((s) => (
+                            <TableRow key={s.sourceType} className="hover:bg-muted/20">
+                              <TableCell className="text-xs px-3 py-1.5 font-medium">{s.sourceType}</TableCell>
+                              <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{formatCount(s.queryCount)}</TableCell>
+                              <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{s.pctOfTotal}%</TableCell>
+                              <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums font-semibold">{s.totalDurationMin}m</TableCell>
+                              <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{formatDuration(s.avgDurationMs)}</TableCell>
+                              <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                                {s.failedCount > 0 ? <span className="text-red-600 dark:text-red-400">{formatCount(s.failedCount)}</span> : "0"}
+                              </TableCell>
+                              <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{s.totalReadGiB} GiB</TableCell>
+                              <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{s.uniqueUsers}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
         )}
 
         {/* ── Warehouse Health CTA ── */}

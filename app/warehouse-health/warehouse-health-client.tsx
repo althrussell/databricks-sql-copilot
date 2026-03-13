@@ -9,26 +9,36 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Cpu,
   DollarSign,
   ExternalLink,
   Flame,
+  Gauge,
   Hourglass,
   Info,
   Layers,
   Loader2,
   Minus,
+  Moon,
   Search,
   Server,
   Settings2,
   Shield,
   Sparkles,
+  Sun,
   Timer,
   Users,
   XCircle,
   Zap,
 } from "lucide-react";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import type { ScalingEfficiencyEntry, PeakOffPeakEntry, WarehouseComparisonEntry } from "@/lib/queries/warehouse-insights";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -616,6 +626,62 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
   const warningCount = actionable.filter((r) => r.severity === "warning").length;
   const infoCount = actionable.filter((r) => r.severity === "info").length;
 
+  interface PanelState<T> { open: boolean; loading: boolean; data: T | null; error: string | null }
+  const [scalingPanel, setScalingPanel] = useState<PanelState<ScalingEfficiencyEntry[]>>({ open: false, loading: false, data: null, error: null });
+  const [peakPanel, setPeakPanel] = useState<PanelState<PeakOffPeakEntry[]>>({ open: false, loading: false, data: null, error: null });
+  const [comparePanel, setComparePanel] = useState<PanelState<WarehouseComparisonEntry[]>>({ open: false, loading: false, data: null, error: null });
+
+  const toggleScalingPanel = useCallback(async () => {
+    setScalingPanel((prev) => {
+      if (prev.open) return { ...prev, open: false };
+      if (prev.data) return { ...prev, open: true };
+      return { open: true, loading: true, data: null, error: null };
+    });
+    if (scalingPanel.data || scalingPanel.open) return;
+    try {
+      const res = await fetch("/api/wh-scaling-efficiency", { method: "POST" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setScalingPanel((p) => ({ ...p, loading: false, data: Array.isArray(data) ? data : [], error: null }));
+    } catch (err) { setScalingPanel((p) => ({ ...p, loading: false, error: err instanceof Error ? err.message : String(err) })); }
+  }, [scalingPanel.data, scalingPanel.open]);
+
+  const togglePeakPanel = useCallback(async () => {
+    setPeakPanel((prev) => {
+      if (prev.open) return { ...prev, open: false };
+      if (prev.data) return { ...prev, open: true };
+      return { open: true, loading: true, data: null, error: null };
+    });
+    if (peakPanel.data || peakPanel.open) return;
+    try {
+      const res = await fetch("/api/wh-peak-offpeak", { method: "POST" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setPeakPanel((p) => ({ ...p, loading: false, data: Array.isArray(data) ? data : [], error: null }));
+    } catch (err) { setPeakPanel((p) => ({ ...p, loading: false, error: err instanceof Error ? err.message : String(err) })); }
+  }, [peakPanel.data, peakPanel.open]);
+
+  const toggleComparePanel = useCallback(async () => {
+    setComparePanel((prev) => {
+      if (prev.open) return { ...prev, open: false };
+      if (prev.data) return { ...prev, open: true };
+      return { open: true, loading: true, data: null, error: null };
+    });
+    if (comparePanel.data || comparePanel.open) return;
+    try {
+      const res = await fetch("/api/wh-comparison", { method: "POST" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setComparePanel((p) => ({ ...p, loading: false, data: Array.isArray(data) ? data : [], error: null }));
+    } catch (err) { setComparePanel((p) => ({ ...p, loading: false, error: err instanceof Error ? err.message : String(err) })); }
+  }, [comparePanel.data, comparePanel.open]);
+
+  function formatDur(ms: number): string {
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+    return `${(ms / 60000).toFixed(1)}m`;
+  }
+
   return (
     <TooltipProvider>
       <div className="space-y-6">
@@ -744,6 +810,195 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
             )}
           </>
         )}
+
+        {/* ── Auto-Scaling Efficiency Score ── */}
+        <Card className="overflow-hidden">
+          <button onClick={toggleScalingPanel} className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+            <div className="flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-blue-500" />
+              <span className="text-sm font-semibold">Auto-Scaling Efficiency</span>
+              <span className="text-xs text-muted-foreground">Queue pressure, cold starts, and utilization scoring</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {scalingPanel.data && <Badge variant="outline" className="text-xs">{scalingPanel.data.length} warehouses</Badge>}
+              {scalingPanel.open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </div>
+          </button>
+          {scalingPanel.open && (
+            <CardContent className="pt-0 pb-4 px-4">
+              {scalingPanel.loading && <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Calculating scaling efficiency...</div>}
+              {scalingPanel.error && <p className="text-sm text-destructive py-2">{scalingPanel.error}</p>}
+              {scalingPanel.data && scalingPanel.data.length > 0 && (
+                <div className="overflow-x-auto rounded-md border border-border/40">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30 hover:bg-muted/30">
+                        <TableHead className="text-xs font-semibold px-3 py-2">Warehouse</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-center">Score</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Queries</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Avg Queue</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Total Queue</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Avg Cold Start</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Utilization</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2">Recommendation</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {scalingPanel.data.map((s) => (
+                        <TableRow key={s.warehouseId} className="hover:bg-muted/20">
+                          <TableCell className="text-xs px-3 py-1.5 font-medium truncate max-w-[200px]">{s.warehouseName}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <span className={`font-bold tabular-nums ${s.efficiencyScore >= 80 ? "text-emerald-600 dark:text-emerald-400" : s.efficiencyScore >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>{s.efficiencyScore}</span>
+                              <div className="h-1.5 w-12 rounded-full bg-muted overflow-hidden">
+                                <div className={`h-full rounded-full ${s.efficiencyScore >= 80 ? "bg-emerald-500" : s.efficiencyScore >= 50 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${s.efficiencyScore}%` }} />
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{s.totalQueries.toLocaleString()}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{s.avgQueueSec}s</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{s.totalQueueMin}m</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{s.avgColdStartSec}s</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{s.avgUtilizationPct}%</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 max-w-[250px]">
+                            <span className={`text-xs ${s.efficiencyScore >= 80 ? "text-emerald-600 dark:text-emerald-400" : s.efficiencyScore >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
+                              {s.recommendation}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
+
+        {/* ── Peak vs Off-Peak Analysis ── */}
+        <Card className="overflow-hidden">
+          <button onClick={togglePeakPanel} className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+            <div className="flex items-center gap-2">
+              <Sun className="h-4 w-4 text-amber-500" />
+              <span className="text-sm font-semibold">Peak vs Off-Peak Analysis</span>
+              <span className="text-xs text-muted-foreground">Business hours, off-hours, and weekend comparison</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {peakPanel.data && <Badge variant="outline" className="text-xs">{peakPanel.data.length} rows</Badge>}
+              {peakPanel.open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </div>
+          </button>
+          {peakPanel.open && (
+            <CardContent className="pt-0 pb-4 px-4">
+              {peakPanel.loading && <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Analyzing peak vs off-peak patterns...</div>}
+              {peakPanel.error && <p className="text-sm text-destructive py-2">{peakPanel.error}</p>}
+              {peakPanel.data && peakPanel.data.length > 0 && (
+                <div className="overflow-x-auto rounded-md border border-border/40">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30 hover:bg-muted/30">
+                        <TableHead className="text-xs font-semibold px-3 py-2">Warehouse</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2">Period</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Queries</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Avg Duration</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">p95</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Queue Time</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Cold Start</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Users</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {peakPanel.data.map((p, i) => (
+                        <TableRow key={`${p.warehouseId}-${p.period}`} className={`hover:bg-muted/20 ${i > 0 && peakPanel.data![i-1].warehouseId !== p.warehouseId ? "border-t-2 border-border" : ""}`}>
+                          <TableCell className="text-xs px-3 py-1.5 font-medium truncate max-w-[180px]">{p.warehouseName}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5">
+                            <span className="inline-flex items-center gap-1">
+                              {p.period.includes("Business") ? <Sun className="h-3 w-3 text-amber-500" /> : p.period === "Weekend" ? <Moon className="h-3 w-3 text-blue-500" /> : <Moon className="h-3 w-3 text-indigo-500" />}
+                              {p.period}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{p.queryCount.toLocaleString()}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{formatDur(p.avgDurationMs)}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{formatDur(p.p95DurationMs)}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{p.totalQueueMin}m</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{p.totalColdStartMin}m</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{p.uniqueUsers}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
+
+        {/* ── Warehouse Comparison Matrix ── */}
+        <Card className="overflow-hidden">
+          <button onClick={toggleComparePanel} className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
+            <div className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-purple-500" />
+              <span className="text-sm font-semibold">Warehouse Comparison Matrix</span>
+              <span className="text-xs text-muted-foreground">Side-by-side metrics across all warehouses</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {comparePanel.data && <Badge variant="outline" className="text-xs">{comparePanel.data.length} warehouses</Badge>}
+              {comparePanel.open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </div>
+          </button>
+          {comparePanel.open && (
+            <CardContent className="pt-0 pb-4 px-4">
+              {comparePanel.loading && <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading warehouse comparison...</div>}
+              {comparePanel.error && <p className="text-sm text-destructive py-2">{comparePanel.error}</p>}
+              {comparePanel.data && comparePanel.data.length > 0 && (
+                <div className="overflow-x-auto rounded-md border border-border/40">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30 hover:bg-muted/30">
+                        <TableHead className="text-xs font-semibold px-3 py-2">Warehouse</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Queries</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Users</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Avg</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">p95</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Fail %</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Queue</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Spill</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Read</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">Pruning</TableHead>
+                        <TableHead className="text-xs font-semibold px-3 py-2 text-right">IO Cache</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {comparePanel.data.map((c) => (
+                        <TableRow key={c.warehouseId} className="hover:bg-muted/20">
+                          <TableCell className="text-xs px-3 py-1.5 font-medium truncate max-w-[180px]">{c.warehouseName}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{c.queryCount.toLocaleString()}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{c.uniqueUsers}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{formatDur(c.avgDurationMs)}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums font-semibold">{formatDur(c.p95DurationMs)}</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                            <span className={c.failureRate > 5 ? "text-red-600 dark:text-red-400 font-semibold" : ""}>{c.failureRate}%</span>
+                          </TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{c.totalQueueMin}m</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                            {c.totalSpillGiB > 0.1 ? <span className="text-amber-600 dark:text-amber-400">{c.totalSpillGiB} GiB</span> : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">{c.totalReadTiB} TiB</TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                            <span className={c.avgPruningPct < 50 ? "text-red-600 dark:text-red-400" : c.avgPruningPct < 80 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}>{c.avgPruningPct}%</span>
+                          </TableCell>
+                          <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                            <span className={c.avgIoCachePct < 30 ? "text-red-600 dark:text-red-400" : c.avgIoCachePct < 60 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}>{c.avgIoCachePct}%</span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
       </div>
     </TooltipProvider>
   );
