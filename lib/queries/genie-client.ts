@@ -24,9 +24,111 @@ async function getSpBearerToken(): Promise<string> {
     headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${credentials}` },
     body: body.toString(),
   }, { timeoutMs: TIMEOUTS.AUTH });
-  if (!response.ok) throw new Error(`Genie SP OAuth failed: ${response.status}`);
+  if (!response.ok) throw new Error("Genie SP OAuth failed: " + response.status);
   const data = (await response.json()) as { access_token: string };
   return data.access_token;
+}
+
+export interface GenieError {
+  code: string;
+  message: string;
+  fixSteps: string[];
+}
+
+function parseGenieError(status: number, body: string, context: string): GenieError {
+  let parsed: { error_code?: string; message?: string } = {};
+  try { parsed = JSON.parse(body); } catch { /* raw text */ }
+
+  const errorCode = parsed.error_code ?? String(status);
+  const rawMsg = parsed.message ?? body;
+  const config = getConfig();
+  const spId = config.auth.mode === "oauth" ? config.auth.clientId : "your-app-service-principal-id";
+
+  if (status === 404 && (errorCode === "RESOURCE_DOES_NOT_EXIST" || rawMsg.includes("does not exist"))) {
+    return {
+      code: "GENIE_SPACE_NOT_FOUND",
+      message: `The Genie Space does not exist or the app's Service Principal does not have access.`,
+      fixSteps: [
+        `Open Databricks workspace → navigate to the Genie Space`,
+        `Click the Share button on the Genie Space`,
+        `Add the app's Service Principal (ID: ${spId}) with "Can Run" permission`,
+        `If the space was deleted, create a new one and update the GENIE_SPACE_ID environment variable`,
+      ],
+    };
+  }
+
+  if (status === 403) {
+    if (rawMsg.includes("not authorized to use or monitor this SQL Endpoint") || rawMsg.includes("SQL Endpoint")) {
+      const warehouseMatch = rawMsg.match(/SQL Endpoint/i);
+      return {
+        code: "WAREHOUSE_PERMISSION_DENIED",
+        message: `The app's Service Principal cannot access the SQL warehouse used by this Genie Space.`,
+        fixSteps: [
+          `Open Databricks workspace → SQL Warehouses`,
+          `Click the warehouse used by the Genie Space`,
+          `Go to Permissions tab`,
+          `Add the app's Service Principal (ID: ${spId}) with "Can use" permission`,
+          `Wait ~30 seconds for permissions to propagate, then retry`,
+        ],
+      };
+    }
+
+    if (rawMsg.includes("required scopes") || rawMsg.includes("Invalid scope")) {
+      const scopeMatch = rawMsg.match(/required scopes?: (\w+)/);
+      const missingScope = scopeMatch?.[1] ?? "genie / sql";
+      return {
+        code: "MISSING_OAUTH_SCOPE",
+        message: `The app is missing the "${missingScope}" OAuth scope.`,
+        fixSteps: [
+          `Open Databricks workspace → Compute → Apps`,
+          `Click on this app's name`,
+          `Go to Permissions / OAuth Scopes`,
+          `Add the following scopes: sql, dashboards.genie, serving.serving-endpoints`,
+          `Save and wait for the app to restart`,
+        ],
+      };
+    }
+
+    return {
+      code: "PERMISSION_DENIED",
+      message: `Access denied during ${context}. The Service Principal lacks required permissions.`,
+      fixSteps: [
+        `Grant the app's Service Principal (ID: ${spId}) "Can Run" on the Genie Space`,
+        `Grant "Can use" on the SQL warehouse used by the Genie Space`,
+        `Ensure the app has the sql and dashboards.genie OAuth scopes`,
+      ],
+    };
+  }
+
+  return {
+    code: errorCode,
+    message: `Genie ${context} failed (${status}): ${rawMsg.slice(0, 300)}`,
+    fixSteps: [],
+  };
+}
+
+export class GenieApiError extends Error {
+  public readonly genieError: GenieError;
+  constructor(err: GenieError) {
+    super(err.message);
+    this.name = "GenieApiError";
+    this.genieError = err;
+  }
+}
+
+async function genieRequest(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+  context: string,
+): Promise<Response> {
+  const res = await fetchWithTimeout(url, options, { timeoutMs });
+  if (!res.ok) {
+    const body = await res.text();
+    const err = parseGenieError(res.status, body, context);
+    throw new GenieApiError(err);
+  }
+  return res;
 }
 
 export interface GenieMessage {
@@ -46,13 +148,12 @@ export async function startGenieConversation(
   const config = getConfig();
   const token = await getSpBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/start-conversation`;
-  const res = await fetchWithTimeout(url, {
+  const res = await genieRequest(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ content: question }),
     cache: "no-store",
-  }, { timeoutMs: 60000 });
-  if (!res.ok) throw new Error(`Genie start failed: ${res.status} ${await res.text()}`);
+  }, 60000, "starting conversation");
   const data = (await res.json()) as { conversation_id: string; message_id: string };
   return { conversationId: data.conversation_id, messageId: data.message_id };
 }
@@ -65,13 +166,12 @@ export async function continueGenieConversation(
   const config = getConfig();
   const token = await getSpBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/conversations/${conversationId}/messages`;
-  const res = await fetchWithTimeout(url, {
+  const res = await genieRequest(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ content: question }),
     cache: "no-store",
-  }, { timeoutMs: 60000 });
-  if (!res.ok) throw new Error(`Genie continue failed: ${res.status} ${await res.text()}`);
+  }, 60000, "continuing conversation");
   const data = (await res.json()) as { id: string };
   return { messageId: data.id };
 }
@@ -84,12 +184,11 @@ export async function pollGenieMessage(
   const config = getConfig();
   const token = await getSpBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/conversations/${conversationId}/messages/${messageId}`;
-  const res = await fetchWithTimeout(url, {
+  const res = await genieRequest(url, {
     method: "GET",
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
-  }, { timeoutMs: 30000 });
-  if (!res.ok) throw new Error(`Genie poll failed: ${res.status}`);
+  }, 30000, "polling message");
   const data = (await res.json()) as {
     id: string;
     status: string;

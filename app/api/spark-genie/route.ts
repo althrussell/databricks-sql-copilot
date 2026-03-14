@@ -4,6 +4,7 @@ import {
   continueGenieConversation,
   pollGenieMessage,
   getGenieQueryResult,
+  GenieApiError,
 } from "@/lib/queries/genie-client";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +24,15 @@ export async function POST(request: NextRequest) {
 
     const sid = spaceId || GENIE_SPACE_ID;
     if (!sid) {
-      return NextResponse.json(
-        { error: "GENIE_SPACE_ID not configured. Create a Genie Space and set the env var." },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        error: "Genie Space is not configured.",
+        code: "GENIE_NOT_CONFIGURED",
+        fixSteps: [
+          "Create a Genie Space in your Databricks workspace",
+          "Set the GENIE_SPACE_ID environment variable in the app configuration (app.yaml or .env.local)",
+          "Redeploy the app",
+        ],
+      }, { status: 400 });
     }
 
     switch (action) {
@@ -60,9 +66,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
   } catch (err) {
+    if (err instanceof GenieApiError) {
+      return NextResponse.json({
+        error: err.genieError.message,
+        code: err.genieError.code,
+        fixSteps: err.genieError.fixSteps,
+      }, { status: 200 });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

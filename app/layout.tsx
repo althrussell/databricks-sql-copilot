@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
-import { LayoutDashboard, HeartPulse, Monitor, Briefcase } from "lucide-react";
+import { LayoutDashboard, HeartPulse, Monitor, Briefcase, Sparkles } from "lucide-react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Toaster } from "sonner";
@@ -94,6 +94,13 @@ export default function RootLayout({
                 >
                   <Monitor className="h-3.5 w-3.5" />
                   Warehouse Monitor
+                </Link>
+                <Link
+                  href="/spark-genie"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Genie
                 </Link>
                 <div className="h-5 w-px bg-border mx-1" />
                 <ThemeToggle />

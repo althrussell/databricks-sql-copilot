@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { ShieldAlert, Wrench, AlertTriangle, XCircle } from "lucide-react";
 
 interface Message {
   id: string;
@@ -15,6 +16,12 @@ interface Message {
   sqlColumns?: string[];
   sqlRows?: unknown[][];
   status?: string;
+}
+
+interface GenieErrorInfo {
+  error: string;
+  code?: string;
+  fixSteps?: string[];
 }
 
 const SAMPLE_QUESTIONS = [
@@ -113,7 +120,7 @@ export default function SparkGeniePage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<GenieErrorInfo | null>(null);
   const [showSql, setShowSql] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -131,7 +138,10 @@ export default function SparkGeniePage() {
         body: JSON.stringify({ action: "poll", conversationId: convId, messageId: msgId }),
       });
       const pollData = await pollRes.json();
-      if (pollData.error) throw new Error(pollData.error);
+      if (pollData.error) {
+        const genieErr: GenieErrorInfo = { error: pollData.error, code: pollData.code, fixSteps: pollData.fixSteps };
+        throw Object.assign(new Error(pollData.error), { genieError: genieErr });
+      }
 
       if (pollData.status === "COMPLETED") {
         let sqlColumns: string[] = [];
@@ -187,7 +197,10 @@ export default function SparkGeniePage() {
           body: JSON.stringify({ action: "ask", question }),
         });
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
+        if (data.error) {
+          const genieErr: GenieErrorInfo = { error: data.error, code: data.code, fixSteps: data.fixSteps };
+          throw Object.assign(new Error(data.error), { genieError: genieErr });
+        }
         convId = data.conversationId;
         msgId = data.messageId;
         setConversationId(convId);
@@ -198,7 +211,10 @@ export default function SparkGeniePage() {
           body: JSON.stringify({ action: "continue", conversationId: convId, question }),
         });
         const data = await res.json();
-        if (data.error) throw new Error(data.error);
+        if (data.error) {
+          const genieErr: GenieErrorInfo = { error: data.error, code: data.code, fixSteps: data.fixSteps };
+          throw Object.assign(new Error(data.error), { genieError: genieErr });
+        }
         msgId = data.messageId;
       }
 
@@ -215,8 +231,13 @@ export default function SparkGeniePage() {
           sqlRows: result.sqlRows,
         },
       ]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (err: unknown) {
+      const e = err as { genieError?: GenieErrorInfo; message?: string };
+      if (e.genieError) {
+        setError(e.genieError);
+      } else {
+        setError({ error: e.message ?? String(err) });
+      }
       setMessages((prev) => prev.filter((m) => m.status !== "thinking"));
     } finally {
       setLoading(false);
@@ -344,9 +365,46 @@ export default function SparkGeniePage() {
       </div>
 
       {error && (
-        <Card className="border-destructive">
-          <CardContent className="pt-4">
-            <p className="text-sm text-destructive">{error}</p>
+        <Card className="border-destructive/50">
+          <CardContent className="pt-4 pb-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-red-100 dark:bg-red-900/30 p-2 mt-0.5 shrink-0">
+                {error.code === "GENIE_SPACE_NOT_FOUND" ? (
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                ) : error.code === "WAREHOUSE_PERMISSION_DENIED" || error.code === "PERMISSION_DENIED" || error.code === "MISSING_OAUTH_SCOPE" ? (
+                  <ShieldAlert className="h-4 w-4 text-destructive" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-destructive" />
+                )}
+              </div>
+              <div className="space-y-2 min-w-0">
+                <div>
+                  {error.code && (
+                    <Badge variant="outline" className="text-[10px] mb-1 text-destructive border-destructive/30">{error.code}</Badge>
+                  )}
+                  <p className="text-sm font-medium text-destructive">{error.error}</p>
+                </div>
+                {error.fixSteps && error.fixSteps.length > 0 && (
+                  <div className="bg-muted/50 rounded-lg p-3 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                      <Wrench className="h-3.5 w-3.5" />
+                      How to fix
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                      {error.fixSteps.map((step, i) => (
+                        <li key={i} className="leading-relaxed">{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+              </div>
+            </div>
+            <button
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors underline"
+              onClick={() => setError(null)}
+            >
+              Dismiss
+            </button>
           </CardContent>
         </Card>
       )}
