@@ -8,7 +8,12 @@
 
 import { executeQuery } from "@/lib/dbx/sql-client";
 import { aiSemaphore } from "@/lib/ai/semaphore";
-import type { JobRunStats, JobRunDetail, JobTaskBreakdown, JobRunPhaseStats } from "@/lib/queries/jobs";
+import type {
+  JobRunStats,
+  JobRunDetail,
+  JobTaskBreakdown,
+  JobRunPhaseStats,
+} from "@/lib/queries/jobs";
 import type { JobFlag } from "@/lib/domain/job-flags";
 
 const ANALYSIS_MODEL = "databricks-claude-sonnet-4-5";
@@ -41,19 +46,22 @@ function formatDuration(s: number): string {
   return `${(s / 3600).toFixed(1)}h`;
 }
 
-function formatPct(p: number): string { return `${p.toFixed(1)}%`; }
+function formatPct(p: number): string {
+  return `${p.toFixed(1)}%`;
+}
 
 function buildContext(
   stats: JobRunStats,
   runs: JobRunDetail[],
   flags: JobFlag[],
   tasks: JobTaskBreakdown[],
-  phase: JobRunPhaseStats
+  phase: JobRunPhaseStats,
 ): string {
   const totalRuns = stats.totalRuns;
   const failCount = stats.failedRuns + stats.errorRuns;
   const failureRate = totalRuns > 0 ? (failCount / totalRuns) * 100 : 0;
-  const p95vsp50Ratio = stats.p50DurationSeconds > 0 ? stats.p95DurationSeconds / stats.p50DurationSeconds : 0;
+  const p95vsp50Ratio =
+    stats.p50DurationSeconds > 0 ? stats.p95DurationSeconds / stats.p50DurationSeconds : 0;
 
   // Termination code breakdown from recent runs
   const terminationCounts: Record<string, number> = {};
@@ -68,47 +76,72 @@ function buildContext(
   const topTerminations = Object.entries(terminationCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
-    .map(([code, cnt]) => `  • ${code}: ${cnt}/${failedRuns} failures (${((cnt / Math.max(failedRuns, 1)) * 100).toFixed(0)}%)`)
+    .map(
+      ([code, cnt]) =>
+        `  • ${code}: ${cnt}/${failedRuns} failures (${((cnt / Math.max(failedRuns, 1)) * 100).toFixed(0)}%)`,
+    )
     .join("\n");
 
   // Phase breakdown
-  const phaseSection = phase.avgExecSeconds > 0
-    ? `Avg setup: ${formatDuration(phase.avgSetupSeconds)} (${formatPct(phase.avgSetupPct)})
+  const phaseSection =
+    phase.avgExecSeconds > 0
+      ? `Avg setup: ${formatDuration(phase.avgSetupSeconds)} (${formatPct(phase.avgSetupPct)})
 Avg queue wait: ${formatDuration(phase.avgQueueSeconds)} (${formatPct(phase.avgQueuePct)})
 Avg execution: ${formatDuration(phase.avgExecSeconds)} (${formatPct(phase.avgExecPct)})`
-    : "Phase data not available";
+      : "Phase data not available";
 
   // Duration variability
-  const stdDev = runs.length > 1
-    ? Math.sqrt(
-        runs.reduce((sum, r) => sum + Math.pow(r.totalDurationSeconds - stats.avgDurationSeconds, 2), 0) /
-          runs.length
-      )
-    : 0;
+  const stdDev =
+    runs.length > 1
+      ? Math.sqrt(
+          runs.reduce(
+            (sum, r) => sum + Math.pow(r.totalDurationSeconds - stats.avgDurationSeconds, 2),
+            0,
+          ) / runs.length,
+        )
+      : 0;
   const cvPct = stats.avgDurationSeconds > 0 ? (stdDev / stats.avgDurationSeconds) * 100 : 0;
 
   // Recent runs summary — key insight rows
   const recentRuns = runs.slice(0, 15);
-  const durationLines = recentRuns.map((r) => {
-    const ts = String(r.periodStart).slice(0, 16);
-    return `  ${ts} | ${(r.resultState ?? "RUNNING").padEnd(10)} | total: ${formatDuration(r.totalDurationSeconds).padEnd(10)} | exec: ${formatDuration(r.executionDurationSeconds).padEnd(10)} | queue: ${formatDuration(r.queueDurationSeconds).padEnd(8)} | setup: ${formatDuration(r.setupDurationSeconds)}${r.terminationCode && r.terminationCode !== "SUCCESS" ? ` | [${r.terminationCode}]` : ""}`;
-  }).join("\n");
+  const durationLines = recentRuns
+    .map((r) => {
+      const ts = String(r.periodStart).slice(0, 16);
+      return `  ${ts} | ${(r.resultState ?? "RUNNING").padEnd(10)} | total: ${formatDuration(r.totalDurationSeconds).padEnd(10)} | exec: ${formatDuration(r.executionDurationSeconds).padEnd(10)} | queue: ${formatDuration(r.queueDurationSeconds).padEnd(8)} | setup: ${formatDuration(r.setupDurationSeconds)}${r.terminationCode && r.terminationCode !== "SUCCESS" ? ` | [${r.terminationCode}]` : ""}`;
+    })
+    .join("\n");
 
   // Task breakdown — top problematic tasks
-  const taskLines = tasks.slice(0, 10).map((t) =>
-    `  ${t.taskKey.padEnd(30)} | success: ${formatPct(t.successRate).padEnd(7)} | ${t.totalRuns} runs | avg exec: ${formatDuration(t.avgExecutionSeconds)} | p95 exec: ${formatDuration(t.p95ExecutionSeconds)} | avg setup: ${formatDuration(t.avgSetupSeconds)}${t.topTerminationCode ? ` | top_code: ${t.topTerminationCode}` : ""}`
-  ).join("\n");
+  const taskLines = tasks
+    .slice(0, 10)
+    .map(
+      (t) =>
+        `  ${t.taskKey.padEnd(30)} | success: ${formatPct(t.successRate).padEnd(7)} | ${t.totalRuns} runs | avg exec: ${formatDuration(t.avgExecutionSeconds)} | p95 exec: ${formatDuration(t.p95ExecutionSeconds)} | avg setup: ${formatDuration(t.avgSetupSeconds)}${t.topTerminationCode ? ` | top_code: ${t.topTerminationCode}` : ""}`,
+    )
+    .join("\n");
 
   // Compute-level patterns from run history
-  const failedDurations = runs.filter((r) => r.resultState === "FAILED" || r.resultState === "ERROR").map((r) => r.executionDurationSeconds);
-  const successDurations = runs.filter((r) => r.resultState === "SUCCEEDED").map((r) => r.executionDurationSeconds);
-  const avgFailedExec = failedDurations.length > 0 ? failedDurations.reduce((s, v) => s + v, 0) / failedDurations.length : 0;
-  const avgSuccessExec = successDurations.length > 0 ? successDurations.reduce((s, v) => s + v, 0) / successDurations.length : 0;
-  const failFastPattern = avgFailedExec > 0 && avgSuccessExec > 0 && avgFailedExec < avgSuccessExec * 0.3;
+  const failedDurations = runs
+    .filter((r) => r.resultState === "FAILED" || r.resultState === "ERROR")
+    .map((r) => r.executionDurationSeconds);
+  const successDurations = runs
+    .filter((r) => r.resultState === "SUCCEEDED")
+    .map((r) => r.executionDurationSeconds);
+  const avgFailedExec =
+    failedDurations.length > 0
+      ? failedDurations.reduce((s, v) => s + v, 0) / failedDurations.length
+      : 0;
+  const avgSuccessExec =
+    successDurations.length > 0
+      ? successDurations.reduce((s, v) => s + v, 0) / successDurations.length
+      : 0;
+  const failFastPattern =
+    avgFailedExec > 0 && avgSuccessExec > 0 && avgFailedExec < avgSuccessExec * 0.3;
 
-  const flagLines = flags.length > 0
-    ? flags.map((f) => `  [${f.severity.toUpperCase()}] ${f.code} — ${f.description}`).join("\n")
-    : "  None";
+  const flagLines =
+    flags.length > 0
+      ? flags.map((f) => `  [${f.severity.toUpperCase()}] ${f.code} — ${f.description}`).join("\n")
+      : "  None";
 
   return `## Job: "${stats.jobName}" (ID: ${stats.jobId})
 Creator: ${stats.creatorUserName ?? "unknown"} | Trigger types: ${stats.triggerTypes.join(", ")}
@@ -152,7 +185,7 @@ function parseAnalysisResponse(raw: string): JobAnalysisResult | null {
   }
 
   // Sanitise literal newlines and tabs inside string values
-  jsonStr = jsonStr.replace(/(?<=["\w,\[\]])\n(?=["\w{])/g, "\\n");
+  jsonStr = jsonStr.replace(/(?<=["\w,[\]])\n(?=["\w{])/g, "\\n");
   jsonStr = jsonStr.replace(/\t/g, "  ");
 
   try {
@@ -175,7 +208,9 @@ function parseAnalysisResponse(raw: string): JobAnalysisResult | null {
             effort: ["low", "medium", "high"].includes(String(r.effort))
               ? (r.effort as "low" | "medium" | "high")
               : "medium",
-            category: ["cluster", "code", "scheduling", "cost", "reliability"].includes(String(r.category))
+            category: ["cluster", "code", "scheduling", "cost", "reliability"].includes(
+              String(r.category),
+            )
               ? (r.category as "cluster" | "code" | "scheduling" | "cost" | "reliability")
               : "reliability",
           }))
@@ -192,7 +227,14 @@ export async function analyseJob(
   runs: JobRunDetail[],
   flags: JobFlag[],
   tasks: JobTaskBreakdown[] = [],
-  phase: JobRunPhaseStats = { avgSetupPct: 0, avgQueuePct: 0, avgExecPct: 0, avgSetupSeconds: 0, avgQueueSeconds: 0, avgExecSeconds: 0 }
+  phase: JobRunPhaseStats = {
+    avgSetupPct: 0,
+    avgQueuePct: 0,
+    avgExecPct: 0,
+    avgSetupSeconds: 0,
+    avgQueueSeconds: 0,
+    avgExecSeconds: 0,
+  },
 ): Promise<{ status: "success"; data: JobAnalysisResult } | { status: "error"; message: string }> {
   const context = buildContext(stats, runs, flags, tasks, phase);
 
@@ -240,7 +282,10 @@ Hard rules:
     const result = await aiSemaphore.run(async () => {
       const resultPromise = executeQuery<{ response: string }>(sql);
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Job analysis timed out after 90s")), ANALYSIS_TIMEOUT_MS)
+        setTimeout(
+          () => reject(new Error("Job analysis timed out after 90s")),
+          ANALYSIS_TIMEOUT_MS,
+        ),
       );
       return Promise.race([resultPromise, timeoutPromise]);
     });

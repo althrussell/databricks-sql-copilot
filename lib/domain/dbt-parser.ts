@@ -2,8 +2,8 @@
  * dbt Metadata Parser
  *
  * Extracts dbt metadata from SQL comment blocks.
- * dbt injects JSON metadata like: /* {"app": "dbt", "node_id": "model.project.name", ...} *​/
- * Also handles QUERY_TAG comments: /* QUERY_TAG:my_tag *​/
+ * dbt injects JSON metadata like: `{"app": "dbt", "node_id": "model.project.name", ...}`
+ * Also handles QUERY_TAG comments: `QUERY_TAG:my_tag`
  */
 
 export interface DbtMetadata {
@@ -15,7 +15,7 @@ export interface DbtMetadata {
 }
 
 /**
- * Extract QUERY_TAG from SQL comment: /* QUERY_TAG:value *​/
+ * Extract QUERY_TAG from SQL comment: `QUERY_TAG:value`
  */
 export function extractQueryTag(sql: string): string | null {
   const match = sql.match(/\/\*[\s\S]*?QUERY_TAG:([\s\S]*?)(?:\*\/)/);
@@ -27,7 +27,7 @@ export function extractQueryTag(sql: string): string | null {
 
 /**
  * Extract dbt metadata from the first SQL block comment.
- * dbt typically inserts: /* {"app": "dbt", ...} *​/ at the start.
+ * dbt typically inserts `{"app": "dbt", ...}` at the start.
  */
 export function extractDbtMetadata(sql: string): DbtMetadata | null {
   // Find the first block comment

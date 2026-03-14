@@ -2,12 +2,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Sheet,
   SheetContent,
@@ -61,7 +56,6 @@ import {
   formatCount,
   formatDBUs,
   formatDollars,
-  scoreTextColor,
   flagSeverityColor,
   tagToStatus,
 } from "./helpers";

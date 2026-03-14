@@ -4,22 +4,26 @@ import Link from "next/link";
 import { listRecentQueries } from "@/lib/queries/query-history";
 import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
-import { explainScore } from "@/lib/domain/scoring";
-import { getWorkspaceBaseUrl, buildDeepLink } from "@/lib/utils/deep-links";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
-import { StatusBadge } from "@/components/ui/status-badge";
-import type { Candidate, QueryRun, WarehouseCost } from "@/lib/domain/types";
+import type { QueryRun, WarehouseCost } from "@/lib/domain/types";
 import { QueryDetailClient } from "./query-detail-client";
 
 export const revalidate = 300; // cache for 5 minutes
 
 interface QueryDetailPageProps {
   params: Promise<{ fingerprint: string }>;
-  searchParams: Promise<{ start?: string; end?: string; from?: string; to?: string; time?: string; action?: string; warehouse?: string }>;
+  searchParams: Promise<{
+    start?: string;
+    end?: string;
+    from?: string;
+    to?: string;
+    time?: string;
+    action?: string;
+    warehouse?: string;
+  }>;
 }
 
 const BILLING_LAG_HOURS = 6;
@@ -37,7 +41,8 @@ function timeRangeForPreset(preset: string): { start: string; end: string } {
     "7d": 7 * 24 * 60 * 60 * 1000,
   };
   const maybeHours = preset.match(/^(\d+)h$/);
-  const windowMs = knownMs[preset] ?? (maybeHours ? parseInt(maybeHours[1], 10) * 60 * 60 * 1000 : knownMs["1h"]);
+  const windowMs =
+    knownMs[preset] ?? (maybeHours ? parseInt(maybeHours[1], 10) * 60 * 60 * 1000 : knownMs["1h"]);
   const startMs = endMs - windowMs;
   return {
     start: new Date(startMs).toISOString(),
@@ -145,7 +150,7 @@ async function QueryDetailLoader({
         warehouseId,
       }).catch(catchAndLog("queries_fallback", [])),
       getWarehouseCosts({ startTime: fallbackStart, endTime: end }).catch(
-        catchAndLog("costs_fallback", [] as WarehouseCost[])
+        catchAndLog("costs_fallback", [] as WarehouseCost[]),
       ),
     ]);
     candidates = buildCandidates(fallbackQueries, fallbackCosts);
@@ -166,24 +171,38 @@ async function QueryDetailLoader({
               <p className="font-mono text-xs mt-1">{queryError}</p>
             </div>
           )}
-          <p><span className="font-medium">Fingerprint:</span> <code className="text-xs">{fingerprint}</code></p>
-          <p><span className="font-medium">Warehouse:</span> <code className="text-xs">{warehouseId ?? "all"}</code></p>
-          <p><span className="font-medium">Time range:</span> {start} → {end}</p>
-          <p><span className="font-medium">Queries found:</span> {queryResult.length}</p>
-          <p><span className="font-medium">Candidates built:</span> {candidates.length}</p>
+          <p>
+            <span className="font-medium">Fingerprint:</span>{" "}
+            <code className="text-xs">{fingerprint}</code>
+          </p>
+          <p>
+            <span className="font-medium">Warehouse:</span>{" "}
+            <code className="text-xs">{warehouseId ?? "all"}</code>
+          </p>
+          <p>
+            <span className="font-medium">Time range:</span> {start} → {end}
+          </p>
+          <p>
+            <span className="font-medium">Queries found:</span> {queryResult.length}
+          </p>
+          <p>
+            <span className="font-medium">Candidates built:</span> {candidates.length}
+          </p>
           {sampleFingerprints.length > 0 && (
             <div>
               <p className="font-medium">Sample fingerprints in results:</p>
               <ul className="list-disc pl-5 mt-1 space-y-0.5">
                 {sampleFingerprints.map((fp) => (
-                  <li key={fp}><code className="text-xs">{fp}</code></li>
+                  <li key={fp}>
+                    <code className="text-xs">{fp}</code>
+                  </li>
                 ))}
               </ul>
             </div>
           )}
           <p className="text-muted-foreground mt-4">
-            The query fingerprint from the dashboard could not be matched in the query history for this time window.
-            Try returning to the dashboard and clicking the query again.
+            The query fingerprint from the dashboard could not be matched in the query history for
+            this time window. Try returning to the dashboard and clicking the query again.
           </p>
         </CardContent>
       </Card>
@@ -227,7 +246,8 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
 
   const autoAnalyse = searchParams.action === "analyse";
   const rawWarehouse = searchParams.warehouse;
-  const warehouseId = rawWarehouse && /^[0-9a-f]{16}$/i.test(rawWarehouse) ? rawWarehouse : undefined;
+  const warehouseId =
+    rawWarehouse && /^[0-9a-f]{16}$/i.test(rawWarehouse) ? rawWarehouse : undefined;
 
   return (
     <div className="px-6 py-8 space-y-6">

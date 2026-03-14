@@ -22,14 +22,6 @@ targets:
     workspace:
       profile: DEFAULT
     variables:
-      warehouse_id: "75fd8278393d07eb"
+      warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
       auth_mode: "sp"
-      genie_space_id: "01f11d330b1e17349370616c86cb90ba"
-
-  alinta-prod:
-    workspace:
-      profile: alinta_prod_user
-    variables:
-      warehouse_id: "bfe02b96b14128c0"
-      auth_mode: "obo"
-      genie_space_id: "01f11dc201071ef782dbdea63e487090"
+      genie_space_id: ${GENIE_SPACE_ID}

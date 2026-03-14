@@ -51,6 +51,24 @@ PRISMA_BIN="./node_modules/.bin/prisma"
 SCHEMA_URL="${DATABASE_URL:-$LAKEBASE_STARTUP_URL}"
 
 if [ -x "$PRISMA_BIN" ] && [ -n "$SCHEMA_URL" ]; then
+  # Migrate legacy schema name (dbsql_copilot -> dbsql_genie) if needed.
+  echo "[startup] Checking for legacy schema rename..."
+  node -e "
+    const pg = require('pg');
+    const client = new pg.Client({ connectionString: process.argv[1] });
+    client.connect()
+      .then(() => client.query(\"SELECT 1 FROM information_schema.schemata WHERE schema_name = 'dbsql_copilot'\"))
+      .then(res => {
+        if (res.rowCount > 0) {
+          console.log('[startup] Renaming dbsql_copilot -> dbsql_genie');
+          return client.query('ALTER SCHEMA dbsql_copilot RENAME TO dbsql_genie');
+        }
+        console.log('[startup] No legacy schema found, skipping rename.');
+      })
+      .then(() => client.end())
+      .catch(err => { console.warn('[startup] Schema rename skipped:', err.message); client.end(); });
+  " "$SCHEMA_URL" 2>&1 || true
+
   echo "[startup] Syncing database schema..."
   if DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" db push 2>&1; then
     echo "[startup] Schema sync complete."

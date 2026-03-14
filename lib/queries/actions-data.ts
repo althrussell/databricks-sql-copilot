@@ -7,6 +7,13 @@
 
 import { executeQuery } from "@/lib/dbx/sql-client";
 import { validateTimestamp } from "@/lib/validation";
+import { normalizeSql } from "@/lib/domain/sql-fingerprint";
+
+function maskEmail(email: string): string {
+  const atIdx = email.indexOf("@");
+  if (atIdx <= 0) return email;
+  return email.slice(0, atIdx);
+}
 
 export interface ActionableQuery {
   statementId: string;
@@ -81,7 +88,7 @@ function formatDuration(s: number): string {
  */
 async function getActionableQueries(
   startTime: string,
-  endTime: string
+  endTime: string,
 ): Promise<ActionableQuery[]> {
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -142,7 +149,7 @@ async function getActionableQueries(
 
   return result.rows.map((r) => ({
     statementId: r.statement_id ?? "",
-    executedBy: r.executed_by ?? "",
+    executedBy: maskEmail(r.executed_by ?? ""),
     statementType: r.statement_type ?? "",
     durationMs: Number(r.duration_ms ?? 0),
     waitingAtCapacityMs: Number(r.waiting_at_capacity_ms ?? 0),
@@ -151,7 +158,7 @@ async function getActionableQueries(
     readFiles: Number(r.read_files ?? 0),
     prunedFiles: Number(r.pruned_files ?? 0),
     producedRows: Number(r.produced_rows ?? 0),
-    statementText: r.statement_text ?? "",
+    statementText: normalizeSql(r.statement_text ?? ""),
     executionCount: Number(r.execution_count ?? 1),
     totalDurationMs: Number(r.total_duration_ms ?? 0),
   }));
@@ -160,10 +167,7 @@ async function getActionableQueries(
 /**
  * Fetch top problematic jobs — failing, slow, or expensive.
  */
-async function getActionableJobs(
-  startTime: string,
-  endTime: string
-): Promise<ActionableJob[]> {
+async function getActionableJobs(startTime: string, endTime: string): Promise<ActionableJob[]> {
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
   const startDate = validStart.slice(0, 10);
@@ -249,7 +253,7 @@ async function getActionableJobs(
     return {
       jobId: r.job_id ?? "",
       jobName: r.job_name ?? r.job_id ?? "",
-      creatorUserName: r.creator_user_name ?? null,
+      creatorUserName: r.creator_user_name ? maskEmail(r.creator_user_name) : null,
       totalRuns: total,
       failedRuns: Number(r.failed_runs ?? 0),
       errorRuns: Number(r.error_runs ?? 0),
@@ -267,10 +271,7 @@ async function getActionableJobs(
 /**
  * Fetch table hotspots — tables most frequently scanned with poor pruning.
  */
-async function getTableHotspots(
-  startTime: string,
-  endTime: string
-): Promise<TableHotspot[]> {
+async function getTableHotspots(startTime: string, endTime: string): Promise<TableHotspot[]> {
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
 
@@ -329,7 +330,7 @@ async function getTableHotspots(
       queryCount: Number(r.query_count ?? 0),
       totalReadBytes: Number(r.total_read_bytes ?? 0),
       avgPruningRatio: Number(r.avg_pruning_ratio ?? 0),
-      topUser: r.top_user ?? "",
+      topUser: maskEmail(r.top_user ?? ""),
     }));
   } catch {
     return [];
@@ -347,21 +348,24 @@ export function buildActionsContext(ctx: ActionsContext): string {
   if (ctx.queries.length > 0) {
     lines.push("## Problematic SQL Queries (sorted by impact)");
     for (const q of ctx.queries) {
-      const pruneRatio = (q.readFiles + q.prunedFiles) > 0
-        ? ((q.prunedFiles / (q.readFiles + q.prunedFiles)) * 100).toFixed(0)
-        : "n/a";
-      lines.push([
-        `  Q: ${q.statementId.slice(0, 12)}`,
-        `user: ${q.executedBy}`,
-        `type: ${q.statementType}`,
-        `duration: ${formatMs(q.durationMs)}`,
-        `runs: ${q.executionCount}x (total: ${formatMs(q.totalDurationMs)})`,
-        `read: ${formatBytes(q.readBytes)}`,
-        `spill: ${formatBytes(q.spilledBytes)}`,
-        `prune: ${pruneRatio}%`,
-        `wait-at-capacity: ${formatMs(q.waitingAtCapacityMs)}`,
-        `SQL: ${q.statementText.slice(0, 300)}`,
-      ].join(" | "));
+      const pruneRatio =
+        q.readFiles + q.prunedFiles > 0
+          ? ((q.prunedFiles / (q.readFiles + q.prunedFiles)) * 100).toFixed(0)
+          : "n/a";
+      lines.push(
+        [
+          `  Q: ${q.statementId.slice(0, 12)}`,
+          `user: ${q.executedBy}`,
+          `type: ${q.statementType}`,
+          `duration: ${formatMs(q.durationMs)}`,
+          `runs: ${q.executionCount}x (total: ${formatMs(q.totalDurationMs)})`,
+          `read: ${formatBytes(q.readBytes)}`,
+          `spill: ${formatBytes(q.spilledBytes)}`,
+          `prune: ${pruneRatio}%`,
+          `wait-at-capacity: ${formatMs(q.waitingAtCapacityMs)}`,
+          `SQL: ${q.statementText.slice(0, 300)}`,
+        ].join(" | "),
+      );
     }
     lines.push("");
   }
@@ -369,17 +373,19 @@ export function buildActionsContext(ctx: ActionsContext): string {
   if (ctx.jobs.length > 0) {
     lines.push("## Problematic Jobs (sorted by impact)");
     for (const j of ctx.jobs) {
-      lines.push([
-        `  Job: ${j.jobName.slice(0, 50)} (${j.jobId})`,
-        `owner: ${j.creatorUserName ?? "unknown"}`,
-        `runs: ${j.totalRuns}`,
-        `fails: ${j.failedRuns + j.errorRuns} (${(100 - j.successRate).toFixed(0)}%)`,
-        `top_code: ${j.topTerminationCode ?? "n/a"}`,
-        `p95: ${formatDuration(j.p95DurationSeconds)}`,
-        `setup: ${j.avgSetupPct.toFixed(0)}%`,
-        `queue: ${j.avgQueuePct.toFixed(0)}%`,
-        `cost: $${j.estCost.toFixed(2)}`,
-      ].join(" | "));
+      lines.push(
+        [
+          `  Job: ${j.jobName.slice(0, 50)} (${j.jobId})`,
+          `owner: ${j.creatorUserName ?? "unknown"}`,
+          `runs: ${j.totalRuns}`,
+          `fails: ${j.failedRuns + j.errorRuns} (${(100 - j.successRate).toFixed(0)}%)`,
+          `top_code: ${j.topTerminationCode ?? "n/a"}`,
+          `p95: ${formatDuration(j.p95DurationSeconds)}`,
+          `setup: ${j.avgSetupPct.toFixed(0)}%`,
+          `queue: ${j.avgQueuePct.toFixed(0)}%`,
+          `cost: $${j.estCost.toFixed(2)}`,
+        ].join(" | "),
+      );
     }
     lines.push("");
   }
@@ -387,13 +393,15 @@ export function buildActionsContext(ctx: ActionsContext): string {
   if (ctx.tables.length > 0) {
     lines.push("## Table Hotspots (high I/O, poor pruning)");
     for (const t of ctx.tables) {
-      lines.push([
-        `  Table: ${t.tableName}`,
-        `queries: ${t.queryCount}`,
-        `total read: ${formatBytes(t.totalReadBytes)}`,
-        `avg prune ratio: ${(t.avgPruningRatio * 100).toFixed(0)}%`,
-        `top user: ${t.topUser}`,
-      ].join(" | "));
+      lines.push(
+        [
+          `  Table: ${t.tableName}`,
+          `queries: ${t.queryCount}`,
+          `total read: ${formatBytes(t.totalReadBytes)}`,
+          `avg prune ratio: ${(t.avgPruningRatio * 100).toFixed(0)}%`,
+          `top user: ${t.topUser}`,
+        ].join(" | "),
+      );
     }
   }
 
@@ -405,7 +413,7 @@ export function buildActionsContext(ctx: ActionsContext): string {
  */
 export async function gatherActionsData(
   startTime: string,
-  endTime: string
+  endTime: string,
 ): Promise<ActionsContext> {
   const [queries, jobs, tables] = await Promise.allSettled([
     getActionableQueries(startTime, endTime),
@@ -413,7 +421,10 @@ export async function gatherActionsData(
     getTableHotspots(startTime, endTime),
   ]);
 
-  const windowStart = new Date(startTime).toLocaleDateString("en", { month: "short", day: "numeric" });
+  const windowStart = new Date(startTime).toLocaleDateString("en", {
+    month: "short",
+    day: "numeric",
+  });
   const windowEnd = new Date(endTime).toLocaleDateString("en", { month: "short", day: "numeric" });
 
   return {

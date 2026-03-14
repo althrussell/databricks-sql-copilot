@@ -1,85 +1,33 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import { validateTimestamp } from "@/lib/validation";
-
-/** Normalise a value that may be a Date, string, or null/undefined to an ISO string. */
-function toIso(v: unknown): string {
-  if (!v) return "";
-  if (v instanceof Date) return v.toISOString();
-  return String(v);
-}
-
-export interface JobRun {
-  jobId: string;
-  jobName: string;
-  runId: string;
-  triggerType: string;
-  resultState: string | null;
-  terminationCode: string | null;
-  runType: string;
-  periodStart: string;
-  periodEnd: string;
-  totalDurationSeconds: number;
-  executionDurationSeconds: number;
-  queueDurationSeconds: number;
-  setupDurationSeconds: number;
-  creatorUserName: string | null;
-  runAsUserName: string | null;
-}
-
-export interface JobSummary {
-  jobId: string;
-  jobName: string;
-  totalRuns: number;
-  successRuns: number;
-  failedRuns: number;
-  errorRuns: number;
-  runningRuns: number;
-  successRate: number;
-  avgDurationSeconds: number;
-  p95DurationSeconds: number;
-  maxDurationSeconds: number;
-  lastRunAt: string;
-  lastResultState: string | null;
-  triggerTypes: string[];
-  totalDBUs: number;
-  totalDollars: number;
-  creatorUserName?: string | null;
-  avgSetupSeconds?: number;
-  avgQueueSeconds?: number;
-  avgExecSeconds?: number;
-}
-
-export interface JobFailureTrend {
-  date: string;
-  totalRuns: number;
-  successRuns: number;
-  failedRuns: number;
-  errorRuns: number;
-}
-
-export interface JobsKpis {
-  totalRuns: number;
-  totalJobs: number;
-  successRate: number;
-  avgDurationSeconds: number;
-  p95DurationSeconds: number;
-  totalDBUs: number;
-  totalDollars: number;
-  failedRuns: number;
-  errorRuns: number;
-}
-
-export interface TerminationBreakdown {
-  terminationCode: string;
-  count: number;
-  pct: number;
-}
-
-export interface GetJobsParams {
-  startTime: string;
-  endTime: string;
-  limit?: number;
-}
+import { toIso } from "./types";
+import type {
+  GetJobsParams,
+  JobsKpis,
+  JobSummary,
+  JobFailureTrend,
+  JobRunDetail,
+  JobRunStats,
+  TerminationBreakdown,
+  JobDurationPoint,
+  JobTaskBreakdown,
+  JobsKpisComparison,
+  JobRunPhaseStats,
+  JobCreator,
+  SlaSeverity,
+  SlaBreachJob,
+  CostAnomalyJob,
+  SetupOverheadJob,
+  JobSparklinePoint,
+  JobSparkline,
+  JobDelta,
+  JobDeltas,
+  FailureCluster,
+  JobChain,
+  GanttRun,
+  JobImpactScore,
+  JobHealthScore,
+} from "./types";
 
 /**
  * Fetch overall KPI summary for the jobs dashboard.
@@ -351,44 +299,12 @@ export async function getJobFailureTrend(params: GetJobsParams): Promise<JobFail
   }));
 }
 
-export interface JobRunDetail {
-  runId: string;
-  periodStart: string;
-  resultState: string | null;
-  terminationCode: string | null;
-  totalDurationSeconds: number;
-  executionDurationSeconds: number;
-  queueDurationSeconds: number;
-  setupDurationSeconds: number;
-  cleanupDurationSeconds: number;
-  triggerType: string;
-  runType: string;
-}
-
-export interface JobRunStats {
-  jobId: string;
-  jobName: string;
-  totalRuns: number;
-  successRuns: number;
-  failedRuns: number;
-  errorRuns: number;
-  avgDurationSeconds: number;
-  p50DurationSeconds: number;
-  p95DurationSeconds: number;
-  maxDurationSeconds: number;
-  successRate: number;
-  triggerTypes: string[];
-  lastRunAt: string;
-  lastResultState: string | null;
-  creatorUserName: string | null;
-}
-
 /**
  * Fetch recent individual runs for a specific job (for the detail page timeline).
  */
 export async function getJobRunHistory(
   jobId: string,
-  params: GetJobsParams
+  params: GetJobsParams,
 ): Promise<JobRunDetail[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
@@ -456,7 +372,7 @@ export async function getJobRunHistory(
  */
 export async function getJobRunStats(
   jobId: string,
-  params: GetJobsParams
+  params: GetJobsParams,
 ): Promise<JobRunStats | null> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
@@ -551,7 +467,9 @@ export async function getJobRunStats(
 /**
  * Fetch termination code breakdown for failed/errored runs.
  */
-export async function getTerminationBreakdown(params: GetJobsParams): Promise<TerminationBreakdown[]> {
+export async function getTerminationBreakdown(
+  params: GetJobsParams,
+): Promise<TerminationBreakdown[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -587,60 +505,12 @@ export async function getTerminationBreakdown(params: GetJobsParams): Promise<Te
   }));
 }
 
-// ── New interfaces ────────────────────────────────────────────────────────────
-
-export interface JobDurationPoint {
-  date: string;
-  p50Seconds: number;
-  p95Seconds: number;
-  avgSeconds: number;
-  totalRuns: number;
-}
-
-export interface JobTaskBreakdown {
-  taskKey: string;
-  totalRuns: number;
-  successRuns: number;
-  failedRuns: number;
-  errorRuns: number;
-  successRate: number;
-  avgExecutionSeconds: number;
-  p95ExecutionSeconds: number;
-  avgSetupSeconds: number;
-  topTerminationCode: string | null;
-}
-
-export interface JobsKpisComparison {
-  current: JobsKpis;
-  prior: JobsKpis;
-  /** positive = better (e.g. success rate went up), negative = worse */
-  successRateDelta: number;
-  p95DurationDelta: number;
-  totalRunsDelta: number;
-  failedRunsDelta: number;
-  costDelta: number;
-}
-
-export interface JobRunPhaseStats {
-  avgSetupPct: number;
-  avgQueuePct: number;
-  avgExecPct: number;
-  avgSetupSeconds: number;
-  avgQueueSeconds: number;
-  avgExecSeconds: number;
-}
-
-export interface JobCreator {
-  creatorUserName: string;
-  jobCount: number;
-}
-
 /**
  * Daily p50/p95 duration trend for a single job.
  */
 export async function getJobDurationTrend(
   jobId: string,
-  params: GetJobsParams
+  params: GetJobsParams,
 ): Promise<JobDurationPoint[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
@@ -695,7 +565,7 @@ export async function getJobDurationTrend(
  */
 export async function getJobTaskBreakdown(
   jobId: string,
-  params: GetJobsParams
+  params: GetJobsParams,
 ): Promise<JobTaskBreakdown[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
@@ -774,7 +644,14 @@ export async function getJobTaskBreakdown(
  * Derived from existing run data — no extra query needed, computed here.
  */
 export function computePhaseStats(runs: JobRunDetail[]): JobRunPhaseStats {
-  const zero: JobRunPhaseStats = { avgSetupPct: 0, avgQueuePct: 0, avgExecPct: 0, avgSetupSeconds: 0, avgQueueSeconds: 0, avgExecSeconds: 0 };
+  const zero: JobRunPhaseStats = {
+    avgSetupPct: 0,
+    avgQueuePct: 0,
+    avgExecPct: 0,
+    avgSetupSeconds: 0,
+    avgQueueSeconds: 0,
+    avgExecSeconds: 0,
+  };
   if (runs.length === 0) return zero;
 
   const validRuns = runs.filter((r) => r.totalDurationSeconds > 0);
@@ -808,9 +685,7 @@ export function computePhaseStats(runs: JobRunDetail[]): JobRunPhaseStats {
 /**
  * KPI comparison: current window vs equal-length prior window.
  */
-export async function getJobsKpisComparison(
-  params: GetJobsParams
-): Promise<JobsKpisComparison> {
+export async function getJobsKpisComparison(params: GetJobsParams): Promise<JobsKpisComparison> {
   const { startTime, endTime } = params;
   const windowMs = new Date(endTime).getTime() - new Date(startTime).getTime();
   const priorEnd = new Date(new Date(startTime).getTime() - 1).toISOString();
@@ -862,35 +737,7 @@ export async function getJobCreators(params: GetJobsParams): Promise<JobCreator[
   }));
 }
 
-/**
- * Add creatorUserName to getJobSummaries — the existing query already fetches it.
- * This is a type extension — see JobSummaryWithCreator.
- */
-export interface JobSummaryWithCreator extends JobSummary {
-  creatorUserName: string | null;
-  avgSetupSeconds: number;
-  avgQueueSeconds: number;
-  avgExecSeconds: number;
-}
-
 // ── SLA Breach Detection ──────────────────────────────────────────────────────
-
-export type SlaSeverity = "warning" | "critical" | "emergency";
-
-export interface SlaBreachJob {
-  jobId: string;
-  jobName: string;
-  breachType: "duration" | "success_rate" | "late_finish";
-  severity: SlaSeverity;
-  baselineP95Seconds: number;
-  currentP95Seconds: number;
-  /** multiplier of current p95 vs baseline p95 (e.g. 2.1 = 2.1×) */
-  ratio: number;
-  baselineSuccessRate: number;
-  currentSuccessRate: number;
-  recentRuns: number;
-  triggerType: string;
-}
 
 /**
  * Auto-inferred SLA breach detection.
@@ -904,20 +751,13 @@ export interface SlaBreachJob {
  * Also flags success rate degradation when current rate drops >15pp
  * below baseline.
  */
-export async function getJobSlaBreaches(
-  params: GetJobsParams
-): Promise<SlaBreachJob[]> {
+export async function getJobSlaBreaches(params: GetJobsParams): Promise<SlaBreachJob[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
 
-  const windowMs =
-    new Date(validEnd).getTime() - new Date(validStart).getTime();
   const baselineStart = new Date(
-    new Date(validStart).getTime() - 30 * 24 * 60 * 60 * 1000
-  ).toISOString();
-  const baselineEnd = new Date(
-    new Date(validStart).getTime() - 1
+    new Date(validStart).getTime() - 30 * 24 * 60 * 60 * 1000,
   ).toISOString();
 
   const result = await executeQuery<{
@@ -989,12 +829,8 @@ export async function getJobSlaBreaches(
   `);
 
   return result.rows.map((r) => {
-    const ratio =
-      Number(r.baseline_p95) > 0
-        ? Number(r.current_p95) / Number(r.baseline_p95)
-        : 0;
-    const successDrop =
-      Number(r.baseline_success_rate) - Number(r.current_success_rate);
+    const ratio = Number(r.baseline_p95) > 0 ? Number(r.current_p95) / Number(r.baseline_p95) : 0;
+    const successDrop = Number(r.baseline_success_rate) - Number(r.current_success_rate);
 
     let severity: SlaSeverity = "warning";
     if (ratio >= 3) severity = "emergency";
@@ -1021,19 +857,6 @@ export async function getJobSlaBreaches(
 
 // ── Cost Anomaly Detection ────────────────────────────────────────────────────
 
-export interface CostAnomalyJob {
-  jobId: string;
-  jobName: string;
-  currentCost: number;
-  baselineCost: number;
-  excess: number;
-  ratio: number;
-  currentRuns: number;
-  baselineAvgRuns: number;
-  costPerRun: number;
-  baselineCostPerRun: number;
-}
-
 /**
  * Cost anomaly detection.
  *
@@ -1041,9 +864,7 @@ export interface CostAnomalyJob {
  * 14-day average cost per equivalent window. Flags jobs where current
  * cost exceeds 2× the baseline average.
  */
-export async function getJobCostAnomalies(
-  params: GetJobsParams
-): Promise<CostAnomalyJob[]> {
+export async function getJobCostAnomalies(params: GetJobsParams): Promise<CostAnomalyJob[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1051,11 +872,10 @@ export async function getJobCostAnomalies(
   const startDate = validStart.slice(0, 10);
   const endDate = validEnd.slice(0, 10);
 
-  const windowMs =
-    new Date(validEnd).getTime() - new Date(validStart).getTime();
+  const windowMs = new Date(validEnd).getTime() - new Date(validStart).getTime();
   const windowDays = Math.max(windowMs / (24 * 60 * 60 * 1000), 1);
   const baselineStart = new Date(
-    new Date(validStart).getTime() - 14 * 24 * 60 * 60 * 1000
+    new Date(validStart).getTime() - 14 * 24 * 60 * 60 * 1000,
   ).toISOString();
   const baselineStartDate = baselineStart.slice(0, 10);
 
@@ -1146,29 +966,11 @@ export async function getJobCostAnomalies(
 
 // ── Cluster Right-Sizing ──────────────────────────────────────────────────────
 
-export interface SetupOverheadJob {
-  jobId: string;
-  jobName: string;
-  totalRuns: number;
-  avgSetupSeconds: number;
-  avgQueueSeconds: number;
-  avgExecSeconds: number;
-  avgTotalSeconds: number;
-  setupPct: number;
-  queuePct: number;
-  overheadPct: number;
-  totalCost: number;
-  wastedCost: number;
-  recommendation: string;
-}
-
 /**
  * Cluster right-sizing: finds jobs where cold-start setup or queue wait
  * exceeds 30% of total runtime, ranked by wasted cost.
  */
-export async function getSetupOverheadJobs(
-  params: GetJobsParams
-): Promise<SetupOverheadJob[]> {
+export async function getSetupOverheadJobs(params: GetJobsParams): Promise<SetupOverheadJob[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1257,13 +1059,16 @@ export async function getSetupOverheadJobs(
 
     let recommendation = "";
     if (setupPct > 30) {
-      recommendation = "Use instance pools or keep-alive clusters to eliminate cold-start overhead.";
+      recommendation =
+        "Use instance pools or keep-alive clusters to eliminate cold-start overhead.";
     } else if (queuePct > 20) {
-      recommendation = "Cluster is over-subscribed. Use a dedicated job cluster or increase min workers.";
+      recommendation =
+        "Cluster is over-subscribed. Use a dedicated job cluster or increase min workers.";
     } else if (setupPct > 15 && queuePct > 10) {
       recommendation = "Consider serverless compute — eliminates both setup and queue delays.";
     } else {
-      recommendation = "Switch to serverless compute or attach an instance pool to reduce overhead.";
+      recommendation =
+        "Switch to serverless compute or attach an instance pool to reduce overhead.";
     }
 
     return {
@@ -1286,28 +1091,11 @@ export async function getSetupOverheadJobs(
 
 // ── Batch Sparklines ──────────────────────────────────────────────────────────
 
-export interface JobSparklinePoint {
-  date: string;
-  p95Seconds: number;
-  runs: number;
-}
-
-export interface JobSparkline {
-  jobId: string;
-  jobName: string;
-  points: JobSparklinePoint[];
-  trendPct: number;
-  latestP95: number;
-  firstP95: number;
-}
-
 /**
  * Batch-fetch daily p95 sparkline data for top-N jobs in a single query.
  * Returns 7-day daily data points per job, plus a trend percentage.
  */
-export async function getJobSparklines(
-  params: GetJobsParams
-): Promise<JobSparkline[]> {
+export async function getJobSparklines(params: GetJobsParams): Promise<JobSparkline[]> {
   const { startTime, endTime, limit = 30 } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1390,47 +1178,19 @@ export async function getJobSparklines(
 
 // ── Most Improved / Most Degraded ─────────────────────────────────────────────
 
-export interface JobDelta {
-  jobId: string;
-  jobName: string;
-  currentP95: number;
-  priorP95: number;
-  p95ChangePct: number;
-  currentSuccessRate: number;
-  priorSuccessRate: number;
-  successRateDelta: number;
-  currentRuns: number;
-  priorRuns: number;
-  currentCost: number;
-  priorCost: number;
-  costChangePct: number;
-}
-
-export interface JobDeltas {
-  improved: JobDelta[];
-  degraded: JobDelta[];
-}
-
 /**
  * Compare per-job p95, success rate, and cost between the current window
  * and an equal-length prior window. Returns top-5 most improved and
  * top-5 most degraded jobs.
  */
-export async function getJobDeltas(
-  params: GetJobsParams
-): Promise<JobDeltas> {
+export async function getJobDeltas(params: GetJobsParams): Promise<JobDeltas> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
 
-  const windowMs =
-    new Date(validEnd).getTime() - new Date(validStart).getTime();
-  const priorEnd = new Date(
-    new Date(validStart).getTime() - 1
-  ).toISOString();
-  const priorStart = new Date(
-    new Date(validStart).getTime() - windowMs
-  ).toISOString();
+  const windowMs = new Date(validEnd).getTime() - new Date(validStart).getTime();
+  const priorEnd = new Date(new Date(validStart).getTime() - 1).toISOString();
+  const priorStart = new Date(new Date(validStart).getTime() - windowMs).toISOString();
 
   const startDate = validStart.slice(0, 10);
   const endDate = validEnd.slice(0, 10);
@@ -1557,17 +1317,7 @@ export async function getJobDeltas(
 
 // ── E05: Failure Pattern Clustering ───────────────────────────────────────────
 
-export interface FailureCluster {
-  terminationCode: string;
-  jobCount: number;
-  totalFailures: number;
-  topJobs: Array<{ jobId: string; jobName: string; count: number }>;
-  hourlyDistribution: number[];
-}
-
-export async function getFailureClusters(
-  params: GetJobsParams
-): Promise<FailureCluster[]> {
+export async function getFailureClusters(params: GetJobsParams): Promise<FailureCluster[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1613,7 +1363,10 @@ export async function getFailureClusters(
     `),
   ]);
 
-  const codeMap = new Map<string, { jobs: Map<string, { name: string; count: number }>; total: number }>();
+  const codeMap = new Map<
+    string,
+    { jobs: Map<string, { name: string; count: number }>; total: number }
+  >();
   for (const row of codeResult.rows) {
     const code = row.termination_code;
     if (!codeMap.has(code)) codeMap.set(code, { jobs: new Map(), total: 0 });
@@ -1651,19 +1404,7 @@ export async function getFailureClusters(
 
 // ── E02: Job Dependency Chains ────────────────────────────────────────────────
 
-export interface JobChain {
-  upstreamJobId: string;
-  upstreamJobName: string;
-  downstreamJobId: string;
-  downstreamJobName: string;
-  coOccurrences: number;
-  avgGapSeconds: number;
-  confidence: number;
-}
-
-export async function getJobChains(
-  params: GetJobsParams
-): Promise<JobChain[]> {
+export async function getJobChains(params: GetJobsParams): Promise<JobChain[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1752,23 +1493,7 @@ export async function getJobChains(
 
 // ── E11: Gantt Run Replay (batch) ─────────────────────────────────────────────
 
-export interface GanttRun {
-  jobId: string;
-  jobName: string;
-  runId: string;
-  periodStart: string;
-  periodEnd: string;
-  setupSeconds: number;
-  queueSeconds: number;
-  execSeconds: number;
-  cleanupSeconds: number;
-  totalSeconds: number;
-  resultState: string | null;
-}
-
-export async function getGanttRuns(
-  params: GetJobsParams
-): Promise<GanttRun[]> {
+export async function getGanttRuns(params: GetJobsParams): Promise<GanttRun[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1834,23 +1559,7 @@ export async function getGanttRuns(
 
 // ── E07: Business Impact Scoring ──────────────────────────────────────────────
 
-export interface JobImpactScore {
-  jobId: string;
-  jobName: string;
-  score: number;
-  costScore: number;
-  frequencyScore: number;
-  failureScore: number;
-  durationScore: number;
-  totalCost: number;
-  totalRuns: number;
-  failureRate: number;
-  p95Seconds: number;
-}
-
-export async function getJobImpactScores(
-  params: GetJobsParams
-): Promise<JobImpactScore[]> {
+export async function getJobImpactScores(params: GetJobsParams): Promise<JobImpactScore[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1925,7 +1634,7 @@ export async function getJobImpactScores(
 
     const costScore = Math.min((cost / maxCost) * 30, 30);
     const frequencyScore = Math.min((totalRuns / maxRuns) * 25, 25);
-    const failureScore = Math.min(failureRate * 25 / 0.5, 25);
+    const failureScore = Math.min((failureRate * 25) / 0.5, 25);
     const durationScore = Math.min((p95 / maxP95) * 20, 20);
     const score = Math.round(costScore + frequencyScore + failureScore + durationScore);
 
@@ -1950,23 +1659,7 @@ export async function getJobImpactScores(
 
 // ── E08: Job Health Scores ────────────────────────────────────────────────────
 
-export interface JobHealthScore {
-  jobId: string;
-  jobName: string;
-  healthScore: number;
-  successRateScore: number;
-  stabilityScore: number;
-  costEfficiencyScore: number;
-  overheadScore: number;
-  successRate: number;
-  cvPct: number;
-  overheadPct: number;
-  grade: "A" | "B" | "C" | "D" | "F";
-}
-
-export async function getJobHealthScores(
-  params: GetJobsParams
-): Promise<JobHealthScore[]> {
+export async function getJobHealthScores(params: GetJobsParams): Promise<JobHealthScore[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -2031,7 +1724,9 @@ export async function getJobHealthScores(
     const stabilityScore = Math.min(Math.max(40 - cvPct * 0.4, 0), 30);
     const overheadScore = Math.min(Math.max(20 - overheadPct * 0.4, 0), 20);
     const costEfficiencyScore = Math.min(10, 10);
-    const healthScore = Math.round(successRateScore + stabilityScore + overheadScore + costEfficiencyScore);
+    const healthScore = Math.round(
+      successRateScore + stabilityScore + overheadScore + costEfficiencyScore,
+    );
 
     let grade: JobHealthScore["grade"] = "F";
     if (healthScore >= 85) grade = "A";
