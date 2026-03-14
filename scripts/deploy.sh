@@ -3,11 +3,11 @@
 # Deploy SQL Observability Genie to a Databricks workspace.
 #
 # Usage:
-#   ./scripts/deploy.sh --profile <cli-profile> --warehouse <id> [options]
+#   ./scripts/deploy.sh --profile <cli-profile> [options]
 #
 # Options:
 #   --profile, -p    Databricks CLI profile name (required)
-#   --warehouse, -w  SQL warehouse ID (required)
+#   --warehouse, -w  SQL warehouse ID (auto-detected if omitted)
 #   --app-name, -n   App name (default: sql-obs-genie)
 #   --auth-mode, -a  Auth mode: obo or sp (default: obo)
 #   --genie-space    Genie Space ID (optional, leave blank to skip)
@@ -16,14 +16,14 @@
 #   --help, -h       Show this help message
 #
 # Examples:
-#   # First deploy to a new workspace (auto-creates Genie Space)
-#   ./scripts/deploy.sh -p my-workspace -w abc123 --create --create-genie
+#   # First deploy — auto-detects warehouse and creates Genie Space
+#   ./scripts/deploy.sh -p my-workspace --create --create-genie
 #
-#   # Redeploy to existing app
-#   ./scripts/deploy.sh -p my-workspace -w abc123
+#   # Deploy with explicit warehouse
+#   ./scripts/deploy.sh -p my-workspace -w abc123def456
 #
 #   # Deploy with SP auth and existing Genie Space
-#   ./scripts/deploy.sh -p DEFAULT -w 75fd8278393d07eb -a sp --genie-space 01f11d330b1e17349370616c86cb90ba
+#   ./scripts/deploy.sh -p DEFAULT -a sp --genie-space 01f11d330b1e17349370616c86cb90ba
 
 set -euo pipefail
 
@@ -38,7 +38,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 usage() {
-  head -27 "$0" | tail -25
+  head -29 "$0" | tail -27
   exit 0
 }
 
@@ -56,18 +56,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$PROFILE" || -z "$WAREHOUSE_ID" ]]; then
-  echo "ERROR: --profile and --warehouse are required."
+if [[ -z "$PROFILE" ]]; then
+  echo "ERROR: --profile is required."
   usage
 fi
-
-echo "=== SQL Observability Genie Deployer ==="
-echo "  Profile:      $PROFILE"
-echo "  Warehouse:    $WAREHOUSE_ID"
-echo "  App name:     $APP_NAME"
-echo "  Auth mode:    $AUTH_MODE"
-echo "  Genie space:  ${GENIE_SPACE_ID:-<none>}"
-echo ""
 
 # Verify CLI auth
 echo "→ Verifying CLI authentication..."
@@ -77,9 +69,52 @@ if ! databricks auth profiles 2>/dev/null | grep -q "$PROFILE.*YES"; then
 fi
 echo "  ✓ Profile is valid"
 
-# Step 0.5: Provision Genie Space if requested and no space ID provided
-if $CREATE_GENIE && [[ -z "$GENIE_SPACE_ID" ]]; then
+# Auto-detect warehouse if not specified
+if [[ -z "$WAREHOUSE_ID" ]]; then
   echo ""
+  echo "→ Auto-detecting SQL warehouse..."
+  WAREHOUSE_ID=$(databricks warehouses list --profile "$PROFILE" --output json 2>/dev/null | python3 -c "
+import sys, json
+whs = json.load(sys.stdin)
+if isinstance(whs, dict):
+    whs = whs.get('warehouses', [])
+# Prefer: running serverless > running pro > stopped serverless > stopped pro
+priority = []
+for w in whs:
+    wid = w.get('id', '')
+    name = w.get('name', '')
+    state = w.get('state', '')
+    wtype = w.get('warehouse_type', '')
+    is_serverless = wtype == 'TYPE_SERVERLESS' or w.get('enable_serverless_compute', False)
+    is_running = state == 'RUNNING'
+    score = (2 if is_running else 0) + (1 if is_serverless else 0)
+    priority.append((score, wid, name))
+priority.sort(key=lambda x: -x[0])
+if priority:
+    print(priority[0][1])
+    print(priority[0][2], file=sys.stderr)
+" 2>/tmp/wh_name.txt) || true
+
+  if [[ -z "$WAREHOUSE_ID" ]]; then
+    echo "  ✗ No SQL warehouses found. Please specify --warehouse <id>"
+    exit 1
+  fi
+  WH_NAME=$(cat /tmp/wh_name.txt 2>/dev/null || echo "")
+  echo "  ✓ Selected: $WAREHOUSE_ID ($WH_NAME)"
+  rm -f /tmp/wh_name.txt
+fi
+
+echo ""
+echo "=== SQL Observability Genie Deployer ==="
+echo "  Profile:      $PROFILE"
+echo "  Warehouse:    $WAREHOUSE_ID"
+echo "  App name:     $APP_NAME"
+echo "  Auth mode:    $AUTH_MODE"
+echo "  Genie space:  ${GENIE_SPACE_ID:-<none>}"
+echo ""
+
+# Provision Genie Space if requested and no space ID provided
+if $CREATE_GENIE && [[ -z "$GENIE_SPACE_ID" ]]; then
   echo "→ Auto-provisioning Genie Space from config..."
   GENIE_OUTPUT=$("$SCRIPT_DIR/provision-genie-space.sh" \
     --profile "$PROFILE" \
@@ -98,11 +133,10 @@ if $CREATE_GENIE && [[ -z "$GENIE_SPACE_ID" ]]; then
     fi
   fi
 elif $CREATE_GENIE && [[ -n "$GENIE_SPACE_ID" ]]; then
-  echo ""
   echo "  ℹ  --create-genie ignored because --genie-space was provided"
 fi
 
-# Step 1: Create app if requested
+# Create app if requested
 if $CREATE_APP; then
   echo ""
   echo "→ Creating app '$APP_NAME'..."
@@ -117,13 +151,69 @@ if $CREATE_APP; then
   fi
 fi
 
-# Step 2: Generate target-specific app.yaml
+# Bind SQL warehouse resource to the app
+echo ""
+echo "→ Binding SQL warehouse resource..."
+BIND_RESP=$(databricks api patch "/api/2.0/apps/$APP_NAME" \
+  --profile "$PROFILE" \
+  --json "{\"resources\":[{\"name\":\"sql-warehouse\",\"sql_warehouse\":{\"id\":\"$WAREHOUSE_ID\",\"permission\":\"CAN_USE\"}}]}" 2>&1) || true
+
+RESOURCE_BOUND=false
+if echo "$BIND_RESP" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    resources = d.get('resources', [])
+    for r in resources:
+        if r.get('name') == 'sql-warehouse':
+            sys.exit(0)
+    sys.exit(1)
+except:
+    sys.exit(1)
+" 2>/dev/null; then
+  RESOURCE_BOUND=true
+  echo "  ✓ SQL warehouse bound as resource (valueFrom: sql-warehouse)"
+else
+  echo "  ⚠ Could not bind warehouse resource (permission issue — see post-deploy checklist)"
+  echo "    Falling back to hardcoded warehouse ID in app.yaml"
+fi
+
+# Generate target-specific app.yaml
 echo ""
 echo "→ Generating app.yaml for this deployment..."
 BACKUP="$PROJECT_DIR/app.yaml.bak"
 cp "$PROJECT_DIR/app.yaml" "$BACKUP"
 
-cat > "$PROJECT_DIR/app.yaml" <<YAML
+if $RESOURCE_BOUND; then
+  # Resource binding succeeded — use valueFrom
+  cat > "$PROJECT_DIR/app.yaml" <<YAML
+command:
+  - "sh"
+  - "scripts/start.sh"
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: AUTH_MODE
+    value: "$AUTH_MODE"
+  - name: UNIFIED_OBSERVABILITY_CATALOG
+    value: "main"
+  - name: UNIFIED_OBSERVABILITY_SCHEMA
+    value: "unified_observability"
+  - name: SPARK_HOTSPOT_LIMIT
+    value: "25"
+  - name: SQL_FRESHNESS_SLO_MINUTES
+    value: "30"
+  - name: SPARK_FRESHNESS_SLO_MINUTES
+    value: "120"
+  - name: PHOTON_FRESHNESS_SLO_MINUTES
+    value: "1440"
+  - name: GENIE_SPACE_ID
+    value: "$GENIE_SPACE_ID"
+YAML
+else
+  # Fallback — hardcode the warehouse ID
+  cat > "$PROJECT_DIR/app.yaml" <<YAML
 command:
   - "sh"
   - "scripts/start.sh"
@@ -148,16 +238,17 @@ env:
   - name: GENIE_SPACE_ID
     value: "$GENIE_SPACE_ID"
 YAML
+fi
 echo "  ✓ app.yaml generated"
 
-# Step 3: Sync source code
+# Sync source code
 WORKSPACE_PATH="/Workspace/Shared/$APP_NAME"
 echo ""
 echo "→ Syncing source code to $WORKSPACE_PATH..."
 databricks sync "$PROJECT_DIR" "$WORKSPACE_PATH" --full --profile "$PROFILE"
 echo "  ✓ Source code synced"
 
-# Step 4: Deploy
+# Deploy
 echo ""
 echo "→ Deploying app..."
 databricks apps deploy "$APP_NAME" \
@@ -167,7 +258,7 @@ databricks apps deploy "$APP_NAME" \
   --output json
 echo "  ✓ Deployment complete"
 
-# Step 5: Set OBO scopes if auth mode is obo
+# Set OBO scopes if auth mode is obo
 if [[ "$AUTH_MODE" == "obo" ]]; then
   echo ""
   echo "→ Configuring OBO scopes..."
@@ -186,12 +277,14 @@ echo "=== Deployment Summary ==="
 APP_URL=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('url','unknown'))" 2>/dev/null || echo "unknown")
 DEPLOYED_SP_ID=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('service_principal_client_id','unknown'))" 2>/dev/null || echo "unknown")
 
-echo "  App URL:     $APP_URL"
-echo "  SP ID:       $DEPLOYED_SP_ID"
-echo "  Genie Space: ${GENIE_SPACE_ID:-<none>}"
+echo "  App URL:        $APP_URL"
+echo "  SP ID:          $DEPLOYED_SP_ID"
+echo "  Warehouse:      $WAREHOUSE_ID"
+echo "  Resource bound:  $RESOURCE_BOUND"
+echo "  Genie Space:    ${GENIE_SPACE_ID:-<none>}"
 echo ""
 
-# Step 6: Auto-grant Genie Space permissions to the app's SP
+# Auto-grant Genie Space permissions to the app's SP
 if [[ -n "$GENIE_SPACE_ID" && "$DEPLOYED_SP_ID" != "unknown" ]]; then
   echo "→ Granting Genie Space permissions to app SP..."
   PERM_RESP=$(databricks api patch "/api/2.0/permissions/genie/$GENIE_SPACE_ID" \
@@ -207,12 +300,18 @@ fi
 
 echo ""
 echo "Post-deploy checklist:"
-echo "  1. Grant SP '$DEPLOYED_SP_ID' CAN_USE on warehouse '$WAREHOUSE_ID'"
+if ! $RESOURCE_BOUND; then
+  echo "  1. Bind SQL warehouse in the app UI: App → Resources → Add SQL Warehouse → select '$WAREHOUSE_ID' with 'Can use'"
+  echo "     (or grant SP '$DEPLOYED_SP_ID' CAN_USE on warehouse '$WAREHOUSE_ID' manually)"
+fi
 if [[ -n "$GENIE_SPACE_ID" ]]; then
   echo "  2. Verify SP '$DEPLOYED_SP_ID' has CAN_RUN on Genie space '$GENIE_SPACE_ID'"
 fi
 if [[ "$AUTH_MODE" == "obo" ]]; then
   echo "  3. Verify OBO scopes include 'dashboards.genie' in the app settings UI"
+fi
+if $RESOURCE_BOUND; then
+  echo "  ✓ No manual steps needed — warehouse is bound as a resource"
 fi
 echo ""
 echo "Done!"
