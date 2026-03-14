@@ -117,7 +117,7 @@ export function WarehouseMonitor({
   initialLiveStats,
   initialNextPageToken,
   initialHasNextPage = false,
-  initialRangeMs,
+  initialRangeMs: _initialRangeMs,
   rangeHours: initialRangeHours,
   fetchError,
   partialErrors = [],
@@ -457,7 +457,7 @@ export function WarehouseMonitor({
   // ── Sorted queries for the table ──────────────────────────────
 
   const sortedTableQueries = useMemo(() => {
-    let filtered = activeFilter ? queries.filter(activeFilter.test) : queries;
+    const filtered = activeFilter ? queries.filter(activeFilter.test) : queries;
     const sorted = [...filtered];
     sorted.sort((a, b) => {
       let diff = 0;
@@ -1068,7 +1068,7 @@ export function WarehouseMonitor({
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             router.push(
-                                              `/queries/${q.fingerprint ?? q.id}?action=analyse`,
+                                              `/queries/${q.fingerprint ?? q.id}?action=analyse&time=24h`,
                                             );
                                           }}
                                         >
@@ -1164,7 +1164,7 @@ export function WarehouseMonitor({
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               router.push(
-                                                `/queries/${q.fingerprint ?? q.id}?action=analyse`,
+                                                `/queries/${q.fingerprint ?? q.id}?action=analyse&time=24h`,
                                               );
                                             }}
                                           >

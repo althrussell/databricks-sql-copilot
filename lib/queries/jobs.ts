@@ -388,7 +388,7 @@ export interface JobRunStats {
  */
 export async function getJobRunHistory(
   jobId: string,
-  params: GetJobsParams
+  params: GetJobsParams,
 ): Promise<JobRunDetail[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
@@ -456,7 +456,7 @@ export async function getJobRunHistory(
  */
 export async function getJobRunStats(
   jobId: string,
-  params: GetJobsParams
+  params: GetJobsParams,
 ): Promise<JobRunStats | null> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
@@ -551,7 +551,9 @@ export async function getJobRunStats(
 /**
  * Fetch termination code breakdown for failed/errored runs.
  */
-export async function getTerminationBreakdown(params: GetJobsParams): Promise<TerminationBreakdown[]> {
+export async function getTerminationBreakdown(
+  params: GetJobsParams,
+): Promise<TerminationBreakdown[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -640,7 +642,7 @@ export interface JobCreator {
  */
 export async function getJobDurationTrend(
   jobId: string,
-  params: GetJobsParams
+  params: GetJobsParams,
 ): Promise<JobDurationPoint[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
@@ -695,7 +697,7 @@ export async function getJobDurationTrend(
  */
 export async function getJobTaskBreakdown(
   jobId: string,
-  params: GetJobsParams
+  params: GetJobsParams,
 ): Promise<JobTaskBreakdown[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
@@ -775,10 +777,25 @@ export async function getJobTaskBreakdown(
  */
 export function computePhaseStats(runs: JobRunDetail[]): JobRunPhaseStats {
   if (runs.length === 0) {
-    return { avgSetupPct: 0, avgQueuePct: 0, avgExecPct: 0, avgSetupSeconds: 0, avgQueueSeconds: 0, avgExecSeconds: 0 };
+    return {
+      avgSetupPct: 0,
+      avgQueuePct: 0,
+      avgExecPct: 0,
+      avgSetupSeconds: 0,
+      avgQueueSeconds: 0,
+      avgExecSeconds: 0,
+    };
   }
   const validRuns = runs.filter((r) => r.totalDurationSeconds > 0);
-  if (validRuns.length === 0) return { avgSetupPct: 0, avgQueuePct: 0, avgExecPct: 0, avgSetupSeconds: 0, avgQueueSeconds: 0, avgExecSeconds: 0 };
+  if (validRuns.length === 0)
+    return {
+      avgSetupPct: 0,
+      avgQueuePct: 0,
+      avgExecPct: 0,
+      avgSetupSeconds: 0,
+      avgQueueSeconds: 0,
+      avgExecSeconds: 0,
+    };
 
   const avg = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length;
   return {
@@ -787,16 +804,16 @@ export function computePhaseStats(runs: JobRunDetail[]): JobRunPhaseStats {
     avgExecSeconds: avg(validRuns.map((r) => r.executionDurationSeconds)),
     avgSetupPct: avg(validRuns.map((r) => (r.setupDurationSeconds / r.totalDurationSeconds) * 100)),
     avgQueuePct: avg(validRuns.map((r) => (r.queueDurationSeconds / r.totalDurationSeconds) * 100)),
-    avgExecPct: avg(validRuns.map((r) => (r.executionDurationSeconds / r.totalDurationSeconds) * 100)),
+    avgExecPct: avg(
+      validRuns.map((r) => (r.executionDurationSeconds / r.totalDurationSeconds) * 100),
+    ),
   };
 }
 
 /**
  * KPI comparison: current window vs equal-length prior window.
  */
-export async function getJobsKpisComparison(
-  params: GetJobsParams
-): Promise<JobsKpisComparison> {
+export async function getJobsKpisComparison(params: GetJobsParams): Promise<JobsKpisComparison> {
   const { startTime, endTime } = params;
   const windowMs = new Date(endTime).getTime() - new Date(startTime).getTime();
   const priorEnd = new Date(new Date(startTime).getTime() - 1).toISOString();
@@ -890,21 +907,16 @@ export interface SlaBreachJob {
  * Also flags success rate degradation when current rate drops >15pp
  * below baseline.
  */
-export async function getJobSlaBreaches(
-  params: GetJobsParams
-): Promise<SlaBreachJob[]> {
+export async function getJobSlaBreaches(params: GetJobsParams): Promise<SlaBreachJob[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
 
-  const windowMs =
-    new Date(validEnd).getTime() - new Date(validStart).getTime();
+  const windowMs = new Date(validEnd).getTime() - new Date(validStart).getTime();
   const baselineStart = new Date(
-    new Date(validStart).getTime() - 30 * 24 * 60 * 60 * 1000
+    new Date(validStart).getTime() - 30 * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const baselineEnd = new Date(
-    new Date(validStart).getTime() - 1
-  ).toISOString();
+  const baselineEnd = new Date(new Date(validStart).getTime() - 1).toISOString();
 
   const result = await executeQuery<{
     job_id: string;
@@ -975,12 +987,8 @@ export async function getJobSlaBreaches(
   `);
 
   return result.rows.map((r) => {
-    const ratio =
-      Number(r.baseline_p95) > 0
-        ? Number(r.current_p95) / Number(r.baseline_p95)
-        : 0;
-    const successDrop =
-      Number(r.baseline_success_rate) - Number(r.current_success_rate);
+    const ratio = Number(r.baseline_p95) > 0 ? Number(r.current_p95) / Number(r.baseline_p95) : 0;
+    const successDrop = Number(r.baseline_success_rate) - Number(r.current_success_rate);
 
     let severity: SlaSeverity = "warning";
     if (ratio >= 3) severity = "emergency";
@@ -1027,9 +1035,7 @@ export interface CostAnomalyJob {
  * 14-day average cost per equivalent window. Flags jobs where current
  * cost exceeds 2× the baseline average.
  */
-export async function getJobCostAnomalies(
-  params: GetJobsParams
-): Promise<CostAnomalyJob[]> {
+export async function getJobCostAnomalies(params: GetJobsParams): Promise<CostAnomalyJob[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1037,11 +1043,10 @@ export async function getJobCostAnomalies(
   const startDate = validStart.slice(0, 10);
   const endDate = validEnd.slice(0, 10);
 
-  const windowMs =
-    new Date(validEnd).getTime() - new Date(validStart).getTime();
+  const windowMs = new Date(validEnd).getTime() - new Date(validStart).getTime();
   const windowDays = Math.max(windowMs / (24 * 60 * 60 * 1000), 1);
   const baselineStart = new Date(
-    new Date(validStart).getTime() - 14 * 24 * 60 * 60 * 1000
+    new Date(validStart).getTime() - 14 * 24 * 60 * 60 * 1000,
   ).toISOString();
   const baselineStartDate = baselineStart.slice(0, 10);
 
@@ -1152,9 +1157,7 @@ export interface SetupOverheadJob {
  * Cluster right-sizing: finds jobs where cold-start setup or queue wait
  * exceeds 30% of total runtime, ranked by wasted cost.
  */
-export async function getSetupOverheadJobs(
-  params: GetJobsParams
-): Promise<SetupOverheadJob[]> {
+export async function getSetupOverheadJobs(params: GetJobsParams): Promise<SetupOverheadJob[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1243,13 +1246,16 @@ export async function getSetupOverheadJobs(
 
     let recommendation = "";
     if (setupPct > 30) {
-      recommendation = "Use instance pools or keep-alive clusters to eliminate cold-start overhead.";
+      recommendation =
+        "Use instance pools or keep-alive clusters to eliminate cold-start overhead.";
     } else if (queuePct > 20) {
-      recommendation = "Cluster is over-subscribed. Use a dedicated job cluster or increase min workers.";
+      recommendation =
+        "Cluster is over-subscribed. Use a dedicated job cluster or increase min workers.";
     } else if (setupPct > 15 && queuePct > 10) {
       recommendation = "Consider serverless compute — eliminates both setup and queue delays.";
     } else {
-      recommendation = "Switch to serverless compute or attach an instance pool to reduce overhead.";
+      recommendation =
+        "Switch to serverless compute or attach an instance pool to reduce overhead.";
     }
 
     return {
@@ -1291,9 +1297,7 @@ export interface JobSparkline {
  * Batch-fetch daily p95 sparkline data for top-N jobs in a single query.
  * Returns 7-day daily data points per job, plus a trend percentage.
  */
-export async function getJobSparklines(
-  params: GetJobsParams
-): Promise<JobSparkline[]> {
+export async function getJobSparklines(params: GetJobsParams): Promise<JobSparkline[]> {
   const { startTime, endTime, limit = 30 } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1402,21 +1406,14 @@ export interface JobDeltas {
  * and an equal-length prior window. Returns top-5 most improved and
  * top-5 most degraded jobs.
  */
-export async function getJobDeltas(
-  params: GetJobsParams
-): Promise<JobDeltas> {
+export async function getJobDeltas(params: GetJobsParams): Promise<JobDeltas> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
 
-  const windowMs =
-    new Date(validEnd).getTime() - new Date(validStart).getTime();
-  const priorEnd = new Date(
-    new Date(validStart).getTime() - 1
-  ).toISOString();
-  const priorStart = new Date(
-    new Date(validStart).getTime() - windowMs
-  ).toISOString();
+  const windowMs = new Date(validEnd).getTime() - new Date(validStart).getTime();
+  const priorEnd = new Date(new Date(validStart).getTime() - 1).toISOString();
+  const priorStart = new Date(new Date(validStart).getTime() - windowMs).toISOString();
 
   const startDate = validStart.slice(0, 10);
   const endDate = validEnd.slice(0, 10);
@@ -1551,9 +1548,7 @@ export interface FailureCluster {
   hourlyDistribution: number[];
 }
 
-export async function getFailureClusters(
-  params: GetJobsParams
-): Promise<FailureCluster[]> {
+export async function getFailureClusters(params: GetJobsParams): Promise<FailureCluster[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1599,7 +1594,10 @@ export async function getFailureClusters(
     `),
   ]);
 
-  const codeMap = new Map<string, { jobs: Map<string, { name: string; count: number }>; total: number }>();
+  const codeMap = new Map<
+    string,
+    { jobs: Map<string, { name: string; count: number }>; total: number }
+  >();
   for (const row of codeResult.rows) {
     const code = row.termination_code;
     if (!codeMap.has(code)) codeMap.set(code, { jobs: new Map(), total: 0 });
@@ -1647,9 +1645,7 @@ export interface JobChain {
   confidence: number;
 }
 
-export async function getJobChains(
-  params: GetJobsParams
-): Promise<JobChain[]> {
+export async function getJobChains(params: GetJobsParams): Promise<JobChain[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1752,9 +1748,7 @@ export interface GanttRun {
   resultState: string | null;
 }
 
-export async function getGanttRuns(
-  params: GetJobsParams
-): Promise<GanttRun[]> {
+export async function getGanttRuns(params: GetJobsParams): Promise<GanttRun[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1834,9 +1828,7 @@ export interface JobImpactScore {
   p95Seconds: number;
 }
 
-export async function getJobImpactScores(
-  params: GetJobsParams
-): Promise<JobImpactScore[]> {
+export async function getJobImpactScores(params: GetJobsParams): Promise<JobImpactScore[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -1911,7 +1903,7 @@ export async function getJobImpactScores(
 
     const costScore = Math.min((cost / maxCost) * 30, 30);
     const frequencyScore = Math.min((totalRuns / maxRuns) * 25, 25);
-    const failureScore = Math.min(failureRate * 25 / 0.5, 25);
+    const failureScore = Math.min((failureRate * 25) / 0.5, 25);
     const durationScore = Math.min((p95 / maxP95) * 20, 20);
     const score = Math.round(costScore + frequencyScore + failureScore + durationScore);
 
@@ -1950,9 +1942,7 @@ export interface JobHealthScore {
   grade: "A" | "B" | "C" | "D" | "F";
 }
 
-export async function getJobHealthScores(
-  params: GetJobsParams
-): Promise<JobHealthScore[]> {
+export async function getJobHealthScores(params: GetJobsParams): Promise<JobHealthScore[]> {
   const { startTime, endTime } = params;
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");
@@ -2017,7 +2007,9 @@ export async function getJobHealthScores(
     const stabilityScore = Math.min(Math.max(40 - cvPct * 0.4, 0), 30);
     const overheadScore = Math.min(Math.max(20 - overheadPct * 0.4, 0), 20);
     const costEfficiencyScore = Math.min(10, 10);
-    const healthScore = Math.round(successRateScore + stabilityScore + overheadScore + costEfficiencyScore);
+    const healthScore = Math.round(
+      successRateScore + stabilityScore + overheadScore + costEfficiencyScore,
+    );
 
     let grade: JobHealthScore["grade"] = "F";
     if (healthScore >= 85) grade = "A";
