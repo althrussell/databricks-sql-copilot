@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+
 import { listRecentQueries } from "@/lib/queries/query-history";
 import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { Candidate, WarehouseCost } from "@/lib/domain/types";
+import type { Candidate, QueryRun, WarehouseCost } from "@/lib/domain/types";
 import { QueryDetailClient } from "./query-detail-client";
 
 export const revalidate = 300; // cache for 5 minutes
@@ -108,24 +108,34 @@ async function QueryDetailLoader({
       return fallback;
     };
 
-  const [queryResult, costResult] = await Promise.all([
-    listRecentQueries({
-      startTime: start,
-      endTime: end,
-      limit: 2000,
-      warehouseId,
-    }),
-    getWarehouseCosts({ startTime: start, endTime: end }).catch(
-      catchAndLog("costs", [] as WarehouseCost[]),
-    ),
-  ]);
+  let queryResult: QueryRun[] = [];
+  let queryError: string | null = null;
+  let costResult: WarehouseCost[] = [];
+
+  try {
+    const [qr, cr] = await Promise.all([
+      listRecentQueries({
+        startTime: start,
+        endTime: end,
+        limit: 2000,
+        warehouseId,
+      }),
+      getWarehouseCosts({ startTime: start, endTime: end }).catch(
+        catchAndLog("costs", [] as WarehouseCost[]),
+      ),
+    ]);
+    queryResult = qr;
+    costResult = cr;
+  } catch (err) {
+    queryError = err instanceof Error ? err.message : String(err);
+    console.error("[query-detail] Initial query failed:", queryError);
+  }
 
   let candidates = buildCandidates(queryResult, costResult);
   let candidate = candidates.find((c) => c.fingerprint === fingerprint);
 
   // Fallback: if the fingerprint is not in the selected range, broaden lookup
-  // to reduce 404s when users navigate from cached/older dashboard rows.
-  if (!candidate) {
+  if (!candidate && !queryError) {
     const fallbackStart = new Date(new Date(end).getTime() - 24 * 60 * 60 * 1000).toISOString();
     const [fallbackQueries, fallbackCosts] = await Promise.all([
       listRecentQueries({
@@ -143,7 +153,41 @@ async function QueryDetailLoader({
   }
 
   if (!candidate) {
-    notFound();
+    const sampleFingerprints = candidates.slice(0, 5).map((c) => c.fingerprint);
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-destructive">Query Not Found</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {queryError && (
+            <div className="p-3 rounded bg-destructive/10 text-destructive">
+              <p className="font-medium">SQL Error:</p>
+              <p className="font-mono text-xs mt-1">{queryError}</p>
+            </div>
+          )}
+          <p><span className="font-medium">Fingerprint:</span> <code className="text-xs">{fingerprint}</code></p>
+          <p><span className="font-medium">Warehouse:</span> <code className="text-xs">{warehouseId ?? "all"}</code></p>
+          <p><span className="font-medium">Time range:</span> {start} → {end}</p>
+          <p><span className="font-medium">Queries found:</span> {queryResult.length}</p>
+          <p><span className="font-medium">Candidates built:</span> {candidates.length}</p>
+          {sampleFingerprints.length > 0 && (
+            <div>
+              <p className="font-medium">Sample fingerprints in results:</p>
+              <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                {sampleFingerprints.map((fp) => (
+                  <li key={fp}><code className="text-xs">{fp}</code></li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-muted-foreground mt-4">
+            The query fingerprint from the dashboard could not be matched in the query history for this time window.
+            Try returning to the dashboard and clicking the query again.
+          </p>
+        </CardContent>
+      </Card>
+    );
   }
 
   const workspaceUrl = getWorkspaceBaseUrl();
@@ -182,7 +226,8 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
   }
 
   const autoAnalyse = searchParams.action === "analyse";
-  const warehouseId = searchParams.warehouse;
+  const rawWarehouse = searchParams.warehouse;
+  const warehouseId = rawWarehouse && /^[0-9a-f]{16}$/i.test(rawWarehouse) ? rawWarehouse : undefined;
 
   return (
     <div className="px-6 py-8 space-y-6">

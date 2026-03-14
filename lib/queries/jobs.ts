@@ -774,20 +774,34 @@ export async function getJobTaskBreakdown(
  * Derived from existing run data — no extra query needed, computed here.
  */
 export function computePhaseStats(runs: JobRunDetail[]): JobRunPhaseStats {
-  if (runs.length === 0) {
-    return { avgSetupPct: 0, avgQueuePct: 0, avgExecPct: 0, avgSetupSeconds: 0, avgQueueSeconds: 0, avgExecSeconds: 0 };
-  }
+  const zero: JobRunPhaseStats = { avgSetupPct: 0, avgQueuePct: 0, avgExecPct: 0, avgSetupSeconds: 0, avgQueueSeconds: 0, avgExecSeconds: 0 };
+  if (runs.length === 0) return zero;
+
   const validRuns = runs.filter((r) => r.totalDurationSeconds > 0);
-  if (validRuns.length === 0) return { avgSetupPct: 0, avgQueuePct: 0, avgExecPct: 0, avgSetupSeconds: 0, avgQueueSeconds: 0, avgExecSeconds: 0 };
+  if (validRuns.length === 0) return zero;
 
   const avg = (arr: number[]) => arr.reduce((s, v) => s + v, 0) / arr.length;
+
+  const rawSetup = avg(validRuns.map((r) => r.setupDurationSeconds));
+  const rawQueue = avg(validRuns.map((r) => r.queueDurationSeconds));
+  const rawExec = avg(validRuns.map((r) => r.executionDurationSeconds));
+  const avgTotal = avg(validRuns.map((r) => r.totalDurationSeconds));
+
+  // When phase columns are all zero but total duration exists,
+  // attribute the entire duration to execution as a fallback.
+  const phaseSum = rawSetup + rawQueue + rawExec;
+  const execSeconds = phaseSum > 0 ? rawExec : avgTotal;
+  const setupSeconds = rawSetup;
+  const queueSeconds = rawQueue;
+
+  const effectiveTotal = Math.max(avgTotal, phaseSum, 1);
   return {
-    avgSetupSeconds: avg(validRuns.map((r) => r.setupDurationSeconds)),
-    avgQueueSeconds: avg(validRuns.map((r) => r.queueDurationSeconds)),
-    avgExecSeconds: avg(validRuns.map((r) => r.executionDurationSeconds)),
-    avgSetupPct: avg(validRuns.map((r) => (r.setupDurationSeconds / r.totalDurationSeconds) * 100)),
-    avgQueuePct: avg(validRuns.map((r) => (r.queueDurationSeconds / r.totalDurationSeconds) * 100)),
-    avgExecPct: avg(validRuns.map((r) => (r.executionDurationSeconds / r.totalDurationSeconds) * 100)),
+    avgSetupSeconds: setupSeconds,
+    avgQueueSeconds: queueSeconds,
+    avgExecSeconds: execSeconds,
+    avgSetupPct: (setupSeconds / effectiveTotal) * 100,
+    avgQueuePct: (queueSeconds / effectiveTotal) * 100,
+    avgExecPct: (execSeconds / effectiveTotal) * 100,
   };
 }
 

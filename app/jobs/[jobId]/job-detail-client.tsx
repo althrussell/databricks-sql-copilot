@@ -104,13 +104,20 @@ function DurationTrendChart({ data }: { data: JobDurationPoint[] }) {
     return <p className="text-sm text-muted-foreground">Not enough data points for a trend chart.</p>;
   }
 
-  const W = 600, H = 120, PAD = { top: 8, right: 16, bottom: 24, left: 48 };
+  const W = 600, H = 140, PAD = { top: 12, right: 16, bottom: 24, left: 52 };
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
 
-  const maxVal = Math.max(...data.flatMap((d) => [d.p95Seconds, d.p50Seconds]), 1);
+  // Use robust max: clip outliers by using the p90 of all values × 1.2
+  // so one extreme run doesn't flatten the entire chart.
+  const allVals = data.flatMap((d) => [d.p95Seconds, d.p50Seconds]).filter((v) => v > 0).sort((a, b) => a - b);
+  const rawMax = Math.max(...allVals, 1);
+  const p90Idx = Math.min(Math.floor(allVals.length * 0.9), allVals.length - 1);
+  const robustMax = allVals.length > 3 ? allVals[p90Idx] * 1.3 : rawMax;
+  const maxVal = Math.max(robustMax, 1);
+
   const toX = (i: number) => PAD.left + (i / (data.length - 1)) * innerW;
-  const toY = (v: number) => PAD.top + innerH - (v / maxVal) * innerH;
+  const toY = (v: number) => PAD.top + innerH - (Math.min(v, maxVal) / maxVal) * innerH;
 
   const p95Path = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.p95Seconds).toFixed(1)}`).join(" ");
   const p50Path = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.p50Seconds).toFixed(1)}`).join(" ");
@@ -120,60 +127,71 @@ function DurationTrendChart({ data }: { data: JobDurationPoint[] }) {
   return (
     <div className="overflow-x-auto">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 300 }}>
-        {/* Grid lines */}
         {yTicks.map(({ pct, val }) => (
           <g key={pct}>
             <line
               x1={PAD.left} x2={W - PAD.right}
               y1={toY(val).toFixed(1)} y2={toY(val).toFixed(1)}
-              stroke="currentColor" strokeOpacity={0.08} strokeWidth={1}
+              stroke="currentColor" strokeOpacity={0.15} strokeWidth={1}
             />
-            <text x={PAD.left - 4} y={toY(val) + 4} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.4}>
+            <text x={PAD.left - 4} y={toY(val) + 4} textAnchor="end" fontSize={9} fill="currentColor" opacity={0.6}>
               {formatDuration(val)}
             </text>
           </g>
         ))}
 
-        {/* p95 line */}
-        <path d={p95Path} fill="none" stroke="hsl(var(--primary))" strokeWidth={2} opacity={0.9} />
-        {/* p50 line */}
-        <path d={p50Path} fill="none" stroke="hsl(var(--primary))" strokeWidth={1.5} strokeDasharray="4,3" opacity={0.5} />
+        {/* p95 area fill */}
+        <path
+          d={`${p95Path} L${toX(data.length - 1).toFixed(1)},${(PAD.top + innerH).toFixed(1)} L${toX(0).toFixed(1)},${(PAD.top + innerH).toFixed(1)} Z`}
+          fill="#f97316" opacity={0.12}
+        />
+        {/* p95 line — bright orange, high contrast on dark */}
+        <path d={p95Path} fill="none" stroke="#f97316" strokeWidth={2.5} />
+        {/* p50 line — cyan, distinct from p95 */}
+        <path d={p50Path} fill="none" stroke="#22d3ee" strokeWidth={2} strokeDasharray="5,3" />
 
-        {/* X-axis labels — every Nth label */}
-        {data.map((d, i) => {
-          const skip = data.length > 14 ? Math.ceil(data.length / 7) : 1;
-          if (i % skip !== 0 && i !== data.length - 1) return null;
-          return (
-            <text key={i} x={toX(i)} y={H - 4} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.4}>
-              {new Date(d.date).toLocaleDateString("en", { month: "short", day: "numeric" })}
-            </text>
-          );
-        })}
-
-        {/* Data point dots on hover area — using circles for last point */}
+        {/* Always-visible p95 data point dots */}
         {data.map((d, i) => (
           <Tooltip key={i}>
             <TooltipTrigger asChild>
-              <circle cx={toX(i)} cy={toY(d.p95Seconds)} r={3} fill="hsl(var(--primary))" opacity={0} className="hover:opacity-100 cursor-pointer" />
+              <circle cx={toX(i)} cy={toY(d.p95Seconds)} r={4} fill="#f97316" className="cursor-pointer" />
             </TooltipTrigger>
             <TooltipContent>
               <p className="text-xs font-medium">{new Date(d.date).toLocaleDateString()}</p>
-              <p className="text-xs">p95: {formatDuration(d.p95Seconds)}</p>
-              <p className="text-xs">p50: {formatDuration(d.p50Seconds)}</p>
+              <p className="text-xs"><span className="text-orange-400">p95:</span> {formatDuration(d.p95Seconds)}</p>
+              <p className="text-xs"><span className="text-cyan-400">p50:</span> {formatDuration(d.p50Seconds)}</p>
               <p className="text-xs text-muted-foreground">{d.totalRuns} runs</p>
             </TooltipContent>
           </Tooltip>
         ))}
+        {/* Always-visible p50 data point dots */}
+        {data.map((d, i) => (
+          <circle key={`p50-${i}`} cx={toX(i)} cy={toY(d.p50Seconds)} r={3} fill="#22d3ee" />
+        ))}
+
+        {/* X-axis labels */}
+        {data.map((d, i) => {
+          const skip = data.length > 14 ? Math.ceil(data.length / 7) : 1;
+          if (i % skip !== 0 && i !== data.length - 1) return null;
+          return (
+            <text key={i} x={toX(i)} y={H - 4} textAnchor="middle" fontSize={9} fill="currentColor" opacity={0.6}>
+              {new Date(d.date).toLocaleDateString("en", { month: "short", day: "numeric" })}
+            </text>
+          );
+        })}
       </svg>
       <div className="flex items-center gap-4 mt-1">
         <div className="flex items-center gap-1.5">
-          <div className="h-0.5 w-5 bg-primary opacity-90" />
+          <div className="h-0.5 w-5 rounded" style={{ backgroundColor: "#f97316" }} />
           <span className="text-[10px] text-muted-foreground">p95</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-0.5 w-5 bg-primary opacity-50" style={{ borderTop: "2px dashed" }} />
+          <div className="h-0.5 w-5 rounded" style={{ backgroundColor: "#22d3ee", borderTop: "2px dashed #22d3ee" }} />
           <span className="text-[10px] text-muted-foreground">p50</span>
         </div>
+        <span className="text-[10px] text-muted-foreground ml-auto">
+          {data.reduce((s, d) => s + d.totalRuns, 0)} total runs across {data.length} days
+        </span>
       </div>
     </div>
   );
@@ -188,7 +206,7 @@ function PhaseBreakdown({ phase }: { phase: JobRunPhaseStats }) {
     { label: "Execution", pct: phase.avgExecPct, seconds: phase.avgExecSeconds, color: "bg-primary/20", barColor: "bg-primary/70" },
   ].filter((s) => s.seconds > 0);
 
-  if (segments.length === 0) return null;
+  if (segments.length === 0) return <p className="text-sm text-muted-foreground">No phase-level timing data available for this job.</p>;
 
   return (
     <div className="space-y-2">

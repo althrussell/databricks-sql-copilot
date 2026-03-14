@@ -1068,7 +1068,7 @@ export function WarehouseMonitor({
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             router.push(
-                                              `/queries/${q.fingerprint ?? q.id}?action=analyse`,
+                                              `/queries/${q.fingerprint ?? q.id}?action=analyse&time=24h`,
                                             );
                                           }}
                                         >
@@ -1164,7 +1164,7 @@ export function WarehouseMonitor({
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               router.push(
-                                                `/queries/${q.fingerprint ?? q.id}?action=analyse`,
+                                                `/queries/${q.fingerprint ?? q.id}?action=analyse&time=24h`,
                                               );
                                             }}
                                           >

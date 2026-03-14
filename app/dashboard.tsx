@@ -1185,7 +1185,7 @@ export function Dashboard({
     } else {
       params.set("time", timePreset);
     }
-    if (warehouseId) params.set("warehouse", warehouseId);
+    if (warehouseId && warehouseId !== "unknown") params.set("warehouse", warehouseId);
     if (autoAnalyse) params.set("action", "analyse");
     return `/queries/${fingerprint}?${params.toString()}`;
   }
@@ -2307,7 +2307,7 @@ export function Dashboard({
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               router.push(
-                                                `/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`,
+                                                buildQueryDetailHref(c.fingerprint, c.warehouseId, true),
                                               );
                                             }}
                                           >
@@ -2328,7 +2328,7 @@ export function Dashboard({
                                 <ContextMenuItem
                                   onClick={() =>
                                     router.push(
-                                      `/queries/${c.fingerprint}?warehouse=${c.warehouseId}`,
+                                      buildQueryDetailHref(c.fingerprint, c.warehouseId),
                                     )
                                   }
                                 >
@@ -2338,7 +2338,7 @@ export function Dashboard({
                                 <ContextMenuItem
                                   onClick={() =>
                                     router.push(
-                                      `/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`,
+                                      buildQueryDetailHref(c.fingerprint, c.warehouseId, true),
                                     )
                                   }
                                 >
@@ -2481,6 +2481,7 @@ export function Dashboard({
           }
           onSetAction={setAction}
           onClearAction={clearAction}
+          buildDetailHref={buildQueryDetailHref}
         />
 
         {/* Cost data now loads with the page (no streaming phase) */}
