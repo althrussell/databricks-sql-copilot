@@ -1,6 +1,6 @@
-// Prisma schema for Databricks SQL Co-Pilot
+// Prisma schema for Databricks SQL Genie
 // Database: Databricks Lakebase (Neon-compatible Postgres)
-// Schema: dbsql_copilot (not public)
+// Schema: dbsql_genie (not public)
 
 generator client {
   provider = "prisma-client"
@@ -9,7 +9,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["dbsql_copilot"]
+  schemas  = ["dbsql_genie"]
 }
 
 // ── Query Actions ──────────────────────────────────────────────────
@@ -26,7 +26,7 @@ model QueryAction {
   expiresAt   DateTime @default(dbgenerated("NOW() + INTERVAL '30 days'")) @map("expires_at") @db.Timestamptz
 
   @@map("query_actions")
-  @@schema("dbsql_copilot")
+  @@schema("dbsql_genie")
 }
 
 // ── Rewrite Cache ──────────────────────────────────────────────────
@@ -44,7 +44,7 @@ model RewriteCache {
   expiresAt      DateTime @default(dbgenerated("NOW() + INTERVAL '7 days'")) @map("expires_at") @db.Timestamptz
 
   @@map("rewrite_cache")
-  @@schema("dbsql_copilot")
+  @@schema("dbsql_genie")
 }
 
 // ── Triage Cache ──────────────────────────────────────────────────
@@ -59,7 +59,7 @@ model TriageCache {
   expiresAt       DateTime @default(dbgenerated("NOW() + INTERVAL '1 hour'")) @map("expires_at") @db.Timestamptz
 
   @@map("triage_cache")
-  @@schema("dbsql_copilot")
+  @@schema("dbsql_genie")
 }
 
 // ── Health Snapshots ───────────────────────────────────────────────
@@ -79,5 +79,5 @@ model HealthSnapshot {
 
   @@index([warehouseId, snapshotAt(sort: Desc)], map: "idx_health_wh_time")
   @@map("health_snapshots")
-  @@schema("dbsql_copilot")
+  @@schema("dbsql_genie")
 }

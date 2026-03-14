@@ -1,7 +1,7 @@
 /**
  * AI Triage — fast batch insights for the dashboard.
  *
- * Sends the top N candidates to a fast/cheap model (Llama-4-Maverick)
+ * Sends the top N candidates to Claude Sonnet 4.5
  * in a single ai_query() call and returns a one-liner insight per query.
  *
  * Design:
@@ -22,7 +22,7 @@ import { renderPrompt } from "@/lib/ai/prompts/registry";
 import { writePromptLog } from "@/lib/ai/prompt-logger";
 import { computeFingerprintHash, getCachedTriage, cacheTriage } from "@/lib/dbx/triage-store";
 
-const TRIAGE_MODEL = "databricks-llama-4-maverick";
+const TRIAGE_MODEL = "databricks-claude-sonnet-4-5";
 const MAX_CANDIDATES = 15;
 const TRIAGE_TIMEOUT_MS = 60_000; // 60s max for AI call
 
@@ -139,7 +139,7 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
   const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
   const escapedPrompt = escapeForSql(combinedPrompt);
 
-  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}') AS response`;
+  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 4096, 'temperature', 0.0)) AS response`;
 
   const t0 = Date.now();
   try {

@@ -147,7 +147,7 @@ export async function rewriteQuery(
         rationale: result.data.rationale,
         risks: JSON.stringify(result.data.risks),
         validationPlan: JSON.stringify(result.data.validationPlan),
-        modelUsed: "databricks-claude-opus-4-6",
+        modelUsed: "databricks-claude-sonnet-4-5",
       });
       console.log(`[ai-actions] rewrite: cached result for ${candidate.fingerprint}`);
     } catch (err) {

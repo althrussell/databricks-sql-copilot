@@ -1,4 +1,4 @@
-# Contributing to Databricks SQL Co-Pilot
+# Contributing to Databricks SQL Genie
 
 Thank you for your interest in contributing! This guide will help you get started.
 
@@ -10,7 +10,7 @@ This project follows our [Code of Conduct](CODE_OF_CONDUCT.md). By participating
 
 ### Reporting Bugs
 
-- Search [existing issues](https://github.com/althrussell/databricks-sql-copilot/issues) before opening a new one.
+- Search [existing issues](https://github.com/althrussell/databricks-sql-genie/issues) before opening a new one.
 - Use the **Bug Report** issue template.
 - Include reproduction steps, expected vs. actual behavior, and your environment.
 
@@ -31,8 +31,8 @@ This project follows our [Code of Conduct](CODE_OF_CONDUCT.md). By participating
 
 ```bash
 # Clone your fork
-git clone https://github.com/<your-username>/databricks-sql-copilot.git
-cd databricks-sql-copilot
+git clone https://github.com/<your-username>/databricks-sql-genie.git
+cd databricks-sql-genie
 
 # Install dependencies
 npm install

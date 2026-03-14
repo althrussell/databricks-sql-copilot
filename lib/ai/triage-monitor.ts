@@ -15,7 +15,7 @@ import { fetchTriageTableContext, formatTriageTableContext } from "@/lib/queries
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import { renderPrompt } from "@/lib/ai/prompts/registry";
 
-const TRIAGE_MODEL = "databricks-llama-4-maverick";
+const TRIAGE_MODEL = "databricks-claude-sonnet-4-5";
 const MAX_PATTERNS = 15;
 const TRIAGE_TIMEOUT_MS = 60_000; // 60s max for AI call
 
@@ -200,7 +200,7 @@ export async function triageMonitorQueries(queries: TimelineQuery[]): Promise<Mo
 
   const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
   const escapedPrompt = escapeForSql(combinedPrompt);
-  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}') AS response`;
+  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 4096, 'temperature', 0.0)) AS response`;
 
   try {
     const t0 = Date.now();

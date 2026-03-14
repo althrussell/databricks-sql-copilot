@@ -45,7 +45,16 @@ import {
   Flame,
   Hourglass,
   Terminal,
+  Trophy,
+  OctagonAlert,
+  ChevronDown,
+  ChevronUp,
+  TrendingUp,
+  TrendingDown,
+  Users,
 } from "lucide-react";
+import { ActionsPanel } from "./actions-panel";
+import type { RegressionEntry, UserLeaderboardEntry } from "@/lib/queries/sql-insights";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -593,6 +602,9 @@ interface DashboardProps {
   dataSourceHealth?: DataSourceHealth[];
   /** Pre-loaded query actions from Lakebase */
   initialQueryActions?: Record<string, QueryActionEntry>;
+  /** Start/end ISO strings for the active time window (used by ActionsPanel) */
+  startTime?: string;
+  endTime?: string;
   children?: React.ReactNode;
 }
 
@@ -608,13 +620,15 @@ export function Dashboard({
   fetchError,
   dataSourceHealth: initialHealth = [],
   initialQueryActions = {},
+  startTime: serverStartTime,
+  endTime: serverEndTime,
   children,
 }: DashboardProps) {
   // ── Enrichment data (streamed in from Phase 2) ──
-  const [enrichedCandidates, setEnrichedCandidates] = useState<Candidate[] | null>(null);
-  const [enrichedCosts, setEnrichedCosts] = useState<WarehouseCost[] | null>(null);
-  const [enrichmentLoaded, setEnrichmentLoaded] = useState(false);
-  const [enrichmentHealth, setEnrichmentHealth] = useState<DataSourceHealth[]>([]);
+  const [_enrichedCandidates, setEnrichedCandidates] = useState<Candidate[] | null>(null);
+  const [_enrichedCosts, setEnrichedCosts] = useState<WarehouseCost[] | null>(null);
+  const [_enrichmentLoaded, setEnrichmentLoaded] = useState(false);
+  const [_enrichmentHealth, setEnrichmentHealth] = useState<DataSourceHealth[]>([]);
 
   // Watch for streamed server data via MutationObserver (replaces polling)
   useEffect(() => {
@@ -694,14 +708,11 @@ export function Dashboard({
   const allHealth: DataSourceHealth[] = useMemo(() => {
     const map = new Map<string, DataSourceHealth>();
     for (const h of initialHealth) map.set(h.name, h);
-    for (const h of enrichmentHealth) map.set(h.name, h);
-    // Remove warehouse_events — no longer tracked
     map.delete("warehouse_events");
     return [...map.values()];
-  }, [initialHealth, enrichmentHealth]);
+  }, [initialHealth]);
 
-  // Use enriched data when available, fall back to initial props
-  const warehouseCosts = enrichedCosts ?? initialCosts;
+  const warehouseCosts = initialCosts;
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -788,6 +799,85 @@ export function Dashboard({
     });
   }
 
+  // ── Collapsible insight panels (lazy-loaded) ──
+  interface PanelState<T> {
+    open: boolean;
+    loading: boolean;
+    data: T | null;
+    error: string | null;
+  }
+  const [regressionPanel, setRegressionPanel] = useState<PanelState<RegressionEntry[]>>({
+    open: false,
+    loading: false,
+    data: null,
+    error: null,
+  });
+  const [userPanel, setUserPanel] = useState<PanelState<UserLeaderboardEntry[]>>({
+    open: false,
+    loading: false,
+    data: null,
+    error: null,
+  });
+  const toggleRegressionPanel = useCallback(async () => {
+    setRegressionPanel((prev) => {
+      if (prev.open) return { ...prev, open: false };
+      if (prev.data) return { ...prev, open: true };
+      return { open: true, loading: true, data: null, error: null };
+    });
+    if (regressionPanel.data || regressionPanel.open) return;
+    try {
+      const res = await fetch("/api/sql-regressions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startTime: serverStartTime, endTime: serverEndTime }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setRegressionPanel((p) => ({
+        ...p,
+        loading: false,
+        data: Array.isArray(data) ? data : [],
+        error: null,
+      }));
+    } catch (err) {
+      setRegressionPanel((p) => ({
+        ...p,
+        loading: false,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    }
+  }, [regressionPanel.data, regressionPanel.open, serverStartTime, serverEndTime]);
+
+  const toggleUserPanel = useCallback(async () => {
+    setUserPanel((prev) => {
+      if (prev.open) return { ...prev, open: false };
+      if (prev.data) return { ...prev, open: true };
+      return { open: true, loading: true, data: null, error: null };
+    });
+    if (userPanel.data || userPanel.open) return;
+    try {
+      const res = await fetch("/api/sql-user-leaderboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startTime: serverStartTime, endTime: serverEndTime }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setUserPanel((p) => ({
+        ...p,
+        loading: false,
+        data: Array.isArray(data) ? data : [],
+        error: null,
+      }));
+    } catch (err) {
+      setUserPanel((p) => ({
+        ...p,
+        loading: false,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    }
+  }, [userPanel.data, userPanel.open, serverStartTime, serverEndTime]);
+
   // Table: search, sort, pagination, min duration filter
   const [tableSearch, setTableSearch] = useState("");
   const [minDurationSec, setMinDurationSec] = useState(30);
@@ -798,8 +888,7 @@ export function Dashboard({
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
 
-  // Use enriched candidates when available (includes cost allocation)
-  const candidates = enrichedCandidates ?? initialCandidates;
+  const candidates = initialCandidates;
   const totalQueries = initialTotalQueries;
 
   // Total dollar cost (pre-computed in SQL from billing.usage JOIN list_prices)
@@ -1024,6 +1113,69 @@ export function Dashboard({
     return best;
   }, [filtered]);
 
+  // Most efficient & most inefficient query by real users (exclude SPs starting with "svc")
+  type EfficiencyEntry = {
+    user: string;
+    pruning: number;
+    ioCachePct: number;
+    spillRatio: number;
+    spillBytes: number;
+    p95: number;
+    runs: number;
+    querySnippet: string;
+    fingerprint: string;
+    warehouseId: string;
+    score: number;
+  };
+
+  const { topEfficient, worstInefficient } = useMemo<{
+    topEfficient: EfficiencyEntry | null;
+    worstInefficient: EfficiencyEntry | null;
+  }>(() => {
+    if (filtered.length === 0) return { topEfficient: null, worstInefficient: null };
+
+    let best: EfficiencyEntry | null = null;
+    let worst: EfficiencyEntry | null = null;
+
+    for (const c of filtered) {
+      const ws = c.windowStats;
+      if (ws.count < 2) continue;
+
+      const users = c.topUsers.filter((u) => !u.toLowerCase().startsWith("svc"));
+      if (users.length === 0) continue;
+
+      const spillRatio = ws.totalReadBytes > 0 ? ws.totalSpilledBytes / ws.totalReadBytes : 0;
+
+      const pruningScore = ws.avgPruningEfficiency * 35;
+      const spillScore = (1 - Math.min(spillRatio, 1)) * 25;
+      const cacheScore = (ws.avgIoCachePercent / 100) * 20;
+      const speedScore = ws.p95Ms > 0 ? Math.min(20, (5000 / ws.p95Ms) * 20) : 0;
+      const score = pruningScore + spillScore + cacheScore + speedScore;
+
+      const entry: EfficiencyEntry = {
+        user: users[0],
+        pruning: ws.avgPruningEfficiency,
+        ioCachePct: ws.avgIoCachePercent,
+        spillRatio,
+        spillBytes: ws.totalSpilledBytes,
+        p95: ws.p95Ms,
+        runs: ws.count,
+        querySnippet: c.sampleQueryText.slice(0, 120),
+        fingerprint: c.fingerprint,
+        warehouseId: c.warehouseId,
+        score,
+      };
+
+      if (!best || score > best.score) best = entry;
+      if (!worst || score < worst.score) worst = entry;
+    }
+
+    // Don't show worst if it's the same query as best
+    if (best && worst && best.fingerprint === worst.fingerprint) worst = null;
+
+    return { topEfficient: best, worstInefficient: worst };
+  }, [filtered]);
+
   // Selected warehouse config (when a specific warehouse is picked)
   const selectedWarehouse = useMemo(() => {
     if (warehouseFilter === "all") return null;
@@ -1058,6 +1210,23 @@ export function Dashboard({
   function handleRowClick(candidate: Candidate) {
     setSelectedCandidate(candidate);
     setSheetOpen(true);
+  }
+
+  function buildQueryDetailHref(
+    fingerprint: string,
+    warehouseId?: string,
+    autoAnalyse = false,
+  ): string {
+    const params = new URLSearchParams();
+    if (customRange) {
+      params.set("from", customRange.from);
+      params.set("to", customRange.to);
+    } else {
+      params.set("time", timePreset);
+    }
+    if (warehouseId && warehouseId !== "unknown") params.set("warehouse", warehouseId);
+    if (autoAnalyse) params.set("action", "analyse");
+    return `/queries/${fingerprint}?${params.toString()}`;
   }
 
   const openInNewTab = useCallback((url: string | null) => {
@@ -1385,6 +1554,422 @@ export function Dashboard({
               </p>
             </Card>
           </div>
+        )}
+
+        {/* ── Most Efficient Query ── */}
+        {!fetchError && topEfficient && (
+          <Card className="border-l-4 border-l-yellow-500 py-3 px-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-yellow-100 dark:bg-yellow-900/30 p-2 shrink-0">
+                <Trophy className="h-5 w-5 text-yellow-500" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Most Efficient Query
+                </span>
+                <div className="flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-yellow-500 shrink-0" />
+                  <span className="text-sm font-bold text-foreground truncate">
+                    {topEfficient.user.split("@")[0]}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate hidden sm:inline">
+                    {topEfficient.user.includes("@") ? topEfficient.user : ""}
+                  </span>
+                </div>
+                <Link
+                  href={buildQueryDetailHref(topEfficient.fingerprint, topEfficient.warehouseId)}
+                >
+                  <p className="font-mono text-[11px] text-muted-foreground truncate hover:text-primary transition-colors cursor-pointer">
+                    {topEfficient.querySnippet}
+                    {topEfficient.querySnippet.length >= 120 ? "\u2026" : ""}
+                  </p>
+                </Link>
+              </div>
+              <div className="hidden md:flex items-center gap-4 text-xs shrink-0">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">Pruning</p>
+                      <p className="font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                        {Math.round(topEfficient.pruning * 100)}%
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    File pruning efficiency — higher means fewer files scanned
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">IO Cache</p>
+                      <p className="font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                        {Math.round(topEfficient.ioCachePct)}%
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    IO cache hit rate — higher means less cloud storage I/O
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">Spill</p>
+                      <p
+                        className={`font-bold tabular-nums ${topEfficient.spillRatio < 0.01 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}
+                      >
+                        {topEfficient.spillRatio < 0.001
+                          ? "None"
+                          : `${(topEfficient.spillRatio * 100).toFixed(1)}%`}
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Spill-to-read ratio — lower is better, &quot;None&quot; is ideal
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">p95</p>
+                      <p className="font-bold tabular-nums">{formatDuration(topEfficient.p95)}</p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>95th percentile query duration</TooltipContent>
+                </Tooltip>
+                <div className="text-center">
+                  <p className="text-[10px] text-muted-foreground">Runs</p>
+                  <p className="font-bold tabular-nums">{formatCount(topEfficient.runs)}</p>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* ── Most Inefficient Query ── */}
+        {!fetchError && worstInefficient && (
+          <Card className="border-l-4 border-l-red-500 py-3 px-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-red-100 dark:bg-red-900/30 p-2 shrink-0">
+                <OctagonAlert className="h-5 w-5 text-red-500" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Most Inefficient Query
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-foreground truncate">
+                    {worstInefficient.user.split("@")[0]}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate hidden sm:inline">
+                    {worstInefficient.user.includes("@") ? worstInefficient.user : ""}
+                  </span>
+                </div>
+                <Link
+                  href={buildQueryDetailHref(
+                    worstInefficient.fingerprint,
+                    worstInefficient.warehouseId,
+                  )}
+                >
+                  <p className="font-mono text-[11px] text-muted-foreground truncate hover:text-primary transition-colors cursor-pointer">
+                    {worstInefficient.querySnippet}
+                    {worstInefficient.querySnippet.length >= 120 ? "\u2026" : ""}
+                  </p>
+                </Link>
+              </div>
+              <div className="hidden md:flex items-center gap-4 text-xs shrink-0">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">Pruning</p>
+                      <p
+                        className={`font-bold tabular-nums ${worstInefficient.pruning < 0.5 ? "text-red-600 dark:text-red-400" : "text-foreground"}`}
+                      >
+                        {Math.round(worstInefficient.pruning * 100)}%
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    File pruning efficiency — low values mean full table scans
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">IO Cache</p>
+                      <p
+                        className={`font-bold tabular-nums ${worstInefficient.ioCachePct < 20 ? "text-red-600 dark:text-red-400" : "text-foreground"}`}
+                      >
+                        {Math.round(worstInefficient.ioCachePct)}%
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    IO cache hit rate — low values mean repeated cloud storage reads
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">Spill</p>
+                      <p
+                        className={`font-bold tabular-nums ${worstInefficient.spillRatio > 0.01 ? "text-red-600 dark:text-red-400" : "text-foreground"}`}
+                      >
+                        {worstInefficient.spillRatio < 0.001
+                          ? "None"
+                          : worstInefficient.spillBytes > 1e9
+                            ? formatBytes(worstInefficient.spillBytes)
+                            : `${(worstInefficient.spillRatio * 100).toFixed(1)}%`}
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Spill amount — data that overflowed memory to disk
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-center cursor-help">
+                      <p className="text-[10px] text-muted-foreground">p95</p>
+                      <p
+                        className={`font-bold tabular-nums ${worstInefficient.p95 > 60000 ? "text-red-600 dark:text-red-400" : "text-foreground"}`}
+                      >
+                        {formatDuration(worstInefficient.p95)}
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>95th percentile query duration</TooltipContent>
+                </Tooltip>
+                <div className="text-center">
+                  <p className="text-[10px] text-muted-foreground">Runs</p>
+                  <p className="font-bold tabular-nums">{formatCount(worstInefficient.runs)}</p>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* ── Operator Actions Summary ── */}
+        {!fetchError && serverStartTime && serverEndTime && (
+          <ActionsPanel startTime={serverStartTime} endTime={serverEndTime} />
+        )}
+
+        {/* ── Query Regression Detection ── */}
+        {!fetchError && serverStartTime && serverEndTime && (
+          <Card className="overflow-hidden">
+            <button
+              onClick={toggleRegressionPanel}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <TrendingDown className="h-4 w-4 text-red-500" />
+                <span className="text-sm font-semibold">Query Regressions</span>
+                <span className="text-xs text-muted-foreground">
+                  Queries that got 1.5x+ slower vs prior period
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {regressionPanel.data && (
+                  <Badge variant="outline" className="text-xs">
+                    {regressionPanel.data.length} found
+                  </Badge>
+                )}
+                {regressionPanel.open ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            </button>
+            {regressionPanel.open && (
+              <CardContent className="pt-0 pb-4 px-4">
+                {regressionPanel.loading && (
+                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Comparing against prior period...
+                  </div>
+                )}
+                {regressionPanel.error && (
+                  <p className="text-sm text-destructive py-2">{regressionPanel.error}</p>
+                )}
+                {regressionPanel.data && regressionPanel.data.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-2">
+                    No significant regressions detected. All queries are performing within baseline.
+                  </p>
+                )}
+                {regressionPanel.data && regressionPanel.data.length > 0 && (
+                  <div className="overflow-x-auto rounded-md border border-border/40">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableHead className="text-xs font-semibold px-3 py-2">Query</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Baseline p95
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Current p95
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Regression
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Runs
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2">User</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {regressionPanel.data.map((r) => (
+                          <TableRow key={r.fingerprint} className="hover:bg-muted/20">
+                            <TableCell className="text-xs px-3 py-1.5 max-w-[300px] truncate font-mono">
+                              {r.querySnippet}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {formatDuration(r.baselineP95Ms)}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums font-semibold text-red-600 dark:text-red-400">
+                              {formatDuration(r.currentP95Ms)}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right">
+                              <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400 font-semibold">
+                                <TrendingUp className="h-3 w-3" />+{r.regressionPct}%
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {r.currentRuns}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 truncate max-w-[150px]">
+                              {r.executedBy.split("@")[0]}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        )}
+
+        {/* ── User Leaderboard ── */}
+        {!fetchError && serverStartTime && serverEndTime && (
+          <Card className="overflow-hidden">
+            <button
+              onClick={toggleUserPanel}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-blue-500" />
+                <span className="text-sm font-semibold">User Leaderboard</span>
+                <span className="text-xs text-muted-foreground">
+                  Top users by total query duration
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {userPanel.data && (
+                  <Badge variant="outline" className="text-xs">
+                    {userPanel.data.length} users
+                  </Badge>
+                )}
+                {userPanel.open ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            </button>
+            {userPanel.open && (
+              <CardContent className="pt-0 pb-4 px-4">
+                {userPanel.loading && (
+                  <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading user consumption data...
+                  </div>
+                )}
+                {userPanel.error && (
+                  <p className="text-sm text-destructive py-2">{userPanel.error}</p>
+                )}
+                {userPanel.data && userPanel.data.length > 0 && (
+                  <div className="overflow-x-auto rounded-md border border-border/40">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableHead className="text-xs font-semibold px-3 py-2">#</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2">User</TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Total Duration
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Queries
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Failed
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            p95
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Read
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            Spill
+                          </TableHead>
+                          <TableHead className="text-xs font-semibold px-3 py-2 text-right">
+                            DBU·h
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {userPanel.data.map((u, i) => (
+                          <TableRow key={u.executedBy} className="hover:bg-muted/20">
+                            <TableCell className="text-xs px-3 py-1.5 tabular-nums text-muted-foreground">
+                              {i + 1}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 font-medium truncate max-w-[200px]">
+                              {u.executedBy.split("@")[0]}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums font-semibold">
+                              {u.totalDurationMin}m
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {formatCount(u.queryCount)}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {u.failedCount > 0 ? (
+                                <span className="text-red-600 dark:text-red-400">
+                                  {formatCount(u.failedCount)}
+                                </span>
+                              ) : (
+                                "0"
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {formatDuration(u.p95DurationMs)}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {u.totalReadGiB} GiB
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {u.totalSpillGiB > 0.1 ? (
+                                <span className="text-amber-600 dark:text-amber-400">
+                                  {u.totalSpillGiB} GiB
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
+                              {u.estimatedCostDbu}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
         )}
 
         {/* ── Warehouse Health CTA ── */}
@@ -1903,7 +2488,11 @@ export function Dashboard({
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               router.push(
-                                                `/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`,
+                                                buildQueryDetailHref(
+                                                  c.fingerprint,
+                                                  c.warehouseId,
+                                                  true,
+                                                ),
                                               );
                                             }}
                                           >
@@ -1923,9 +2512,7 @@ export function Dashboard({
                                 </ContextMenuItem>
                                 <ContextMenuItem
                                   onClick={() =>
-                                    router.push(
-                                      `/queries/${c.fingerprint}?warehouse=${c.warehouseId}`,
-                                    )
+                                    router.push(buildQueryDetailHref(c.fingerprint, c.warehouseId))
                                   }
                                 >
                                   <Maximize2 className="mr-2 h-4 w-4" />
@@ -1934,7 +2521,7 @@ export function Dashboard({
                                 <ContextMenuItem
                                   onClick={() =>
                                     router.push(
-                                      `/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`,
+                                      buildQueryDetailHref(c.fingerprint, c.warehouseId, true),
                                     )
                                   }
                                 >
@@ -2077,15 +2664,10 @@ export function Dashboard({
           }
           onSetAction={setAction}
           onClearAction={clearAction}
+          buildDetailHref={buildQueryDetailHref}
         />
 
-        {/* Enrichment loading indicator */}
-        {!enrichmentLoaded && !fetchError && (
-          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-            Loading cost &amp; utilization data…
-          </div>
-        )}
+        {/* Cost data now loads with the page (no streaming phase) */}
 
         {/* Enrichment data injection point (server-streamed) */}
         {children}

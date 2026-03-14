@@ -155,13 +155,10 @@ async function CoreDashboardLoader({
 
   const workspaceUrl = getWorkspaceBaseUrl();
 
-  // Fetch warehouse activity sparkline data (non-blocking)
+  // Fetch warehouse activity (costs deferred to Phase 2 EnrichmentLoader)
   let warehouseActivity: WarehouseActivity[] = [];
   try {
-    warehouseActivity = await getWarehouseActivityBuckets({
-      startTime: start,
-      endTime: end,
-    });
+    warehouseActivity = await getWarehouseActivityBuckets({ startTime: start, endTime: end });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[page] warehouse activity fetch failed:", msg);
@@ -188,10 +185,8 @@ async function CoreDashboardLoader({
         actedAt: act.actedAt,
       };
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[page] query actions fetch failed:", msg);
-    coreFailed.push({ name: "query_actions", status: "error", error: msg, rowCount: 0 });
+  } catch {
+    /* Lakebase unavailable — proceed without actions */
   }
 
   // Merge failed and ok sources (dedup by name, ok overrides error)
@@ -213,6 +208,8 @@ async function CoreDashboardLoader({
       fetchError={fetchError}
       dataSourceHealth={allCoreHealth}
       initialQueryActions={queryActionsObj}
+      startTime={start}
+      endTime={end}
     >
       {/* Phase 2 enrichment streams in via nested Suspense */}
       <Suspense

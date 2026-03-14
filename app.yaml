@@ -1,8 +1,12 @@
 # Databricks Apps configuration
 # Maps app resources to environment variables consumed by the Next.js backend.
 #
-# Required app resources (configure in Databricks App UI):
-# 1. SQL Warehouse — resource key: "sql-warehouse"
+# Required app resources (configure in Databricks App UI → Resources tab):
+# 1. SQL Warehouse — resource key: "sql-warehouse" (grant CAN_USE)
+#
+# The DATABRICKS_WAREHOUSE_ID env var is populated automatically from the
+# resource binding below. If deploying via scripts/deploy.sh, the script
+# handles warehouse selection and binding.
 #
 # Lakebase Autoscale is self-provisioned at startup when ENABLE_LAKEBASE=true,
 # using the platform-injected service principal credentials
@@ -16,3 +20,19 @@ command:
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     valueFrom: sql-warehouse
+  - name: AUTH_MODE
+    value: "obo"
+  - name: UNIFIED_OBSERVABILITY_CATALOG
+    value: "main"
+  - name: UNIFIED_OBSERVABILITY_SCHEMA
+    value: "unified_observability"
+  - name: SPARK_HOTSPOT_LIMIT
+    value: "25"
+  - name: SQL_FRESHNESS_SLO_MINUTES
+    value: "30"
+  - name: SPARK_FRESHNESS_SLO_MINUTES
+    value: "120"
+  - name: PHOTON_FRESHNESS_SLO_MINUTES
+    value: "1440"
+  - name: GENIE_SPACE_ID
+    value: ""

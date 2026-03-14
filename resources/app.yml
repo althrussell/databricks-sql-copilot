@@ -1,0 +1,6 @@
+resources:
+  apps:
+    sql_observability_genie:
+      name: "sql-obs-genie-${bundle.target}"
+      description: "SQL Observability Genie — query performance advisor powered by system tables"
+      source_code_path: ..

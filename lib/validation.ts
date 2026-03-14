@@ -1,7 +1,7 @@
 /**
  * Input Validation — SQL injection prevention + LLM output validation.
  *
- * Ported from databricks-forge with adaptations for the copilot.
+ * Ported from databricks-forge with adaptations for the genie.
  * Provides:
  *   1. validateIdentifier() — strict regex for SQL identifiers (warehouse IDs, table names)
  *   2. Zod schemas for LLM output validation

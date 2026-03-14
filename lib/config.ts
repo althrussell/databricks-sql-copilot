@@ -132,3 +132,38 @@ export function getConfig(): AppConfig {
   _config = { serverHostname, host, warehouseId, httpPath, authMode, auth };
   return _config;
 }
+
+export function getUnifiedObservabilityCatalog(): string {
+  const raw = process.env.UNIFIED_OBSERVABILITY_CATALOG?.trim();
+  return raw && raw.length > 0 ? raw : "main";
+}
+
+export function getUnifiedObservabilitySchema(): string {
+  const raw = process.env.UNIFIED_OBSERVABILITY_SCHEMA?.trim();
+  return raw && raw.length > 0 ? raw : "unified_observability";
+}
+
+export function getSparkHotspotLimit(): number {
+  const raw = process.env.SPARK_HOTSPOT_LIMIT?.trim();
+  const parsed = raw ? Number(raw) : 25;
+  if (!Number.isFinite(parsed)) return 25;
+  return Math.max(5, Math.min(200, Math.floor(parsed)));
+}
+
+function parseMinutes(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = raw ? Number(raw.trim()) : fallback;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+export function getSqlFreshnessSloMinutes(): number {
+  return parseMinutes(process.env.SQL_FRESHNESS_SLO_MINUTES, 30, 5, 720);
+}
+
+export function getSparkFreshnessSloMinutes(): number {
+  return parseMinutes(process.env.SPARK_FRESHNESS_SLO_MINUTES, 120, 15, 1440);
+}
+
+export function getPhotonFreshnessSloMinutes(): number {
+  return parseMinutes(process.env.PHOTON_FRESHNESS_SLO_MINUTES, 1440, 60, 10080);
+}

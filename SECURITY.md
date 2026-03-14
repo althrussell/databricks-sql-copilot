@@ -6,7 +6,7 @@ If you discover a security vulnerability in this project, please report it respo
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email the maintainers or use [GitHub's private vulnerability reporting](https://github.com/althrussell/databricks-sql-copilot/security/advisories/new).
+Instead, please email the maintainers or use [GitHub's private vulnerability reporting](https://github.com/althrussell/databricks-sql-genie/security/advisories/new).
 
 ### What to include
 

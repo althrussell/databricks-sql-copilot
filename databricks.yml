@@ -1,0 +1,27 @@
+bundle:
+  name: sql-observability-genie
+
+include:
+  - resources/*.yml
+
+variables:
+  warehouse_id:
+    description: "SQL warehouse ID for the target workspace"
+    default: ""
+  auth_mode:
+    description: "Authentication mode: 'obo' (on-behalf-of user) or 'sp' (service principal)"
+    default: "obo"
+  genie_space_id:
+    description: "Genie Space ID (create one per workspace, leave empty to disable)"
+    default: ""
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      profile: DEFAULT
+    variables:
+      warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
+      auth_mode: "sp"
+      genie_space_id: ${GENIE_SPACE_ID}

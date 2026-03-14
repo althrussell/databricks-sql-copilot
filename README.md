@@ -1,23 +1,24 @@
-# DBSQL Co-Pilot — SQL Warehouse Performance Advisor
+# SQL Observability Genie — SQL & Jobs Performance Advisor
 
 > **Not a Databricks product.** This project was built independently by a Databricks SQL SME. It is **not** officially supported, endorsed, or maintained by Databricks, Inc. Databricks provides **no warranty, liability, or support** for this software. Use it entirely at your own risk.
 >
 > **Alpha software.** This project is in early alpha. APIs, features, and behaviour may change without notice. There are no guarantees of correctness, completeness, or fitness for any purpose. **Do not rely on this tool for production decisions without independent validation.**
 
-A Databricks App that surfaces slow and expensive SQL queries, diagnoses performance bottlenecks, and generates AI-powered query rewrites — all from data you already have in system tables.
+A Databricks App that surfaces slow and expensive SQL queries, monitors Databricks Jobs health, diagnoses performance bottlenecks, and generates AI-powered optimizations — all from data you already have in system tables.
 
 Built with Next.js, shadcn/ui, and the Databricks SQL Node.js driver. Deploys natively to [Databricks Apps](https://docs.databricks.com/en/apps/index.html) with on-behalf-of-user (OBO) authentication — queries run under the logged-in user's identity with their Unity Catalog permissions.
 
 <p align="center">
-  <img src="public/1.png" alt="DBSQL Co-Pilot Dashboard" width="100%" />
+  <img src="public/1.png" alt="DBSQL Genie Dashboard" width="100%" />
 </p>
 
 ---
 
 ## What it does
 
-DBSQL Co-Pilot reads your Databricks system tables to find the queries that cost the most, run the slowest, or cause the most pressure on your warehouses. It then uses Databricks-hosted AI models to explain what's wrong and suggest fixes.
+SQL Observability Genie reads your Databricks system tables to find the queries and jobs that cost the most, run the slowest, or cause the most pressure on your warehouses. It then uses Databricks-hosted AI models to explain what's wrong and suggest fixes.
 
+### SQL Observability
 1. **Discovers** slow and high-impact SQL queries from `system.query.history` across all warehouses
 2. **Scores** each query pattern by real business impact (runtime, frequency, cost, capacity pressure, quick-win potential)
 3. **Monitors** warehouse activity in real time with interactive query timelines, I/O heatmaps, and user/source breakdowns
@@ -26,9 +27,20 @@ DBSQL Co-Pilot reads your Databricks system tables to find the queries that cost
 6. **Proposes** optimised SQL rewrites with risks, rationale, and validation plans
 7. **Analyses warehouse health** with sizing, scaling, and serverless migration recommendations
 
+### Jobs Health Monitoring
+8. **Tracks** all Databricks Jobs from `system.lakeflow.job_run_timeline` with KPI tiles (total runs, success rate, p95 duration, total cost) and week-over-week comparison
+9. **Ranks** jobs by failure rate and duration, with per-job cost allocation from `system.billing.usage`
+10. **Drills down** into individual jobs with run timeline, daily duration trend (p50/p95/avg), task-level breakdown, phase analysis (setup/queue/execution), and run comparison
+11. **Triages** each job with AI-generated one-liner insights referencing specific metrics
+12. **Analyses** jobs in depth with AI: root cause diagnosis, phase bottleneck identification, cluster right-sizing, and retry pattern analysis
+13. **Flags** jobs with rule-based detection (high failure rate, long setup, queue bottleneck, duration volatility, etc.)
+
+### Cross-Cutting
+14. **Generates** Operator Actions Summary: AI-powered top-10 prioritised action items spanning SQL queries, jobs, and table optimization — with specific commands, owners, and quantified impact
+
 ### The app is read-only
 
-DBSQL Co-Pilot does **not** create, modify, or delete anything in your lakehouse. It only reads system tables and calls `ai_query()`. No tables are created, no data is written to Unity Catalog, and no warehouse settings are changed.
+SQL Observability Genie does **not** create, modify, or delete anything in your lakehouse. It only reads system tables and calls `ai_query()`. No tables are created, no data is written to Unity Catalog, and no warehouse settings are changed.
 
 ---
 
@@ -98,12 +110,16 @@ The app runs `SELECT` queries against these system tables via your SQL Warehouse
 
 | System table | What it reads | Why |
 |---|---|---|
-| `system.query.history` | Query text, execution metrics, user info | Core data source for all query analysis |
+| `system.query.history` | Query text, execution metrics, user info | Core data source for SQL query analysis |
 | `system.compute.warehouses` | Warehouse names, sizes, config | Warehouse health recommendations |
-| `system.billing.usage` | DBU consumption per warehouse | Cost estimation per query pattern |
+| `system.compute.clusters` | Cluster metadata | Genie Space context |
+| `system.billing.usage` | DBU consumption per warehouse/job | Cost estimation for SQL queries and jobs |
 | `system.billing.list_prices` | SKU pricing | Converts DBUs to dollar amounts |
-| `system.access.workspaces_latest` | Workspace names and URLs | Multi-workspace support and deep links (optional — dashboard works without it) |
-| `INFORMATION_SCHEMA.COLUMNS` | Column names and types | Provides context for AI analysis |
+| `system.lakeflow.job_run_timeline` | Job run metrics, durations, results | Jobs Health dashboard and detail pages |
+| `system.lakeflow.job_task_run_timeline` | Task-level metrics per job run | Task breakdown on job detail page |
+| `system.lakeflow.jobs` | Job metadata (names, creators, schedules) | Job name resolution and creator filters |
+| `system.access.workspaces_latest` | Workspace names and URLs | Multi-workspace support (optional) |
+| `INFORMATION_SCHEMA.COLUMNS` | Column names and types | Context for AI analysis |
 
 The app also calls `DESCRIBE DETAIL`, `DESCRIBE TABLE EXTENDED`, and `describe_history()` on tables referenced by slow queries to gather maintenance history for AI context.
 
@@ -129,8 +145,8 @@ The app calls Databricks-hosted foundation models through the `ai_query()` SQL f
 
 | Model | Used for | When it runs |
 |---|---|---|
-| `databricks-llama-4-maverick` | Fast triage insights (one-liner per query) | Automatically on dashboard load and warehouse monitor "AI Insights" button |
-| `databricks-claude-opus-4-6` | Deep diagnosis and SQL rewrites | Only when you click "AI Analyse" on a specific query |
+| `databricks-claude-sonnet-4-5` | Fast triage insights (one-liner per query) | Automatically on dashboard load and warehouse monitor "AI Insights" button |
+| `databricks-claude-sonnet-4-5` | Deep diagnosis and SQL rewrites | Only when you click "AI Analyse" on a specific query |
 
 AI features are **optional**. If `ai_query()` is not available or the service principal lacks access, the app still works — you just won't see AI insights or rewrites. No AI calls are made without user action (triage runs on page load but fails gracefully).
 
@@ -174,9 +190,9 @@ All AI features use Databricks Foundation Model APIs via `ai_query()` with **pay
 
 | Feature | Model | Typical tokens per call | Approximate cost per call |
 |---|---|---|---|
-| AI triage (batch of ~10 queries) | `databricks-llama-4-maverick` | ~2K–5K input, ~1K output | < $0.01 |
-| AI deep analysis (per query) | `databricks-claude-opus-4-6` | ~5K–30K input, ~4K–8K output | ~$0.05–$0.30 |
-| AI SQL rewrite (per query) | `databricks-claude-opus-4-6` | ~10K–50K input, ~4K–16K output | ~$0.10–$0.50 |
+| AI triage (batch of ~10 queries) | `databricks-claude-sonnet-4-5` | ~2K–5K input, ~1K output | < $0.01 |
+| AI deep analysis (per query) | `databricks-claude-sonnet-4-5` | ~5K–30K input, ~4K–8K output | ~$0.05–$0.30 |
+| AI SQL rewrite (per query) | `databricks-claude-sonnet-4-5` | ~10K–50K input, ~4K–16K output | ~$0.10–$0.50 |
 
 **Typical monthly cost for moderate use** (10 triage batches/day, 5 deep analyses/day): **$5–$15/month** in PPT token costs. Costs scale linearly with usage — if you run fewer analyses, you pay less.
 
@@ -195,7 +211,7 @@ Databricks Apps are billed per DBU based on app size and uptime. Pricing varies 
 
 **Example cost** (AWS Premium, US-East): A single Medium app running 24/7 for 30 days = 360 DBUs x $0.75/DBU = **~$270/month**.
 
-**Cost optimisation tip**: DBSQL Co-Pilot does not need to run 24/7. You can **stop the app** when not in use and **start it** only when you need to analyse queries or review warehouse health. If you run the app for ~2 hours per business day (22 days/month), the cost drops to approximately **$16.50/month** for a Medium app on AWS Premium.
+**Cost optimisation tip**: SQL Observability Genie does not need to run 24/7. You can **stop the app** when not in use and **start it** only when you need to analyse queries or review warehouse health. If you run the app for ~2 hours per business day (22 days/month), the cost drops to approximately **$16.50/month** for a Medium app on AWS Premium.
 
 To stop/start your app:
 - **UI**: Go to **Compute > Apps**, click your app, then **Stop** / **Start**
@@ -251,7 +267,7 @@ You should see your SQL warehouses listed.
 
 ```bash
 git clone <repo-url>
-cd databricks-sql-copilot
+cd databricks-sql-genie
 ```
 
 ### Step 3: Create the Databricks App
@@ -261,7 +277,7 @@ In your Databricks workspace UI:
 1. Navigate to **Compute** in the left sidebar
 2. Click **Apps**
 3. Click **Create App**
-4. Enter a name: `dbsql-copilot` (or your preferred name)
+4. Enter a name: `dbsql-genie` (or your preferred name)
 5. Click **Create**
 
 The app is now created but not yet deployed. Note the app name — you'll need it for the deploy command.
@@ -308,7 +324,7 @@ Permission requirements depend on your `AUTH_MODE`:
 - **OBO mode (default):** Each user who opens the app needs `SELECT` access to the system tables below. The service principal only needs **Can use** on the SQL Warehouse. Granting permissions to a **group** (e.g., `platform-admins`) is the easiest approach.
 - **SP mode (`AUTH_MODE=sp`):** The service principal needs all the permissions itself, since it runs every query.
 
-In both cases, find the service principal name on your app's **Settings** tab (looks like `dbsql-copilot-app-sp`).
+In both cases, find the service principal name on your app's **Settings** tab (looks like `dbsql-genie-app-sp`).
 
 ```sql
 -- Service principal: warehouse access (required in both modes)
@@ -316,10 +332,17 @@ In both cases, find the service principal name on your app's **Settings** tab (l
 
 -- Grant to users (OBO mode) or to the service principal (SP mode).
 -- Replace <principal> with a group name, user email, or the service principal name.
+
+-- SQL Dashboard
 GRANT SELECT ON system.query.history TO `<principal>`;
 GRANT SELECT ON system.compute.warehouses TO `<principal>`;
 
--- Cost estimation
+-- Jobs Health
+GRANT SELECT ON system.lakeflow.job_run_timeline TO `<principal>`;
+GRANT SELECT ON system.lakeflow.job_task_run_timeline TO `<principal>`;
+GRANT SELECT ON system.lakeflow.jobs TO `<principal>`;
+
+-- Cost estimation (SQL + Jobs)
 GRANT SELECT ON system.billing.usage TO `<principal>`;
 GRANT SELECT ON system.billing.list_prices TO `<principal>`;
 
@@ -338,11 +361,11 @@ From the cloned repository directory:
 
 ```bash
 # Upload the source code to your workspace
-databricks sync . /Workspace/Users/<your-email>/dbsql-copilot
+databricks sync . /Workspace/Users/<your-email>/dbsql-genie
 
 # Deploy the app (in a separate terminal)
-databricks apps deploy dbsql-copilot \
-  --source-code-path /Workspace/Users/<your-email>/dbsql-copilot
+databricks apps deploy dbsql-genie \
+  --source-code-path /Workspace/Users/<your-email>/dbsql-genie
 ```
 
 Replace `<your-email>` with your Databricks workspace email.
@@ -369,11 +392,11 @@ For ongoing development, use `--watch` mode to auto-sync changes:
 
 ```bash
 # Terminal 1: Watch for file changes and sync
-databricks sync --watch . /Workspace/Users/<your-email>/dbsql-copilot
+databricks sync --watch . /Workspace/Users/<your-email>/dbsql-genie
 
 # Terminal 2: Re-deploy after changes
-databricks apps deploy dbsql-copilot \
-  --source-code-path /Workspace/Users/<your-email>/dbsql-copilot
+databricks apps deploy dbsql-genie \
+  --source-code-path /Workspace/Users/<your-email>/dbsql-genie
 ```
 
 ---
@@ -393,7 +416,7 @@ Instead of uploading files with `databricks sync`, you can deploy directly from 
 2. **Create the app** following Steps 3–6 from the deployment guide above (create app, add SQL Warehouse resource, configure user authorization, grant permissions)
 3. **Configure the Git repository**:
    - On your app's page, click **Edit**
-   - In the **Configure Git repository** step, enter your repository URL (e.g., `https://github.com/your-org/databricks-sql-copilot`)
+   - In the **Configure Git repository** step, enter your repository URL (e.g., `https://github.com/your-org/databricks-sql-genie`)
    - Select your Git provider (GitHub, GitLab, Bitbucket, etc.)
    - Click **Save**
 4. **Add a Git credential** (private repos only):
@@ -412,6 +435,153 @@ The app will pull the code directly from your repository, run the build, and sta
 
 ---
 
+## Quick deploy with the deploy script
+
+The easiest way to deploy to any workspace. Handles app creation, source sync, deployment, and OBO scope configuration in one command.
+
+### First deploy to a new workspace
+
+```bash
+# Authenticate to the target workspace
+databricks auth login https://my-workspace.cloud.databricks.com --profile=my-workspace
+
+# Deploy (creates app + syncs + deploys)
+./scripts/deploy.sh \
+  --profile my-workspace \
+  --warehouse abc123def456 \
+  --create
+```
+
+### Redeploy after code changes
+
+```bash
+./scripts/deploy.sh --profile my-workspace --warehouse abc123def456
+```
+
+### Deploy with auto-provisioned Genie Space
+
+On first deploy, use `--create-genie` to automatically create and configure a Genie Space from the included config:
+
+```bash
+./scripts/deploy.sh \
+  --profile my-workspace \
+  --warehouse abc123def456 \
+  --create \
+  --create-genie
+```
+
+This will:
+1. Create the Genie Space via the REST API using `observability/genie/genie-space-config.json`
+2. Create the Databricks App
+3. Deploy the app with the new Genie Space ID
+4. Auto-grant `CAN_RUN` on the Genie Space to the app's service principal
+
+On subsequent deploys, pass the Genie Space ID directly:
+
+```bash
+./scripts/deploy.sh \
+  --profile my-workspace \
+  --warehouse abc123def456 \
+  --genie-space 01f11d330b1e17349370616c86cb90ba
+```
+
+### Provision a Genie Space standalone
+
+You can also create a Genie Space independently of deployment:
+
+```bash
+./scripts/provision-genie-space.sh \
+  --profile my-workspace \
+  --warehouse abc123def456
+```
+
+The script outputs the new Space ID on the last line. It reads the space configuration (tables, instructions, sample questions) from `observability/genie/genie-space-config.json`.
+
+### Full options
+
+```bash
+./scripts/deploy.sh \
+  --profile my-workspace \        # Databricks CLI profile (required)
+  --warehouse abc123def456 \      # SQL warehouse ID (required)
+  --app-name sql-obs-genie \      # App name (default: sql-obs-genie)
+  --auth-mode obo \               # obo or sp (default: obo)
+  --genie-space <space-id> \      # Genie Space ID (optional)
+  --create-genie                  # Auto-provision Genie Space from config
+  --create                        # Create app if it doesn't exist
+```
+
+### Post-deploy checklist
+
+After the script completes, it prints the app's service principal ID. You (or a workspace admin) need to:
+
+1. **Grant the SP `CAN_USE` on the SQL warehouse** (via Databricks UI: SQL Warehouses > Permissions)
+2. **Grant system table `SELECT`** (see [Permissions reference](#permissions-reference))
+3. If using Genie: **Verify the SP has `CAN_RUN` on the Genie Space** (auto-granted by `--create-genie`, but verify)
+4. If using OBO mode with Genie: **Verify OBO scopes include `dashboards.genie`** in the app settings UI
+
+---
+
+## Deploy with Databricks Asset Bundles (DAB)
+
+For repeatable, multi-environment deployments managed as code.
+
+### Bundle structure
+
+```
+databricks-sql-genie/
+├── databricks.yml          # Bundle config with targets
+├── resources/
+│   └── app.yml             # App resource definition
+├── app.yaml                # Runtime env vars (per-target via deploy script)
+└── ...                     # App source code
+```
+
+### Targets
+
+The bundle ships with two pre-configured targets in `databricks.yml`:
+
+| Target | Profile | Warehouse | Auth |
+|--------|---------|-----------|------|
+| `dev` (default) | `DEFAULT` | `75fd8278393d07eb` | SP |
+| `alinta-prod` | `alinta_prod_user` | `bfe02b96b14128c0` | OBO |
+
+### Adding a new target
+
+Edit `databricks.yml`:
+
+```yaml
+targets:
+  # ... existing targets ...
+
+  customer-demo:
+    workspace:
+      profile: customer-workspace
+    variables:
+      warehouse_id: "their-warehouse-id"
+      auth_mode: "obo"
+      genie_space_id: ""
+```
+
+### Commands
+
+```bash
+# Validate
+databricks bundle validate -t dev
+
+# Deploy
+databricks bundle deploy -t alinta-prod
+
+# Start the app after first deploy
+databricks bundle run sql_observability_genie -t alinta-prod
+
+# Tear down
+databricks bundle destroy -t dev
+```
+
+> **Note**: The DAB approach names the app `sql-obs-genie-<target>` (e.g., `sql-obs-genie-dev`). The deploy script approach uses a flat name you specify with `--app-name`. Both work; choose one per workspace.
+
+---
+
 ## Local development
 
 For developing locally before deploying:
@@ -419,7 +589,7 @@ For developing locally before deploying:
 ### Step 1: Install dependencies
 
 ```bash
-cd databricks-sql-copilot
+cd databricks-sql-genie
 npm install
 ```
 
@@ -488,7 +658,7 @@ env:
 
 Deploy (or re-deploy) the app. On first boot with `ENABLE_LAKEBASE=true`, the startup script will:
 
-1. **Create a Lakebase Autoscale project** (`dbsql-copilot`) using the app's service principal
+1. **Create a Lakebase Autoscale project** (`dbsql-genie`) using the app's service principal
 2. **Generate short-lived OAuth DB credentials** (rotated automatically every ~50 minutes at runtime)
 3. **Push the Prisma schema** (`prisma db push`) to create all tables
 
@@ -530,11 +700,14 @@ In OBO mode, queries execute under the **logged-in user's** identity. Each user 
 | Who | Permission | Resource | Purpose |
 |---|---|---|---|
 | **Service principal** | **Can use** | Your SQL Warehouse | Establish SQL connections |
-| **Each user** | **SELECT** | `system.query.history` | Read query execution data |
-| **Each user** | **SELECT** | `system.compute.warehouses` | Read warehouse configurations |
-| **Each user** | **SELECT** | `system.billing.usage` | Read DBU consumption data |
-| **Each user** | **SELECT** | `system.billing.list_prices` | Read pricing data for cost estimation |
-| **Each user** | **SELECT** | `system.access.workspaces_latest` | Read workspace names (optional — dashboard works without it) |
+| **Each user** | **SELECT** | `system.query.history` | SQL query analysis |
+| **Each user** | **SELECT** | `system.compute.warehouses` | Warehouse health/monitor |
+| **Each user** | **SELECT** | `system.lakeflow.job_run_timeline` | Jobs Health dashboard |
+| **Each user** | **SELECT** | `system.lakeflow.job_task_run_timeline` | Job task breakdown |
+| **Each user** | **SELECT** | `system.lakeflow.jobs` | Job metadata (names, creators) |
+| **Each user** | **SELECT** | `system.billing.usage` | Cost allocation (SQL + Jobs) |
+| **Each user** | **SELECT** | `system.billing.list_prices` | Dollar cost estimation |
+| **Each user** | **SELECT** | `system.access.workspaces_latest` | Workspace names (optional) |
 
 > **Tip:** Granting system table access to a group (e.g., `platform-admins`) is easier than granting per-user. Users who lack a specific permission see graceful degradation (e.g., cost columns show "N/A", workspace names show "Unknown").
 
@@ -545,11 +718,14 @@ In SP mode, all queries run as the service principal regardless of who is logged
 | Permission | Resource | Purpose |
 |---|---|---|
 | **Can use** | Your SQL Warehouse | Run queries against system tables |
-| **SELECT** | `system.query.history` | Read query execution data |
-| **SELECT** | `system.compute.warehouses` | Read warehouse configurations |
-| **SELECT** | `system.billing.usage` | Read DBU consumption data |
-| **SELECT** | `system.billing.list_prices` | Read pricing data for cost estimation |
-| **SELECT** | `system.access.workspaces_latest` | Read workspace names (optional) |
+| **SELECT** | `system.query.history` | SQL query analysis |
+| **SELECT** | `system.compute.warehouses` | Warehouse health/monitor |
+| **SELECT** | `system.lakeflow.job_run_timeline` | Jobs Health dashboard |
+| **SELECT** | `system.lakeflow.job_task_run_timeline` | Job task breakdown |
+| **SELECT** | `system.lakeflow.jobs` | Job metadata (names, creators) |
+| **SELECT** | `system.billing.usage` | Cost allocation (SQL + Jobs) |
+| **SELECT** | `system.billing.list_prices` | Dollar cost estimation |
+| **SELECT** | `system.access.workspaces_latest` | Workspace names (optional) |
 
 ### Optional permissions (both modes)
 
@@ -587,8 +763,45 @@ In SP mode, all queries run as the service principal regardless of who is logged
 | Variable | Where | Description |
 |---|---|---|
 | `AUTH_MODE` | `app.yaml` or `.env.local` | `obo` (default) = use logged-in user's token; `sp` = always use service principal |
+| `GENIE_SPACE_ID` | `app.yaml` or `.env.local` | Genie Space ID for the natural-language query interface (optional) |
 | `ENABLE_LAKEBASE` | `app.yaml` or `.env.local` | Set to `true` to enable persistence (default: `false`) |
 | `DATABRICKS_TOKEN` | `.env.local` only | Personal access token for local development |
+| `UNIFIED_OBSERVABILITY_CATALOG` | `app.yaml` or `.env.local` | Catalog that contains the unified observability views |
+| `UNIFIED_OBSERVABILITY_SCHEMA` | `app.yaml` or `.env.local` | Schema that contains the unified observability views |
+| `SPARK_HOTSPOT_LIMIT` | `app.yaml` or `.env.local` | Row limit for Spark hotspot lists (default `25`) |
+| `SQL_FRESHNESS_SLO_MINUTES` | `app.yaml` or `.env.local` | SQL freshness SLO used by `/api/observability-health` |
+| `SPARK_FRESHNESS_SLO_MINUTES` | `app.yaml` or `.env.local` | Spark freshness SLO used by `/api/observability-health` |
+| `PHOTON_FRESHNESS_SLO_MINUTES` | `app.yaml` or `.env.local` | Photon freshness SLO used by `/api/observability-health` |
+
+---
+
+## Unified Spark observability integration
+
+The app now includes a contract-first path for unifying SQL and Spark observability:
+
+- Canonical model: `docs/UNIFIED_OBSERVABILITY_MODEL.md`
+- Serving views: `observability/sql/unified_views.sql`
+- Spark ingestion module: `observability/python/spark_backend_ingest.py`
+- Spark UI surface: `/spark-observability`
+- Health endpoint: `/api/observability-health`
+
+### Integration sequence
+
+1. Run Spark profiling jobs from your external profiler workflow to populate source tables (`Applications`, `jobs`, `stages`, `photonanalysis`).
+2. Schedule `spark_backend_ingest.py` to load canonical tables into `UNIFIED_OBSERVABILITY_CATALOG.UNIFIED_OBSERVABILITY_SCHEMA`.
+3. Apply `observability/sql/unified_views.sql` to publish serving views.
+4. Deploy app and validate `/spark-observability`.
+
+### Additional grants for unified Spark views
+
+```sql
+GRANT USE CATALOG ON CATALOG main TO `<principal>`;
+GRANT USE SCHEMA ON SCHEMA main.unified_observability TO `<principal>`;
+GRANT SELECT ON VIEW main.unified_observability.v_observability_scorecard TO `<principal>`;
+GRANT SELECT ON VIEW main.unified_observability.v_spark_job_hotspots TO `<principal>`;
+GRANT SELECT ON VIEW main.unified_observability.v_spark_stage_hotspots TO `<principal>`;
+GRANT SELECT ON VIEW main.unified_observability.v_photon_opportunities TO `<principal>`;
+```
 
 ---
 
@@ -596,13 +809,23 @@ In SP mode, all queries run as the service principal regardless of who is logged
 
 ```
 app/                              Next.js App Router pages
-├── page.tsx                      Dashboard (server + client components)
+├── page.tsx                      SQL Dashboard (server component)
+├── dashboard.tsx                 SQL Dashboard (client component) + Operator Actions
+├── actions-panel.tsx             Operator Actions Summary panel
 ├── queries/[fingerprint]/        Query detail + AI analysis
+├── jobs/
+│   ├── page.tsx                  Jobs Health (server component)
+│   ├── jobs-dashboard.tsx        Jobs Health (client component)
+│   └── [jobId]/
+│       ├── page.tsx              Job detail (server component)
+│       └── job-detail-client.tsx Job detail (client) — timeline, trends, AI
 ├── warehouse-health/             Warehouse health report
 ├── warehouse-monitor/            Warehouse list
 ├── warehouse/[warehouseId]/      Real-time warehouse monitor
 ├── api/
 │   ├── warehouse-health/         Health analysis endpoint
+│   ├── job-analysis/             Job AI deep analysis endpoint
+│   ├── actions-summary/          Operator Actions Summary endpoint
 │   └── query-actions/            Query action CRUD
 
 lib/
@@ -614,9 +837,18 @@ lib/
 │   ├── rewrite-store.ts          AI rewrite cache
 │   ├── actions-store.ts          Query actions CRUD
 │   └── health-store.ts           Health snapshot CRUD
-├── queries/                      SQL queries against system tables
-├── domain/                       Scoring, fingerprinting, recommendations
-├── ai/                           AI client, prompts, triage
+├── queries/
+│   ├── activity.ts               SQL query data from system.query.history
+│   ├── jobs.ts                   Jobs data from system.lakeflow.*
+│   └── actions-data.ts           Cross-cutting data for Operator Actions
+├── domain/
+│   ├── scoring.ts                SQL impact scoring and fingerprinting
+│   └── job-flags.ts              Rule-based job flag detection
+├── ai/
+│   ├── aiClient.ts               SQL triage, diagnosis, rewrite
+│   ├── job-triage.ts             Job-level AI triage (one-liners)
+│   ├── job-analysis.ts           Job deep analysis (root cause, phases)
+│   └── actions-summary.ts        Operator Actions Summary generation
 └── utils/                        Deep links, formatting
 
 components/
@@ -633,7 +865,7 @@ components/
 | Framework | Next.js 16 (App Router, React 19) |
 | UI | shadcn/ui, Radix UI, Tailwind CSS 4 |
 | Data | @databricks/sql Node.js driver, REST API client |
-| AI | Databricks `ai_query()` (Llama 4 Maverick, Claude Opus 4.6) |
+| AI | Databricks `ai_query()` (Claude Sonnet 4.5 via `databricks-claude-sonnet-4-5`) |
 | Persistence | Databricks Lakebase via Prisma (optional) |
 | Language | TypeScript (strict mode) |
 | Deployment | Databricks Apps |
@@ -659,13 +891,17 @@ components/
 | Problem | Cause | Solution |
 |---|---|---|
 | Dashboard shows no data | User (OBO) or service principal (SP) lacks system table access | Grant `SELECT` on system tables — see [Permissions reference](#permissions-reference) |
+| Jobs Health shows error | Missing `system.lakeflow.*` permissions | Grant `SELECT` on `system.lakeflow.job_run_timeline`, `job_task_run_timeline`, and `jobs` |
 | "INSUFFICIENT_PERMISSIONS" on `workspaces_latest` | User lacks access to `system.access.workspaces_latest` | Grant `SELECT` or ignore — workspace names show "Unknown" but dashboard still loads |
 | Cost columns show "N/A" | Missing billing table permissions | Grant `SELECT` on `system.billing.usage` and `system.billing.list_prices` |
 | AI buttons show errors | `ai_query()` not available | Grant `EXECUTE` on `ai_query()`, or ignore (AI is optional) |
+| Job p95 duration shows "—" | All `run_duration_seconds` values are 0 in system tables | The app handles this with wall-clock fallback; redeploy if running a stale build |
 | "The service principal lacks the required Databricks permissions" | OBO is not active; app fell back to SP which lacks permissions | Ensure user authorization scopes are configured (Step 5) and `AUTH_MODE` is `obo` (or unset) |
 | "PERMISSION_DENIED" in logs | User or SP lacks a specific permission | Check which API/table failed and grant the corresponding permission |
 | App stuck on "Starting" | Build failed | Check the **Logs** tab for npm or TypeScript errors |
 | Blank page after deploy | Missing warehouse resource | Ensure `sql-warehouse` resource is added (Step 4) |
+| Genie shows "GENIE_SPACE_NOT_FOUND" | Genie Space deleted or SP lacks access | Re-provision with `./scripts/provision-genie-space.sh` and update `GENIE_SPACE_ID` |
+| Genie shows "PERMISSION_DENIED" | SP or user lacks warehouse/Genie permission | Grant SP `CAN_RUN` on the Genie Space and `CAN_USE` on the SQL warehouse |
 
 ### Checking logs
 
@@ -691,7 +927,7 @@ components/
 
 THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
 
-- **Not a Databricks product.** This project is an independent, community-driven tool created by a Databricks SQL SME. It is not part of the Databricks platform, not covered by any Databricks support agreement, and not endorsed by Databricks, Inc.
+- **Not a Databricks product.** This project is an independent, community-driven tool. It is not part of the Databricks platform, not covered by any Databricks support agreement, and not endorsed by Databricks, Inc.
 - **No warranty.** The authors and contributors make no guarantees that this software is correct, complete, secure, or fit for any particular purpose. AI-generated recommendations (query rewrites, warehouse sizing advice) may be inaccurate or inappropriate for your workload. Always validate recommendations independently before applying them.
 - **No liability.** In no event shall the authors, contributors, or Databricks, Inc. be held liable for any damages — including but not limited to data loss, increased costs, service disruption, or any direct, indirect, incidental, or consequential damages — arising from the use of this software.
 - **Alpha status.** This project is in early alpha. Features, APIs, and behaviour may change at any time without notice or migration support.
@@ -702,7 +938,7 @@ THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPL
 Licensed under the [Apache License, Version 2.0](LICENSE).
 
 ```
-Copyright 2025 DBSQL Co-Pilot Contributors
+Copyright 2025 DBSQL Genie Contributors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

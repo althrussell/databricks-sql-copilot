@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
-import { LayoutDashboard, HeartPulse, Monitor } from "lucide-react";
+import { LayoutDashboard, HeartPulse, Monitor, Briefcase, Sparkles } from "lucide-react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Toaster } from "sonner";
@@ -19,8 +19,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DBSQL Co-Pilot",
-  description: "Databricks SQL performance advisor",
+  title: "SQL Observability Genie",
+  description: "Databricks SQL observability advisor",
   icons: {
     icon: "/databricks-icon.svg",
   },
@@ -53,11 +53,11 @@ export default function RootLayout({
                   priority
                 />
                 <span className="text-lg font-bold tracking-tight text-foreground">
-                  DBSQL Co-Pilot
+                  SQL Observability Genie
                 </span>
               </Link>
               <span className="ml-3 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                Performance Advisor
+                SQL Advisor
               </span>
 
               {/* Nav links */}
@@ -68,6 +68,13 @@ export default function RootLayout({
                 >
                   <LayoutDashboard className="h-3.5 w-3.5" />
                   Dashboard
+                </Link>
+                <Link
+                  href="/jobs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                >
+                  <Briefcase className="h-3.5 w-3.5" />
+                  Jobs Health
                 </Link>
                 <Link
                   href="/warehouse-health"
@@ -82,6 +89,13 @@ export default function RootLayout({
                 >
                   <Monitor className="h-3.5 w-3.5" />
                   Warehouse Monitor
+                </Link>
+                <Link
+                  href="/spark-genie"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Genie
                 </Link>
                 <div className="h-5 w-px bg-border mx-1" />
                 <ThemeToggle />

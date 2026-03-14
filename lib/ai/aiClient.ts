@@ -25,11 +25,11 @@ import { writePromptLog } from "@/lib/ai/prompt-logger";
 
 /** Model selection based on task complexity */
 const MODELS = {
-  diagnose: "databricks-claude-opus-4-6",
-  rewrite: "databricks-claude-opus-4-6",
+  diagnose: "databricks-claude-sonnet-4-5",
+  rewrite: "databricks-claude-sonnet-4-5",
 } as const;
 
-/** Max input tokens per mode (guardrail — Claude Opus 4.6 has 200K ITPM) */
+/** Max input tokens per mode (guardrail — Claude Sonnet 4.5 has 200K ITPM) */
 const MAX_INPUT_TOKENS = {
   diagnose: 30_000,
   rewrite: 50_000,
@@ -68,17 +68,14 @@ export async function callAi(mode: AiMode, context: PromptContext): Promise<AiRe
   const combinedPrompt = `${prompt.systemPrompt}\n\n${prompt.userPrompt}`;
   const escapedPrompt = escapeForSql(combinedPrompt);
 
-  // Use returnType for structured output — lets ai_query() return parsed JSON directly
-  const returnType =
-    mode === "diagnose"
-      ? "STRUCT<summary ARRAY<STRING>, rootCauses ARRAY<STRUCT<cause STRING, evidence STRING, severity STRING>>, recommendations ARRAY<STRING>>"
-      : "STRUCT<summary ARRAY<STRING>, rootCauses ARRAY<STRUCT<cause STRING, evidence STRING, severity STRING>>, rewrittenSql STRING, rationale STRING, risks ARRAY<STRUCT<risk STRING, mitigation STRING>>, validationPlan ARRAY<STRING>>";
-
+  // Claude models ignore returnType and wrap responses in markdown fences,
+  // so we omit it and rely on prompt-instructed JSON + robust parsing.
+  // Claude Sonnet defaults to only 1,000 output tokens — raise to 8192.
   const sql = `
     SELECT ai_query(
       '${model}',
       '${escapedPrompt}',
-      returnType => '${returnType}'
+      modelParameters => named_struct('max_tokens', 8192, 'temperature', 0.0)
     ) AS response
   `;
 
@@ -189,7 +186,8 @@ async function callAiUnstructured(mode: AiMode, context: PromptContext): Promise
   const sql = `
     SELECT ai_query(
       '${model}',
-      '${escapedPrompt}'
+      '${escapedPrompt}',
+      modelParameters => named_struct('max_tokens', 8192, 'temperature', 0.0)
     ) AS response
   `;
 
@@ -301,55 +299,169 @@ function parseAndValidate(raw: string, mode: AiMode): DiagnoseResponse | Rewrite
 
 /**
  * Parse AI response from unstructured text, handling markdown fences and truncation.
- * Uses Zod validation for type safety.
+ * Uses Zod validation for type safety, with lenient fallbacks.
  */
 function parseAiJson(raw: string, mode: AiMode): DiagnoseResponse | RewriteResponse | null {
   let jsonStr = raw.trim();
 
-  // Strip markdown code fences if present
-  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
-    jsonStr = fenceMatch[1].trim();
+  // Strip outer markdown code fences. The rewrittenSql field may contain
+  // backtick-quoted identifiers, so we match only the opening/closing fences
+  // at the start/end of the response rather than using a single regex that
+  // could terminate early on interior backticks.
+  if (jsonStr.startsWith("```")) {
+    const firstNewline = jsonStr.indexOf("\n");
+    if (firstNewline !== -1) {
+      jsonStr = jsonStr.slice(firstNewline + 1);
+    }
+    const lastFence = jsonStr.lastIndexOf("```");
+    if (lastFence !== -1) {
+      jsonStr = jsonStr.slice(0, lastFence);
+    }
+    jsonStr = jsonStr.trim();
   }
 
-  // Try to find JSON object boundaries
+  // Find JSON object boundaries
   const firstBrace = jsonStr.indexOf("{");
   const lastBrace = jsonStr.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
   }
 
-  // Attempt parse + Zod validation
-  try {
-    const parsed = JSON.parse(jsonStr);
-    const schema = mode === "diagnose" ? DiagnoseResponseSchema : RewriteResponseSchema;
-    const result = schema.safeParse(parsed);
-    if (result.success) {
-      return result.data as DiagnoseResponse | RewriteResponse;
-    }
-    console.warn("[ai] Zod validation failed on extracted JSON:", result.error.issues);
-  } catch {
-    // JSON parse failed
+  const schema = mode === "diagnose" ? DiagnoseResponseSchema : RewriteResponseSchema;
+
+  // Attempt 1: direct parse
+  const attempt1 = tryParseAndValidate(jsonStr, schema);
+  if (attempt1) return attempt1;
+
+  // Attempt 2: fix unescaped control characters inside JSON strings
+  // (common issue: LLMs put literal newlines/tabs inside JSON string values)
+  const sanitized = sanitizeJsonString(jsonStr);
+  const attempt2 = tryParseAndValidate(sanitized, schema);
+  if (attempt2) {
+    console.log("[ai] Parsed after sanitizing control characters");
+    return attempt2;
   }
 
-  // Last resort: attempt repair for truncated JSON
+  // Attempt 3: repair truncated JSON
   if (firstBrace !== -1) {
-    const repaired = repairTruncatedJson(raw.trim().slice(firstBrace));
-    try {
-      const parsed = JSON.parse(repaired);
-      const schema = mode === "diagnose" ? DiagnoseResponseSchema : RewriteResponseSchema;
-      const result = schema.safeParse(parsed);
-      if (result.success) {
-        console.log("[ai] Successfully repaired and validated truncated JSON");
-        return result.data as DiagnoseResponse | RewriteResponse;
-      }
-    } catch {
-      // Repair failed too
+    const repaired = repairTruncatedJson(sanitized);
+    const attempt3 = tryParseAndValidate(repaired, schema);
+    if (attempt3) {
+      console.log("[ai] Successfully repaired truncated JSON");
+      return attempt3;
     }
+  }
+
+  // Attempt 4: extract fields with regex as last resort
+  const extracted = extractFieldsFromBrokenJson(jsonStr, mode);
+  if (extracted) {
+    console.log("[ai] Extracted fields from broken JSON via regex");
+    return extracted;
   }
 
   console.error("[ai] Failed to parse AI JSON response:", jsonStr.slice(0, 500));
   return null;
+}
+
+function tryParseAndValidate(
+  jsonStr: string,
+  schema: typeof DiagnoseResponseSchema | typeof RewriteResponseSchema,
+): DiagnoseResponse | RewriteResponse | null {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    const result = schema.safeParse(parsed);
+    if (result.success) return result.data as DiagnoseResponse | RewriteResponse;
+  } catch {
+    // parse failed
+  }
+  return null;
+}
+
+/**
+ * Fix unescaped control characters inside JSON string values.
+ * LLMs often produce literal newlines/tabs in string fields.
+ */
+function sanitizeJsonString(json: string): string {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (escaped) {
+      result += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\" && inString) {
+      escaped = true;
+      result += ch;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      result += ch;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\n") {
+        result += "\\n";
+        continue;
+      }
+      if (ch === "\r") {
+        result += "\\r";
+        continue;
+      }
+      if (ch === "\t") {
+        result += "\\t";
+        continue;
+      }
+    }
+    result += ch;
+  }
+  return result;
+}
+
+/**
+ * Last-resort extraction: pull individual fields via regex when JSON is
+ * unparseable (e.g., severely truncated or contains unmatched braces in SQL).
+ */
+function extractFieldsFromBrokenJson(
+  raw: string,
+  mode: AiMode,
+): DiagnoseResponse | RewriteResponse | null {
+  const extractArray = (key: string): string[] => {
+    const m = raw.match(new RegExp(`"${key}"\\s*:\\s*\\[([^\\]]*?)\\]`, "s"));
+    if (!m) return [];
+    const items = m[1].match(/"((?:[^"\\]|\\.)*)"/g);
+    return items ? items.map((s) => s.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, "\n")) : [];
+  };
+
+  const extractString = (key: string): string => {
+    const m = raw.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+    return m ? m[1].replace(/\\"/g, '"').replace(/\\n/g, "\n") : "";
+  };
+
+  const summary = extractArray("summary");
+  if (summary.length === 0) return null;
+
+  if (mode === "diagnose") {
+    return {
+      summary,
+      rootCauses: [],
+      recommendations: extractArray("recommendations"),
+    } as DiagnoseResponse;
+  }
+
+  return {
+    summary,
+    rootCauses: [],
+    rewrittenSql:
+      extractString("rewrittenSql") || "(Could not extract rewritten SQL from AI response)",
+    rationale: extractString("rationale"),
+    risks: [],
+    validationPlan: extractArray("validationPlan"),
+  } as RewriteResponse;
 }
 
 /**

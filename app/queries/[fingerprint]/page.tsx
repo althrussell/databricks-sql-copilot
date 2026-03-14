@@ -1,21 +1,53 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+
 import { listRecentQueries } from "@/lib/queries/query-history";
 import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
-import type { WarehouseCost } from "@/lib/domain/types";
+import type { QueryRun, WarehouseCost } from "@/lib/domain/types";
 import { QueryDetailClient } from "./query-detail-client";
 
 export const revalidate = 300; // cache for 5 minutes
 
 interface QueryDetailPageProps {
   params: Promise<{ fingerprint: string }>;
-  searchParams: Promise<{ start?: string; end?: string; action?: string; warehouse?: string }>;
+  searchParams: Promise<{
+    start?: string;
+    end?: string;
+    from?: string;
+    to?: string;
+    time?: string;
+    action?: string;
+    warehouse?: string;
+  }>;
+}
+
+const BILLING_LAG_HOURS = 6;
+const QUANTIZE_MS = 300_000; // 5 minutes
+
+function timeRangeForPreset(preset: string): { start: string; end: string } {
+  const now = new Date();
+  const lagMs = BILLING_LAG_HOURS * 60 * 60 * 1000;
+  const quantizedNow = Math.floor(now.getTime() / QUANTIZE_MS) * QUANTIZE_MS;
+  const endMs = quantizedNow - lagMs;
+  const knownMs: Record<string, number> = {
+    "1h": 1 * 60 * 60 * 1000,
+    "6h": 6 * 60 * 60 * 1000,
+    "24h": 24 * 60 * 60 * 1000,
+    "7d": 7 * 24 * 60 * 60 * 1000,
+  };
+  const maybeHours = preset.match(/^(\d+)h$/);
+  const windowMs =
+    knownMs[preset] ?? (maybeHours ? parseInt(maybeHours[1], 10) * 60 * 60 * 1000 : knownMs["1h"]);
+  const startMs = endMs - windowMs;
+  return {
+    start: new Date(startMs).toISOString(),
+    end: new Date(endMs).toISOString(),
+  };
 }
 
 function DetailSkeleton() {
@@ -81,23 +113,100 @@ async function QueryDetailLoader({
       return fallback;
     };
 
-  const [queryResult, costResult] = await Promise.all([
-    listRecentQueries({
-      startTime: start,
-      endTime: end,
-      limit: 500,
-      warehouseId,
-    }),
-    getWarehouseCosts({ startTime: start, endTime: end }).catch(
-      catchAndLog("costs", [] as WarehouseCost[]),
-    ),
-  ]);
+  let queryResult: QueryRun[] = [];
+  let queryError: string | null = null;
+  let costResult: WarehouseCost[] = [];
 
-  const candidates = buildCandidates(queryResult, costResult);
-  const candidate = candidates.find((c) => c.fingerprint === fingerprint);
+  try {
+    const [qr, cr] = await Promise.all([
+      listRecentQueries({
+        startTime: start,
+        endTime: end,
+        limit: 2000,
+        warehouseId,
+      }),
+      getWarehouseCosts({ startTime: start, endTime: end }).catch(
+        catchAndLog("costs", [] as WarehouseCost[]),
+      ),
+    ]);
+    queryResult = qr;
+    costResult = cr;
+  } catch (err) {
+    queryError = err instanceof Error ? err.message : String(err);
+    console.error("[query-detail] Initial query failed:", queryError);
+  }
+
+  let candidates = buildCandidates(queryResult, costResult);
+  let candidate = candidates.find((c) => c.fingerprint === fingerprint);
+
+  // Fallback: if the fingerprint is not in the selected range, broaden lookup
+  if (!candidate && !queryError) {
+    const fallbackStart = new Date(new Date(end).getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const [fallbackQueries, fallbackCosts] = await Promise.all([
+      listRecentQueries({
+        startTime: fallbackStart,
+        endTime: end,
+        limit: 5000,
+        warehouseId,
+      }).catch(catchAndLog("queries_fallback", [])),
+      getWarehouseCosts({ startTime: fallbackStart, endTime: end }).catch(
+        catchAndLog("costs_fallback", [] as WarehouseCost[]),
+      ),
+    ]);
+    candidates = buildCandidates(fallbackQueries, fallbackCosts);
+    candidate = candidates.find((c) => c.fingerprint === fingerprint);
+  }
 
   if (!candidate) {
-    notFound();
+    const sampleFingerprints = candidates.slice(0, 5).map((c) => c.fingerprint);
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-destructive">Query Not Found</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {queryError && (
+            <div className="p-3 rounded bg-destructive/10 text-destructive">
+              <p className="font-medium">SQL Error:</p>
+              <p className="font-mono text-xs mt-1">{queryError}</p>
+            </div>
+          )}
+          <p>
+            <span className="font-medium">Fingerprint:</span>{" "}
+            <code className="text-xs">{fingerprint}</code>
+          </p>
+          <p>
+            <span className="font-medium">Warehouse:</span>{" "}
+            <code className="text-xs">{warehouseId ?? "all"}</code>
+          </p>
+          <p>
+            <span className="font-medium">Time range:</span> {start} → {end}
+          </p>
+          <p>
+            <span className="font-medium">Queries found:</span> {queryResult.length}
+          </p>
+          <p>
+            <span className="font-medium">Candidates built:</span> {candidates.length}
+          </p>
+          {sampleFingerprints.length > 0 && (
+            <div>
+              <p className="font-medium">Sample fingerprints in results:</p>
+              <ul className="list-disc pl-5 mt-1 space-y-0.5">
+                {sampleFingerprints.map((fp) => (
+                  <li key={fp}>
+                    <code className="text-xs">{fp}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-muted-foreground mt-4">
+            The query fingerprint from the dashboard could not be matched in the query history for
+            this time window. Try returning to the dashboard and clicking the query again.
+          </p>
+        </CardContent>
+      </Card>
+    );
   }
 
   const workspaceUrl = getWorkspaceBaseUrl();
@@ -115,15 +224,30 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
   const { fingerprint } = await props.params;
   const searchParams = await props.searchParams;
 
-  // Use same billing-lag-shifted window as dashboard (6h offset)
-  const BILLING_LAG_MS = 6 * 60 * 60 * 1000;
-  const now = new Date();
-  const lagEnd = new Date(now.getTime() - BILLING_LAG_MS);
-  const lagStart = new Date(lagEnd.getTime() - 60 * 60 * 1000); // 1h window
-  const start = searchParams.start ?? lagStart.toISOString();
-  const end = searchParams.end ?? lagEnd.toISOString();
+  let start = searchParams.start;
+  let end = searchParams.end;
+
+  if (!start || !end) {
+    if (searchParams.from && searchParams.to) {
+      const fromMs = Date.parse(searchParams.from);
+      const toMs = Date.parse(searchParams.to);
+      if (!isNaN(fromMs) && !isNaN(toMs) && fromMs < toMs) {
+        start = new Date(fromMs).toISOString();
+        end = new Date(toMs).toISOString();
+      }
+    }
+  }
+  if (!start || !end) {
+    const preset = searchParams.time ?? "1h";
+    const range = timeRangeForPreset(preset);
+    start = range.start;
+    end = range.end;
+  }
+
   const autoAnalyse = searchParams.action === "analyse";
-  const warehouseId = searchParams.warehouse;
+  const rawWarehouse = searchParams.warehouse;
+  const warehouseId =
+    rawWarehouse && /^[0-9a-f]{16}$/i.test(rawWarehouse) ? rawWarehouse : undefined;
 
   return (
     <div className="px-6 py-8 space-y-6">

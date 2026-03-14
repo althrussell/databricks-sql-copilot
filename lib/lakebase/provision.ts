@@ -19,11 +19,11 @@ import { fetchWithTimeout, TIMEOUTS } from "@/lib/dbx/fetch-with-timeout";
 // Constants
 // ---------------------------------------------------------------------------
 
-const PROJECT_ID = "dbsql-copilot";
+const PROJECT_ID = "dbsql-genie";
 const BRANCH_ID = "production";
 const DATABASE_NAME = "databricks_postgres";
 const PG_VERSION = "17";
-const DISPLAY_NAME = "Databricks SQL Co-Pilot";
+const DISPLAY_NAME = "Databricks SQL Genie";
 
 const LAKEBASE_API_TIMEOUT = 30_000;
 const PROJECT_CREATION_TIMEOUT = 120_000;

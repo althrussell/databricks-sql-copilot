@@ -43,9 +43,9 @@ The AI prompt layer was rebuilt from a monolithic `promptBuilder.ts` into a modu
 ### Prompt templates
 | Template | File | Model | Purpose |
 |----------|------|-------|---------|
-| `diagnoseV1` | `lib/ai/prompts/diagnose.ts` | `databricks-claude-opus-4-6` | Root-cause diagnosis with JSON output (summary, rootCauses, recommendations) |
-| `rewriteV1` | `lib/ai/prompts/rewrite.ts` | `databricks-claude-opus-4-6` | Optimised SQL rewrite with rationale, risks, and validation plan |
-| `triageV1` | `lib/ai/prompts/triage.ts` | `databricks-llama-4-maverick` | Fast batch triage with action categories (rewrite, cluster, optimize, resize, investigate) |
+| `diagnoseV1` | `lib/ai/prompts/diagnose.ts` | `databricks-claude-sonnet-4-5` | Root-cause diagnosis with JSON output (summary, rootCauses, recommendations) |
+| `rewriteV1` | `lib/ai/prompts/rewrite.ts` | `databricks-claude-sonnet-4-5` | Optimised SQL rewrite with rationale, risks, and validation plan |
+| `triageV1` | `lib/ai/prompts/triage.ts` | `databricks-claude-sonnet-4-5` | Fast batch triage with action categories (rewrite, cluster, optimize, resize, investigate) |
 
 ### Shared knowledge base (`lib/ai/prompts/system-knowledge.ts`)
 Injected into diagnose and rewrite prompts. Covers:
@@ -106,7 +106,7 @@ The app now self-provisions a Lakebase Autoscale project on first boot when depl
 
 ### How it works
 1. `scripts/start.sh` detects `ENABLE_LAKEBASE=true` + service principal + no `DATABASE_URL`.
-2. `scripts/provision-lakebase.mjs` creates the project (`dbsql-copilot`, PG 17, branch `production`).
+2. `scripts/provision-lakebase.mjs` creates the project (`dbsql-genie`, PG 17, branch `production`).
 3. `prisma db push` creates all tables.
 4. At runtime, `lib/lakebase/provision.ts` handles credential rotation (~50-minute refresh cycle).
 

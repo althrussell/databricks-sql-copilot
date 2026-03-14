@@ -414,3 +414,70 @@ export interface WarehouseRecommendation {
   serverlessSavings?: number;
   coldStartMinutesSaved?: number;
 }
+
+/* ── Unified Spark Observability types ── */
+
+export interface ObservabilityScorecard {
+  sqlQueryRuns24h: number;
+  sqlFailedRuns24h: number;
+  sqlAvgDurationMs24h: number;
+  sqlTotalSpillBytes24h: number;
+  sparkJobRuns24h: number;
+  sparkJobsWithFailures24h: number;
+  sparkAvgDurationMs24h: number;
+  sqlLastIngestTs: string | null;
+  sparkLastIngestTs: string | null;
+  photonLastIngestTs: string | null;
+  freshnessStatus: string;
+}
+
+export interface SparkJobHotspot {
+  workspaceId: string;
+  clusterId: string;
+  applicationId: string;
+  jobId: string;
+  jobName: string;
+  startTime: string | null;
+  endTime: string | null;
+  durationMs: number;
+  failedStages: number;
+  succeededStages: number;
+  executorCpuTimeMs: number;
+  executorRunTimeMs: number;
+  shuffleReadBytes: number;
+  shuffleWriteBytes: number;
+  sourceSystem: string;
+  ingestTs: string | null;
+}
+
+export interface SparkStageHotspot {
+  workspaceId: string;
+  clusterId: string;
+  applicationId: string;
+  jobId: string;
+  stageId: string;
+  stageName: string;
+  durationMs: number;
+  taskCount: number;
+  inputBytes: number;
+  outputBytes: number;
+  shuffleReadBytes: number;
+  shuffleWriteBytes: number;
+  spillBytes: number;
+  bottleneckReason: string;
+  sourceSystem: string;
+  ingestTs: string | null;
+}
+
+export interface PhotonOpportunity {
+  workspaceId: string;
+  clusterId: string;
+  applicationId: string;
+  jobId: string;
+  photonEligibleRuntimePct: number;
+  estimatedPerfGainPct: number;
+  estimatedCostGainPct: number;
+  confidence: string;
+  sourceSystem: string;
+  ingestTs: string | null;
+}

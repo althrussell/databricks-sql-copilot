@@ -1,0 +1,36 @@
+{
+  "title": "SQL Observability & Monitoring Explorer",
+  "description": "Explore Databricks SQL query performance, warehouse health, cluster inventory, and cost trends across your workspace using system tables.",
+  "warehouse_id": "75fd8278393d07eb",
+  "table_identifiers": [
+    "system.query.history",
+    "system.compute.warehouses",
+    "system.compute.clusters",
+    "system.billing.usage",
+    "system.billing.list_prices",
+    "system.access.workspaces_latest"
+  ],
+  "sample_questions": [
+    "What are the slowest SQL queries in the last 24 hours?",
+    "Which warehouses have the highest p95 query duration this week?",
+    "Show top 20 failed queries by total duration impact",
+    "Which users ran the most failed queries in the last 7 days?",
+    "Show query status distribution by warehouse for the last 30 days",
+    "Find queries with high compilation time compared to execution time",
+    "Which query sources (dashboards/jobs/notebooks) generate the most query volume?",
+    "Show warehouses with highest spill bytes and highest read bytes",
+    "Estimate daily cost by warehouse for the last 14 days",
+    "Which users or workloads are driving the highest DBU usage?",
+    "Show week-over-week cost growth by workspace",
+    "Which warehouses are most expensive per successful query?",
+    "Compare Serverless vs Pro warehouse cost trends over time",
+    "Which clusters are created most frequently by owner this month?",
+    "Show cluster inventory by DBR version and node type",
+    "Find clusters with high worker counts and short lifetimes",
+    "Which clusters changed configuration most frequently?",
+    "Show top warehouses by queued query pressure indicators",
+    "Correlate query failures with warehouse and cluster changes",
+    "Summarize observability and cost anomalies for the last 7 days"
+  ],
+  "instructions": "This Genie Space focuses on observability and monitoring from Databricks system tables.\n\nCore tables:\n- system.query.history: query-level performance, failures, compile/execute duration, read/spill bytes, user and source context\n- system.compute.warehouses: warehouse sizing/configuration metadata\n- system.compute.clusters: cluster inventory, ownership, configuration, and change history\n- system.billing.usage: DBU usage records\n- system.billing.list_prices: SKU pricing for cost conversion\n- system.access.workspaces_latest: workspace names and metadata\n\nGuidance:\n- Prefer recent windows (last 1/7/30 days) for monitoring answers.\n- Convert bytes to MB/GB and duration to seconds/minutes when summarizing.\n- For cost questions, join billing.usage to billing.list_prices by SKU and cloud to estimate dollars.\n- For reliability analysis, segment by execution_status and warehouse_id.\n- For governance analysis, segment clusters by owner, DBR version, node type, and autoscaling bounds."
+}
