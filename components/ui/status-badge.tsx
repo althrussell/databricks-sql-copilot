@@ -1,7 +1,7 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 /**
  * StatusBadge — solid muted fill, for showing state/status labels.
@@ -26,8 +26,8 @@ const statusBadgeVariants = cva(
     defaultVariants: {
       status: "default",
     },
-  }
-)
+  },
+);
 
 function StatusBadge({
   className,
@@ -40,7 +40,7 @@ function StatusBadge({
       className={cn(statusBadgeVariants({ status }), className)}
       {...props}
     />
-  )
+  );
 }
 
-export { StatusBadge, statusBadgeVariants }
+export { StatusBadge, statusBadgeVariants };

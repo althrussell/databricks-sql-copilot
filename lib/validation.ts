@@ -31,13 +31,11 @@ export function validateIdentifier(value: string, label: string): string {
   }
   if (trimmed.length > MAX_IDENTIFIER_LENGTH) {
     throw new IdentifierValidationError(
-      `${label} exceeds maximum length (${MAX_IDENTIFIER_LENGTH})`
+      `${label} exceeds maximum length (${MAX_IDENTIFIER_LENGTH})`,
     );
   }
   if (!SAFE_IDENTIFIER_RE.test(trimmed)) {
-    throw new IdentifierValidationError(
-      `${label} contains invalid characters: ${trimmed}`
-    );
+    throw new IdentifierValidationError(`${label} contains invalid characters: ${trimmed}`);
   }
   return trimmed;
 }
@@ -51,9 +49,7 @@ export function validateTimestamp(value: string, label: string): string {
   // ISO 8601 pattern: YYYY-MM-DDTHH:mm:ss.sssZ or YYYY-MM-DD HH:mm:ss
   const ISO_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
   if (!ISO_RE.test(trimmed)) {
-    throw new IdentifierValidationError(
-      `${label} is not a valid ISO timestamp: ${trimmed}`
-    );
+    throw new IdentifierValidationError(`${label} is not a valid ISO timestamp: ${trimmed}`);
   }
   return trimmed;
 }
@@ -103,18 +99,16 @@ export const TriageItemSchema = z.object({
   id: z.string().optional(),
   fingerprint: z.string().optional(),
   insight: z.string().min(1),
-  action: z.enum(["rewrite", "cluster", "optimize", "resize", "investigate"]).default("investigate"),
+  action: z
+    .enum(["rewrite", "cluster", "optimize", "resize", "investigate"])
+    .default("investigate"),
 });
 
 /**
  * Validate an array of LLM outputs against a Zod schema.
  * Gracefully skips invalid items and logs warnings.
  */
-export function validateLLMArray<T>(
-  items: unknown[],
-  schema: z.ZodType<T>,
-  context: string
-): T[] {
+export function validateLLMArray<T>(items: unknown[], schema: z.ZodType<T>, context: string): T[] {
   const valid: T[] = [];
   for (let i = 0; i < items.length; i++) {
     const result = schema.safeParse(items[i]);
@@ -123,7 +117,7 @@ export function validateLLMArray<T>(
     } else {
       console.warn(
         `[validation] ${context}: item ${i} invalid:`,
-        result.error.issues.map((iss) => iss.message).join(", ")
+        result.error.issues.map((iss) => iss.message).join(", "),
       );
     }
   }

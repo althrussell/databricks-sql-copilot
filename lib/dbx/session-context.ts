@@ -43,7 +43,9 @@ export async function withSession<T>(
   } finally {
     try {
       await session.close();
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     onFinally?.();
   }
 }

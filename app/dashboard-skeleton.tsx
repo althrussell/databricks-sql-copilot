@@ -3,13 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Database,
-  Warehouse,
-  Coins,
-  Loader2,
-  CheckCircle2,
-} from "lucide-react";
+import { Database, Warehouse, Coins, Loader2, CheckCircle2 } from "lucide-react";
 
 const LOAD_STEPS = [
   { label: "Connecting to warehouse", icon: Database, delayMs: 0 },
@@ -24,9 +18,7 @@ export function DashboardSkeleton() {
   useEffect(() => {
     const timers: NodeJS.Timeout[] = [];
     for (let i = 0; i < LOAD_STEPS.length; i++) {
-      timers.push(
-        setTimeout(() => setVisibleSteps(i + 1), LOAD_STEPS[i].delayMs)
-      );
+      timers.push(setTimeout(() => setVisibleSteps(i + 1), LOAD_STEPS[i].delayMs));
     }
     return () => timers.forEach(clearTimeout);
   }, []);
@@ -42,12 +34,9 @@ export function DashboardSkeleton() {
             </div>
             <div className="flex-1 space-y-4">
               <div>
-                <h3 className="text-sm font-semibold">
-                  Loading dashboard data
-                </h3>
+                <h3 className="text-sm font-semibold">Loading dashboard data</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Querying Databricks system tables — this may take a few
-                  seconds
+                  Querying Databricks system tables — this may take a few seconds
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-2 md:grid-cols-3">

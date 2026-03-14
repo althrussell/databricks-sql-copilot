@@ -30,11 +30,15 @@ function normalizeHost(raw: string): string {
 
 const EnvSchema = z.object({
   DATABRICKS_HOST: z
-    .string({ error: "Missing DATABRICKS_HOST. Set it to your workspace URL (e.g. https://my-workspace.cloud.databricks.com)." })
+    .string({
+      error:
+        "Missing DATABRICKS_HOST. Set it to your workspace URL (e.g. https://my-workspace.cloud.databricks.com).",
+    })
     .min(1, "DATABRICKS_HOST cannot be empty")
     .transform(normalizeHost)
     .refine((v) => HOST_RE.test(v), {
-      message: "DATABRICKS_HOST must be a valid URL (e.g. https://my-workspace.cloud.databricks.com)",
+      message:
+        "DATABRICKS_HOST must be a valid URL (e.g. https://my-workspace.cloud.databricks.com)",
     }),
   DATABRICKS_WAREHOUSE_ID: z
     .string({ error: "Missing DATABRICKS_WAREHOUSE_ID. Set it to your SQL warehouse ID." })
@@ -56,9 +60,7 @@ export interface AppConfig {
   httpPath: string;
   /** "obo" = use logged-in user's token when available; "sp" = always use service principal */
   authMode: AuthMode;
-  auth:
-    | { mode: "oauth"; clientId: string; clientSecret: string }
-    | { mode: "pat"; token: string };
+  auth: { mode: "oauth"; clientId: string; clientSecret: string } | { mode: "pat"; token: string };
 }
 
 function stripProtocol(url: string): string {
@@ -78,7 +80,7 @@ export function getConfig(): AppConfig {
       `WAREHOUSE_ID=${rawWarehouse ? "set" : "MISSING"}, ` +
       `CLIENT_ID=${process.env.DATABRICKS_CLIENT_ID ? "set" : "MISSING"}, ` +
       `TOKEN=${process.env.DATABRICKS_TOKEN ? "set" : "MISSING"}, ` +
-      `AUTH_MODE=${process.env.AUTH_MODE ?? "obo (default)"}`
+      `AUTH_MODE=${process.env.AUTH_MODE ?? "obo (default)"}`,
   );
 
   const result = EnvSchema.safeParse({
@@ -90,9 +92,11 @@ export function getConfig(): AppConfig {
   });
 
   if (!result.success) {
-    const messages = result.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
+    const messages = result.error.issues
+      .map((i) => `  - ${i.path.join(".")}: ${i.message}`)
+      .join("\n");
     throw new Error(
-      `Configuration validation failed:\n${messages}\n\nSee .env.local.example for local dev setup or docs/07_DEPLOYMENT.md for Databricks Apps.`
+      `Configuration validation failed:\n${messages}\n\nSee .env.local.example for local dev setup or docs/07_DEPLOYMENT.md for Databricks Apps.`,
     );
   }
 
@@ -105,14 +109,18 @@ export function getConfig(): AppConfig {
   let auth: AppConfig["auth"];
 
   if (env.DATABRICKS_CLIENT_ID && env.DATABRICKS_CLIENT_SECRET) {
-    auth = { mode: "oauth", clientId: env.DATABRICKS_CLIENT_ID, clientSecret: env.DATABRICKS_CLIENT_SECRET };
+    auth = {
+      mode: "oauth",
+      clientId: env.DATABRICKS_CLIENT_ID,
+      clientSecret: env.DATABRICKS_CLIENT_SECRET,
+    };
   } else if (env.DATABRICKS_TOKEN) {
     auth = { mode: "pat", token: env.DATABRICKS_TOKEN };
   } else {
     throw new Error(
       "No auth credentials found.\n" +
         "  Set DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET (Databricks Apps)\n" +
-        "  or DATABRICKS_TOKEN (local dev with PAT)."
+        "  or DATABRICKS_TOKEN (local dev with PAT).",
     );
   }
 

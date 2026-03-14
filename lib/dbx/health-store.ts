@@ -30,7 +30,7 @@ export interface HealthSnapshot {
 export async function saveHealthSnapshot(
   warehouseId: string,
   recommendation: WarehouseRecommendation,
-  metrics: WarehouseHealthMetrics
+  metrics: WarehouseHealthMetrics,
 ): Promise<void> {
   if (!isLakebaseEnabled()) return;
 
@@ -68,7 +68,7 @@ export async function saveHealthSnapshot(
           },
           expiresAt,
         },
-      })
+      }),
     );
   } catch (err) {
     console.error("[health-store] Failed to save snapshot:", err);
@@ -79,7 +79,9 @@ export async function saveHealthSnapshot(
  * Batch-fetch the most recent non-expired snapshot for multiple warehouses.
  * Returns a Map of warehouseId → HealthSnapshot. Missing entries mean no snapshot.
  */
-export async function getLastSnapshots(warehouseIds: string[]): Promise<Map<string, HealthSnapshot>> {
+export async function getLastSnapshots(
+  warehouseIds: string[],
+): Promise<Map<string, HealthSnapshot>> {
   const result = new Map<string, HealthSnapshot>();
   if (!isLakebaseEnabled() || warehouseIds.length === 0) return result;
 
@@ -92,7 +94,7 @@ export async function getLastSnapshots(warehouseIds: string[]): Promise<Map<stri
         },
         orderBy: { snapshotAt: "desc" },
         distinct: ["warehouseId"],
-      })
+      }),
     );
 
     for (const row of rows) {
@@ -129,7 +131,7 @@ export async function getLastSnapshot(warehouseId: string): Promise<HealthSnapsh
           expiresAt: { gt: new Date() },
         },
         orderBy: { snapshotAt: "desc" },
-      })
+      }),
     );
 
     if (!row) return null;
@@ -156,7 +158,7 @@ export async function getLastSnapshot(warehouseId: string): Promise<HealthSnapsh
  */
 export async function getSnapshotHistory(
   warehouseId: string,
-  limit = 10
+  limit = 10,
 ): Promise<HealthSnapshot[]> {
   if (!isLakebaseEnabled()) return [];
 
@@ -169,7 +171,7 @@ export async function getSnapshotHistory(
         },
         orderBy: { snapshotAt: "desc" },
         take: limit,
-      })
+      }),
     );
 
     return rows.map((row) => ({

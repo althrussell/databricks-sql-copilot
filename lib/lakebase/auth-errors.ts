@@ -13,8 +13,7 @@ export const AUTH_ERROR_PATTERNS = [
 ] as const;
 
 export function isAuthError(err: unknown): boolean {
-  const msg =
-    err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "";
   const lower = msg.toLowerCase();
   return AUTH_ERROR_PATTERNS.some((p) => lower.includes(p));
 }

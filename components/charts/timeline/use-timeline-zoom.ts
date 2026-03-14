@@ -52,7 +52,7 @@ export function useTimelineZoom(
     onRangeChange?: (range: TimeRange) => void;
     /** Minimum zoom window in ms (default: 10 seconds) */
     minZoomMs?: number;
-  }
+  },
 ): UseTimelineZoomReturn {
   const { onRangeChange, minZoomMs = 10_000 } = options ?? {};
 
@@ -91,7 +91,7 @@ export function useTimelineZoom(
       setRangeState(newRange);
       onRangeChange?.(newRange);
     },
-    [onRangeChange]
+    [onRangeChange],
   );
 
   const resetZoom = useCallback(() => {
@@ -106,7 +106,7 @@ export function useTimelineZoom(
       const clampedFraction = Math.max(0, Math.min(1, fraction));
       return currentRange.start + clampedFraction * (currentRange.end - currentRange.start);
     },
-    []
+    [],
   );
 
   const onPointerDown = useCallback(
@@ -132,7 +132,7 @@ export function useTimelineZoom(
         setSelectionRect({ x: relX, width: 0 });
       }
     },
-    [range]
+    [range],
   );
 
   const onPointerMove = useCallback(
@@ -165,7 +165,7 @@ export function useTimelineZoom(
         setSelectionRect({ x, width });
       }
     },
-    [fullRange]
+    [fullRange],
   );
 
   const onPointerUp = useCallback(
@@ -198,16 +198,8 @@ export function useTimelineZoom(
       } else {
         // Selection complete — zoom if the selection is meaningful
         const containerRect = drag.containerRect;
-        const startTime = xToTime(
-          Math.min(drag.startX, e.clientX),
-          containerRect,
-          drag.startRange
-        );
-        const endTime = xToTime(
-          Math.max(drag.startX, e.clientX),
-          containerRect,
-          drag.startRange
-        );
+        const startTime = xToTime(Math.min(drag.startX, e.clientX), containerRect, drag.startRange);
+        const endTime = xToTime(Math.max(drag.startX, e.clientX), containerRect, drag.startRange);
 
         const zoomWindow = endTime - startTime;
 
@@ -218,7 +210,7 @@ export function useTimelineZoom(
 
       setSelectionRect(null);
     },
-    [range, xToTime, minZoomMs, setRange, onRangeChange]
+    [range, xToTime, minZoomMs, setRange, onRangeChange],
   );
 
   const onDoubleClick = useCallback(() => {

@@ -2,12 +2,7 @@
 
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface HeatmapDataPoint {
   filesRead: number;
@@ -24,7 +19,11 @@ interface SummaryHeatmapProps {
   /** Color for the heatmap — defaults to chart-1 CSS variable */
   color?: string;
   /** Called when a heatmap cell is clicked with the file and byte ranges and cell key */
-  onCellClick?: (filesRange: [number, number], bytesRange: [number, number], cellKey: string) => void;
+  onCellClick?: (
+    filesRange: [number, number],
+    bytesRange: [number, number],
+    cellKey: string,
+  ) => void;
   /** Active cell key for highlighting (format: "row-col") */
   activeCell?: string | null;
 }
@@ -60,19 +59,11 @@ export function SummaryHeatmap({
     const maxBytes = Math.max(...bytes, 1);
 
     // Create the grid
-    const g: number[][] = Array.from({ length: bins }, () =>
-      Array(bins).fill(0) as number[]
-    );
+    const g: number[][] = Array.from({ length: bins }, () => Array(bins).fill(0) as number[]);
 
     for (const d of data) {
-      const xi = Math.min(
-        Math.floor((d.filesRead / maxFiles) * bins),
-        bins - 1
-      );
-      const yi = Math.min(
-        Math.floor((d.bytesScanned / maxBytes) * bins),
-        bins - 1
-      );
+      const xi = Math.min(Math.floor((d.filesRead / maxFiles) * bins), bins - 1);
+      const yi = Math.min(Math.floor((d.bytesScanned / maxBytes) * bins), bins - 1);
       g[bins - 1 - yi][xi]++; // flip y so high values are at top
     }
 
@@ -106,11 +97,7 @@ export function SummaryHeatmap({
   }, [data, bins]);
 
   if (data.length === 0) {
-    return (
-      <div className={cn("text-xs text-muted-foreground", className)}>
-        No data
-      </div>
-    );
+    return <div className={cn("text-xs text-muted-foreground", className)}>No data</div>;
   }
 
   const heatColor = color ?? "var(--chart-1)";
@@ -119,9 +106,7 @@ export function SummaryHeatmap({
     <TooltipProvider delayDuration={100}>
       <div className={cn("space-y-1", className)}>
         {/* Y-axis label */}
-        <div className="text-[10px] text-muted-foreground mb-0.5">
-          Bytes scanned ↑
-        </div>
+        <div className="text-[10px] text-muted-foreground mb-0.5">Bytes scanned ↑</div>
         <div className="flex gap-0.5">
           {/* Y labels */}
           <div className="flex flex-col justify-between shrink-0 pr-1">
@@ -187,9 +172,7 @@ export function SummaryHeatmap({
           </div>
         </div>
         {/* X-axis label */}
-        <div className="text-[10px] text-muted-foreground text-right mt-0.5">
-          Files read →
-        </div>
+        <div className="text-[10px] text-muted-foreground text-right mt-0.5">Files read →</div>
       </div>
     </TooltipProvider>
   );

@@ -117,11 +117,11 @@
   --ring: oklch(0.63 0.255 27);
 
   /* Charts — Databricks-inspired warm palette */
-  --chart-1: oklch(0.63 0.255 27);   /* Databricks Red */
-  --chart-2: oklch(0.58 0.14 240);   /* Steel blue */
-  --chart-3: oklch(0.65 0.17 150);   /* Teal green */
-  --chart-4: oklch(0.72 0.16 60);    /* Warm amber */
-  --chart-5: oklch(0.55 0.2 300);    /* Purple */
+  --chart-1: oklch(0.63 0.255 27); /* Databricks Red */
+  --chart-2: oklch(0.58 0.14 240); /* Steel blue */
+  --chart-3: oklch(0.65 0.17 150); /* Teal green */
+  --chart-4: oklch(0.72 0.16 60); /* Warm amber */
+  --chart-5: oklch(0.55 0.2 300); /* Purple */
 
   /* Sidebar */
   --sidebar: oklch(0.975 0.003 60);
@@ -182,16 +182,16 @@
   --destructive: oklch(0.65 0.22 27);
 
   /* Borders */
-  --border: oklch(0.30 0.012 225);
+  --border: oklch(0.3 0.012 225);
   --input: oklch(0.28 0.012 225);
   --ring: oklch(0.68 0.24 27);
 
   /* Charts — warm palette for dark backgrounds */
-  --chart-1: oklch(0.68 0.24 27);    /* Databricks Red (bright) */
-  --chart-2: oklch(0.65 0.14 240);   /* Steel blue */
-  --chart-3: oklch(0.70 0.17 150);   /* Teal green */
-  --chart-4: oklch(0.76 0.16 60);    /* Warm amber */
-  --chart-5: oklch(0.65 0.2 300);    /* Purple */
+  --chart-1: oklch(0.68 0.24 27); /* Databricks Red (bright) */
+  --chart-2: oklch(0.65 0.14 240); /* Steel blue */
+  --chart-3: oklch(0.7 0.17 150); /* Teal green */
+  --chart-4: oklch(0.76 0.16 60); /* Warm amber */
+  --chart-5: oklch(0.65 0.2 300); /* Purple */
 
   /* Sidebar */
   --sidebar: oklch(0.18 0.015 225);
@@ -200,7 +200,7 @@
   --sidebar-primary-foreground: oklch(0.12 0 0);
   --sidebar-accent: oklch(0.26 0.012 225);
   --sidebar-accent-foreground: oklch(0.92 0.005 60);
-  --sidebar-border: oklch(0.30 0.012 225);
+  --sidebar-border: oklch(0.3 0.012 225);
   --sidebar-ring: oklch(0.68 0.24 27);
 
   /* Layer helpers */

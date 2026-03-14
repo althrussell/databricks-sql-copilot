@@ -3,11 +3,7 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, subDays, startOfDay, endOfDay, setHours, setMinutes } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { CalendarDays } from "lucide-react";
@@ -53,9 +49,8 @@ export function CustomRangePicker({
     setOpen(false);
   }
 
-  const triggerLabel = isActive && customRange
-    ? formatCustomRangeLabel(customRange)
-    : "Custom range";
+  const triggerLabel =
+    isActive && customRange ? formatCustomRangeLabel(customRange) : "Custom range";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -118,12 +113,7 @@ export function CustomRangePicker({
             <Button variant="ghost" size="sm" className="text-xs" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button
-              size="sm"
-              className="text-xs"
-              disabled={!dateRange?.from}
-              onClick={handleApply}
-            >
+            <Button size="sm" className="text-xs" disabled={!dateRange?.from} onClick={handleApply}>
               Apply range
             </Button>
           </div>

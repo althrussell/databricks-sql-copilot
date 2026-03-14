@@ -110,11 +110,9 @@ async function ensureProject() {
   }
 
   log(`Creating Lakebase project '${PROJECT_ID}'...`);
-  const createResp = await api(
-    "POST",
-    `projects?project_id=${encodeURIComponent(PROJECT_ID)}`,
-    { spec: { display_name: DISPLAY_NAME, pg_version: PG_VERSION } }
-  );
+  const createResp = await api("POST", `projects?project_id=${encodeURIComponent(PROJECT_ID)}`, {
+    spec: { display_name: DISPLAY_NAME, pg_version: PG_VERSION },
+  });
 
   if (createResp.status === 409) {
     log("Project already exists (409).");
@@ -156,10 +154,7 @@ async function pollOp(name) {
 // ---------------------------------------------------------------------------
 
 async function getEndpointHost() {
-  const listResp = await api(
-    "GET",
-    `projects/${PROJECT_ID}/branches/${BRANCH_ID}/endpoints`
-  );
+  const listResp = await api("GET", `projects/${PROJECT_ID}/branches/${BRANCH_ID}/endpoints`);
   if (!listResp.ok) {
     const text = await listResp.text();
     throw new Error(`List endpoints failed (${listResp.status}): ${text}`);

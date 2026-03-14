@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { cn } from "@/lib/utils";
 
 /**
  * FilterChip — outlined with subtle fill on selected.
@@ -11,14 +11,10 @@ import { cn } from "@/lib/utils"
  * Do NOT use for status display (use StatusBadge instead).
  */
 interface FilterChipProps extends React.ComponentProps<"button"> {
-  selected?: boolean
+  selected?: boolean;
 }
 
-function FilterChip({
-  className,
-  selected = false,
-  ...props
-}: FilterChipProps) {
+function FilterChip({ className, selected = false, ...props }: FilterChipProps) {
   return (
     <button
       data-slot="filter-chip"
@@ -35,11 +31,11 @@ function FilterChip({
         /* Selected: subtle primary fill + primary border */
         "data-[selected]:border-primary/40 data-[selected]:bg-primary/10 data-[selected]:text-primary",
         "data-[selected]:hover:bg-primary/15",
-        className
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
-export { FilterChip }
+export { FilterChip };

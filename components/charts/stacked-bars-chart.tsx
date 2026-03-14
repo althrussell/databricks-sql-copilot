@@ -2,12 +2,7 @@
 
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface StackedBarData {
   time: number;
@@ -57,18 +52,12 @@ export function StackedBarsChart({
 
   const maxTotal = useMemo(() => {
     if (data.length === 0) return 1;
-    return Math.max(
-      ...data.map((d) => d.values.reduce((sum, v) => sum + v, 0)),
-      1
-    );
+    return Math.max(...data.map((d) => d.values.reduce((sum, v) => sum + v, 0)), 1);
   }, [data]);
 
   if (data.length === 0) {
     return (
-      <div
-        className={cn("flex items-end", className)}
-        style={{ height }}
-      >
+      <div className={cn("flex items-end", className)} style={{ height }}>
         <span className="text-xs text-muted-foreground">No data</span>
       </div>
     );
@@ -77,10 +66,7 @@ export function StackedBarsChart({
   return (
     <TooltipProvider delayDuration={100}>
       <div className={cn("flex items-end", className)} style={{ height }}>
-        <div
-          className="flex items-end w-full h-full"
-          style={{ gap: `${gap}px` }}
-        >
+        <div className="flex items-end w-full h-full" style={{ gap: `${gap}px` }}>
           {data.map((bar, barIndex) => {
             const total = bar.values.reduce((sum, v) => sum + v, 0);
             const heightPercent = (total / maxTotal) * 100;
@@ -97,44 +83,35 @@ export function StackedBarsChart({
                       style={{ height: `${heightPercent}%` }}
                     >
                       {/* Render segments top-to-bottom (reversed for flex-col) */}
-                      {[...bar.values]
-                        .map((value, segIndex) => {
-                          if (value === 0) return null;
-                          const segPercent = (value / total) * 100;
-                          return (
-                            <div
-                              key={segIndex}
-                              className="w-full min-h-[1px]"
-                              style={{
-                                height: `${segPercent}%`,
-                                backgroundColor:
-                                  barColors[segIndex % barColors.length],
-                              }}
-                            />
-                          );
-                        })}
+                      {[...bar.values].map((value, segIndex) => {
+                        if (value === 0) return null;
+                        const segPercent = (value / total) * 100;
+                        return (
+                          <div
+                            key={segIndex}
+                            className="w-full min-h-[1px]"
+                            style={{
+                              height: `${segPercent}%`,
+                              backgroundColor: barColors[segIndex % barColors.length],
+                            }}
+                          />
+                        );
+                      })}
                     </div>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
-                  {bar.label && (
-                    <div className="font-medium mb-1">{bar.label}</div>
-                  )}
+                  {bar.label && <div className="font-medium mb-1">{bar.label}</div>}
                   {bar.values.map((value, segIndex) => (
-                    <div
-                      key={segIndex}
-                      className="flex items-center gap-1.5"
-                    >
+                    <div key={segIndex} className="flex items-center gap-1.5">
                       <span
                         className="inline-block w-2 h-2 rounded-full shrink-0"
                         style={{
-                          backgroundColor:
-                            barColors[segIndex % barColors.length],
+                          backgroundColor: barColors[segIndex % barColors.length],
                         }}
                       />
                       <span>
-                        {labels?.[segIndex] ?? `Series ${segIndex + 1}`}:{" "}
-                        {formatValue(value)}
+                        {labels?.[segIndex] ?? `Series ${segIndex + 1}`}: {formatValue(value)}
                       </span>
                     </div>
                   ))}

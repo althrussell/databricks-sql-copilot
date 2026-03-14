@@ -28,7 +28,7 @@ export function packTimelineRows<T extends PackableItem>(
     maxRows?: number;
     /** Minimum gap between items in the same row (ms). Default: 0 */
     minGapMs?: number;
-  }
+  },
 ): { rowAssignments: number[]; totalRows: number; droppedCount: number } {
   const { maxRows = 200, minGapMs = 0 } = options ?? {};
 

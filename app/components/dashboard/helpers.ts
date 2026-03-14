@@ -38,7 +38,10 @@ export const TIME_PRESETS = [
 
 export function describeWindow(preset: string): string {
   const knownHours: Record<string, number> = {
-    "1h": 1, "6h": 6, "24h": 24, "7d": 168,
+    "1h": 1,
+    "6h": 6,
+    "24h": 24,
+    "7d": 168,
   };
   let hrs = knownHours[preset];
   if (hrs === undefined) {
@@ -84,9 +87,7 @@ export function formatBytes(bytes: number): string {
 
 export function truncateQuery(text: string, maxLen = 60): string {
   const cleaned = text.replace(/\s+/g, " ").trim();
-  return cleaned.length > maxLen
-    ? cleaned.slice(0, maxLen) + "\u2026"
-    : cleaned;
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + "\u2026" : cleaned;
 }
 
 export function formatCount(n: number): string {
@@ -123,7 +124,7 @@ export function buildLink(
   base: string,
   type: string,
   id: string | null | undefined,
-  extras?: { queryStartTimeMs?: number }
+  extras?: { queryStartTimeMs?: number },
 ): string | null {
   if (!id || !base) return null;
   switch (type) {
@@ -173,9 +174,7 @@ export function flagSeverityColor(severity: "warning" | "critical"): string {
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800";
 }
 
-export function tagToStatus(
-  tag: string
-): "default" | "warning" | "error" | "info" | "cached" {
+export function tagToStatus(tag: string): "default" | "warning" | "error" | "info" | "cached" {
   switch (tag) {
     case "slow":
       return "error";
@@ -233,10 +232,14 @@ export function originLabel(origin: QueryOrigin): string {
 }
 
 export const TRIAGE_ACTION_STYLE: Record<string, string> = {
-  rewrite: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800",
-  cluster: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200 dark:border-teal-800",
-  optimize: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800",
-  resize: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800",
+  rewrite:
+    "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+  cluster:
+    "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200 dark:border-teal-800",
+  optimize:
+    "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800",
+  resize:
+    "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800",
   investigate: "bg-muted text-muted-foreground border-border",
 };
 

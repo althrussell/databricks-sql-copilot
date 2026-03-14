@@ -2,11 +2,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Sheet,
   SheetContent,
@@ -96,7 +92,12 @@ function StatCell({
 
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="hover:opacity-80 transition-opacity">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hover:opacity-80 transition-opacity"
+      >
         {content}
       </a>
     );
@@ -119,29 +120,19 @@ function TimeBar({
   return (
     <div className="flex items-center gap-2">
       <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <span className="text-xs text-muted-foreground w-24 shrink-0">
-        {label}
-      </span>
+      <span className="text-xs text-muted-foreground w-24 shrink-0">{label}</span>
       <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
         <div
           className="h-full rounded-full bg-primary/60 transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs font-medium tabular-nums w-14 text-right">
-        {formatDuration(ms)}
-      </span>
+      <span className="text-xs font-medium tabular-nums w-14 text-right">{formatDuration(ms)}</span>
     </div>
   );
 }
 
-function DeepLinkIcon({
-  href,
-  label,
-}: {
-  href: string | null;
-  label: string;
-}) {
+function DeepLinkIcon({ href, label }: { href: string | null; label: string }) {
   if (!href) return null;
   return (
     <Tooltip>
@@ -188,7 +179,7 @@ export function DetailPanel({
     ws.avgComputeWaitMs,
     ws.avgExecutionMs,
     ws.avgFetchMs,
-    1
+    1,
   );
 
   const effectiveWsUrl = candidate.workspaceUrl || workspaceUrl;
@@ -208,17 +199,10 @@ export function DetailPanel({
               ? buildLink(effectiveWsUrl, "sql-query", src.sqlQueryId)
               : null;
 
-  const queryProfileLink = buildLink(
-    effectiveWsUrl,
-    "query-profile",
-    candidate.sampleStatementId,
-    { queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime() }
-  );
-  const warehouseLink = buildLink(
-    effectiveWsUrl,
-    "warehouse",
-    candidate.warehouseId
-  );
+  const queryProfileLink = buildLink(effectiveWsUrl, "query-profile", candidate.sampleStatementId, {
+    queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime(),
+  });
+  const warehouseLink = buildLink(effectiveWsUrl, "warehouse", candidate.warehouseId);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -233,12 +217,9 @@ export function DetailPanel({
               />
             </div>
             <div className="flex-1 min-w-0">
-              <SheetTitle>
-                Impact Score: {candidate.impactScore}
-              </SheetTitle>
+              <SheetTitle>Impact Score: {candidate.impactScore}</SheetTitle>
               <SheetDescription>
-                {candidate.statementType} &middot;{" "}
-                {candidate.warehouseName}
+                {candidate.statementType} &middot; {candidate.warehouseName}
                 {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
                   <> &middot; {candidate.workspaceName}</>
                 )}
@@ -290,29 +271,59 @@ export function DetailPanel({
 
           <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-border">
             {currentAction === "dismiss" ? (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={() => onClearAction(candidate.fingerprint)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1 text-muted-foreground"
+                onClick={() => onClearAction(candidate.fingerprint)}
+              >
                 <Eye className="h-3 w-3" /> Undismiss
               </Button>
             ) : (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "dismiss")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={() => onSetAction(candidate.fingerprint, "dismiss")}
+              >
                 <Ban className="h-3 w-3" /> Dismiss
               </Button>
             )}
             {currentAction === "watch" ? (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-amber-600 dark:text-amber-400" onClick={() => onClearAction(candidate.fingerprint)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1 text-amber-600 dark:text-amber-400"
+                onClick={() => onClearAction(candidate.fingerprint)}
+              >
                 <Bookmark className="h-3 w-3 fill-current" /> Watching
               </Button>
             ) : (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "watch")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={() => onSetAction(candidate.fingerprint, "watch")}
+              >
                 <Bookmark className="h-3 w-3" /> Watch
               </Button>
             )}
             {currentAction === "applied" ? (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-emerald-600 dark:text-emerald-400" onClick={() => onClearAction(candidate.fingerprint)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1 text-emerald-600 dark:text-emerald-400"
+                onClick={() => onClearAction(candidate.fingerprint)}
+              >
                 <CheckCheck className="h-3 w-3" /> Applied
               </Button>
             ) : (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => onSetAction(candidate.fingerprint, "applied")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={() => onSetAction(candidate.fingerprint, "applied")}
+              >
                 <CheckCheck className="h-3 w-3" /> Mark Applied
               </Button>
             )}
@@ -345,9 +356,13 @@ export function DetailPanel({
                     <TooltipContent className="max-w-xs">
                       <p className="text-xs">{pf.detail}</p>
                       {pf.estimatedImpactPct != null && (
-                        <p className="text-[10px] text-muted-foreground mt-1">Estimated impact: {pf.estimatedImpactPct}% of task time</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Estimated impact: {pf.estimatedImpactPct}% of task time
+                        </p>
                       )}
-                      <p className="text-[10px] text-muted-foreground opacity-70">Source: rule-based detection</p>
+                      <p className="text-[10px] text-muted-foreground opacity-70">
+                        Source: rule-based detection
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 ))}
@@ -367,8 +382,7 @@ export function DetailPanel({
                       : `${formatDBUs(candidate.allocatedDBUs)} DBUs`}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Proportional to compute time on{" "}
-                    {candidate.warehouseName}
+                    Proportional to compute time on {candidate.warehouseName}
                     {candidate.allocatedCostDollars <= 0 && candidate.allocatedDBUs > 0
                       ? " ($ prices unavailable)"
                       : ""}
@@ -393,7 +407,9 @@ export function DetailPanel({
               <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 space-y-1.5">
                 <div className="flex items-center gap-2">
                   <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">dbt Model</span>
+                  <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                    dbt Model
+                  </span>
                 </div>
                 {candidate.dbtMeta.nodeId && (
                   <p className="text-xs font-mono text-blue-600 dark:text-blue-400">
@@ -415,11 +431,31 @@ export function DetailPanel({
           <div>
             <SectionLabel>Time Breakdown (avg per execution)</SectionLabel>
             <div className="space-y-2">
-              <TimeBar label="Compilation" ms={ws.avgCompilationMs} maxMs={maxTimeSegment} icon={Layers} />
-              <TimeBar label="Queue Wait" ms={ws.avgQueueWaitMs} maxMs={maxTimeSegment} icon={Hourglass} />
-              <TimeBar label="Compute Wait" ms={ws.avgComputeWaitMs} maxMs={maxTimeSegment} icon={Clock} />
+              <TimeBar
+                label="Compilation"
+                ms={ws.avgCompilationMs}
+                maxMs={maxTimeSegment}
+                icon={Layers}
+              />
+              <TimeBar
+                label="Queue Wait"
+                ms={ws.avgQueueWaitMs}
+                maxMs={maxTimeSegment}
+                icon={Hourglass}
+              />
+              <TimeBar
+                label="Compute Wait"
+                ms={ws.avgComputeWaitMs}
+                maxMs={maxTimeSegment}
+                icon={Clock}
+              />
               <TimeBar label="Execution" ms={ws.avgExecutionMs} maxMs={maxTimeSegment} icon={Cpu} />
-              <TimeBar label="Result Fetch" ms={ws.avgFetchMs} maxMs={maxTimeSegment} icon={ArrowDownToLine} />
+              <TimeBar
+                label="Result Fetch"
+                ms={ws.avgFetchMs}
+                maxMs={maxTimeSegment}
+                icon={ArrowDownToLine}
+              />
             </div>
           </div>
 
@@ -427,13 +463,33 @@ export function DetailPanel({
             <SectionLabel>I/O</SectionLabel>
             <div className="grid grid-cols-2 gap-2">
               <StatCell icon={HardDrive} label="Data Read" value={formatBytes(ws.totalReadBytes)} />
-              <StatCell icon={ArrowDownToLine} label="Data Written" value={formatBytes(ws.totalWrittenBytes)} />
+              <StatCell
+                icon={ArrowDownToLine}
+                label="Data Written"
+                value={formatBytes(ws.totalWrittenBytes)}
+              />
               <StatCell icon={Rows3} label="Rows Read" value={formatCount(ws.totalReadRows)} />
-              <StatCell icon={Rows3} label="Rows Produced" value={formatCount(ws.totalProducedRows)} />
-              <StatCell icon={Flame} label="Spill to Disk" value={formatBytes(ws.totalSpilledBytes)} />
+              <StatCell
+                icon={Rows3}
+                label="Rows Produced"
+                value={formatCount(ws.totalProducedRows)}
+              />
+              <StatCell
+                icon={Flame}
+                label="Spill to Disk"
+                value={formatBytes(ws.totalSpilledBytes)}
+              />
               <StatCell icon={Network} label="Shuffle" value={formatBytes(ws.totalShuffleBytes)} />
-              <StatCell icon={Database} label="IO Cache Hit" value={`${Math.round(ws.avgIoCachePercent)}%`} />
-              <StatCell icon={FilterX} label="Pruning Eff." value={`${Math.round(ws.avgPruningEfficiency * 100)}%`} />
+              <StatCell
+                icon={Database}
+                label="IO Cache Hit"
+                value={`${Math.round(ws.avgIoCachePercent)}%`}
+              />
+              <StatCell
+                icon={FilterX}
+                label="Pruning Eff."
+                value={`${Math.round(ws.avgPruningEfficiency * 100)}%`}
+              />
             </div>
           </div>
 
@@ -443,7 +499,11 @@ export function DetailPanel({
               <StatCell icon={Timer} label="p95 Latency" value={formatDuration(ws.p95Ms)} />
               <StatCell icon={BarChart3} label="Executions" value={ws.count.toString()} />
               <StatCell icon={Cpu} label="Total Time" value={formatDuration(ws.totalDurationMs)} />
-              <StatCell icon={Zap} label="Parallelism" value={`${ws.avgTaskParallelism.toFixed(1)}x`} />
+              <StatCell
+                icon={Zap}
+                label="Parallelism"
+                value={`${ws.avgTaskParallelism.toFixed(1)}x`}
+              />
             </div>
           </div>
 
@@ -454,9 +514,14 @@ export function DetailPanel({
                 <OriginIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-muted-foreground">Source</p>
-                  <p className="text-sm font-medium truncate">{originLabel(candidate.queryOrigin)}</p>
+                  <p className="text-sm font-medium truncate">
+                    {originLabel(candidate.queryOrigin)}
+                  </p>
                 </div>
-                <DeepLinkIcon href={sourceLink} label={`Open ${originLabel(candidate.queryOrigin)} in Databricks`} />
+                <DeepLinkIcon
+                  href={sourceLink}
+                  label={`Open ${originLabel(candidate.queryOrigin)} in Databricks`}
+                />
               </div>
               <div className="flex items-center gap-2 rounded-lg bg-muted/30 border border-border p-2.5">
                 <MonitorSmartphone className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -470,7 +535,9 @@ export function DetailPanel({
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-muted-foreground">Warehouse</p>
                   <p className="text-sm font-medium truncate">{candidate.warehouseName}</p>
-                  <p className="text-[11px] text-muted-foreground font-mono">{candidate.warehouseId}</p>
+                  <p className="text-[11px] text-muted-foreground font-mono">
+                    {candidate.warehouseId}
+                  </p>
                 </div>
                 <DeepLinkIcon href={warehouseLink} label="Open Warehouse in Databricks" />
               </div>
@@ -482,7 +549,12 @@ export function DetailPanel({
                     <p className="text-sm font-medium truncate">{candidate.workspaceName}</p>
                   </div>
                   {candidate.workspaceUrl && (
-                    <a href={candidate.workspaceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 shrink-0">
+                    <a
+                      href={candidate.workspaceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:text-primary/80 shrink-0"
+                    >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   )}
@@ -503,7 +575,9 @@ export function DetailPanel({
             </div>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {candidate.tags.map((tag) => (
-                <StatusBadge key={tag} status={tagToStatus(tag)}>{tag}</StatusBadge>
+                <StatusBadge key={tag} status={tagToStatus(tag)}>
+                  {tag}
+                </StatusBadge>
               ))}
             </div>
           </div>

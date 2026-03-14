@@ -64,19 +64,13 @@ export function QueryTimeline({
   const [tooltipQuery, setTooltipQuery] = useState<TimelineQuery | null>(null);
   const [tooltipRect, setTooltipRect] = useState<DOMRect | null>(null);
 
-  const {
-    range,
-    isZoomed,
-    selectionRect,
-    handlers,
-    resetZoom,
-  } = useTimelineZoom(initialRange, { onRangeChange });
+  const { range, isZoomed, selectionRect, handlers, resetZoom } = useTimelineZoom(initialRange, {
+    onRangeChange,
+  });
 
   // Filter queries that overlap the visible range
   const visibleQueries = useMemo(() => {
-    return queries.filter(
-      (q) => q.endTimeMs >= range.start && q.startTimeMs <= range.end
-    );
+    return queries.filter((q) => q.endTimeMs >= range.start && q.startTimeMs <= range.end);
   }, [queries, range]);
 
   // Sort by start time for packing
@@ -91,10 +85,9 @@ export function QueryTimeline({
       end: q.endTimeMs,
     }));
 
-    const { rowAssignments, totalRows, droppedCount } = packTimelineRows(
-      packItems,
-      { maxRows: maxLanes }
-    );
+    const { rowAssignments, totalRows, droppedCount } = packTimelineRows(packItems, {
+      maxRows: maxLanes,
+    });
 
     // Group items by lane
     const laneMap = new Map<
@@ -114,8 +107,7 @@ export function QueryTimeline({
 
       const q = sortedQueries[i];
       const leftPercent = ((q.startTimeMs - range.start) / timeSpan) * 100;
-      const widthPercent =
-        ((q.endTimeMs - q.startTimeMs) / timeSpan) * 100;
+      const widthPercent = ((q.endTimeMs - q.startTimeMs) / timeSpan) * 100;
 
       if (!laneMap.has(row)) laneMap.set(row, []);
       laneMap.get(row)!.push({
@@ -138,16 +130,13 @@ export function QueryTimeline({
       setHighlightedId((prev) => (prev === queryId ? null : queryId));
       onQueryClick?.(queryId);
     },
-    [onQueryClick]
+    [onQueryClick],
   );
 
-  const handleQueryHover = useCallback(
-    (query: TimelineQuery, rect: DOMRect) => {
-      setTooltipQuery(query);
-      setTooltipRect(rect);
-    },
-    []
-  );
+  const handleQueryHover = useCallback((query: TimelineQuery, rect: DOMRect) => {
+    setTooltipQuery(query);
+    setTooltipRect(rect);
+  }, []);
 
   const handleQueryLeave = useCallback(() => {
     setTooltipQuery(null);
@@ -171,7 +160,7 @@ export function QueryTimeline({
         handleQueryClick(queryId);
       }
     },
-    [handleQueryClick]
+    [handleQueryClick],
   );
 
   return (
@@ -188,12 +177,7 @@ export function QueryTimeline({
             </Badge>
           )}
           {isZoomed && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-xs gap-1"
-              onClick={resetZoom}
-            >
+            <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={resetZoom}>
               <RotateCcw className="h-3 w-3" />
               Reset zoom
             </Button>
@@ -206,10 +190,7 @@ export function QueryTimeline({
               Zoomed
             </Badge>
           )}
-          <Select
-            value={colorMode}
-            onValueChange={(v) => setColorMode(v as TimelineColorMode)}
-          >
+          <Select value={colorMode} onValueChange={(v) => setColorMode(v as TimelineColorMode)}>
             <SelectTrigger className="h-7 w-28 text-xs">
               <SelectValue />
             </SelectTrigger>

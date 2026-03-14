@@ -52,3 +52,6 @@ dbsql-monitor-main
 
 # runtime prompt logs
 logs/
+
+# test coverage
+coverage/

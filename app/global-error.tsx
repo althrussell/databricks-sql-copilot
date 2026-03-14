@@ -16,7 +16,15 @@ export default function GlobalError({
   return (
     <html lang="en">
       <body className="font-sans antialiased bg-background text-foreground">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: "1.5rem" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "100vh",
+            padding: "1.5rem",
+          }}
+        >
           <div style={{ maxWidth: "28rem", width: "100%", textAlign: "center" }}>
             <h1 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "0.75rem" }}>
               Application Error

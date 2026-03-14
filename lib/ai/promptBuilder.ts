@@ -65,10 +65,7 @@ export interface RewriteResponse {
  * Build a structured prompt for AI analysis.
  * Delegates to the versioned prompt registry.
  */
-export function buildPrompt(
-  mode: AiMode,
-  context: PromptContext
-): AiPrompt {
+export function buildPrompt(mode: AiMode, context: PromptContext): AiPrompt {
   const rendered = renderPrompt(mode, {
     candidate: context.candidate,
     includeRawSql: context.includeRawSql,

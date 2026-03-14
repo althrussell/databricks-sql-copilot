@@ -196,16 +196,19 @@ describe("computeFlags", () => {
     });
     const tableContext = {
       tables: new Map([
-        ["catalog.schema.orders", {
-          tableName: "catalog.schema.orders",
-          clusteringColumns: ["order_date"],
-          partitionColumns: [],
-          isManaged: true,
-          predictiveOptEnabled: false,
-          format: "delta",
-          sizeInBytes: 1e9,
-          numFiles: 100,
-        }],
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: ["order_date"],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            format: "delta",
+            sizeInBytes: 1e9,
+            numFiles: 100,
+          },
+        ],
       ]),
     };
     const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
@@ -225,16 +228,19 @@ describe("computeFlags", () => {
     });
     const tableContext = {
       tables: new Map([
-        ["catalog.schema.orders", {
-          tableName: "catalog.schema.orders",
-          clusteringColumns: [],
-          partitionColumns: [],
-          isManaged: true,
-          predictiveOptEnabled: false,
-          format: "delta",
-          sizeInBytes: 1e9,
-          numFiles: 100,
-        }],
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            format: "delta",
+            sizeInBytes: 1e9,
+            numFiles: 100,
+          },
+        ],
       ]),
     };
     const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
@@ -247,8 +253,20 @@ describe("computeFlags", () => {
 describe("filterAndRankFlags", () => {
   it("filters out flags below impact threshold", () => {
     const flags = [
-      { flag: "HighSpill" as const, label: "High Spill", severity: "warning" as const, detail: "test", estimatedImpactPct: 5 },
-      { flag: "LowPruning" as const, label: "Low Pruning", severity: "warning" as const, detail: "test", estimatedImpactPct: 50 },
+      {
+        flag: "HighSpill" as const,
+        label: "High Spill",
+        severity: "warning" as const,
+        detail: "test",
+        estimatedImpactPct: 5,
+      },
+      {
+        flag: "LowPruning" as const,
+        label: "Low Pruning",
+        severity: "warning" as const,
+        detail: "test",
+        estimatedImpactPct: 50,
+      },
     ];
     const filtered = filterAndRankFlags(flags);
     expect(filtered).toHaveLength(1);
@@ -257,8 +275,19 @@ describe("filterAndRankFlags", () => {
 
   it("keeps unmeasured flags (no impact %) at the end", () => {
     const flags = [
-      { flag: "FrequentPattern" as const, label: "Frequent", severity: "warning" as const, detail: "test" },
-      { flag: "LowPruning" as const, label: "Low Pruning", severity: "warning" as const, detail: "test", estimatedImpactPct: 50 },
+      {
+        flag: "FrequentPattern" as const,
+        label: "Frequent",
+        severity: "warning" as const,
+        detail: "test",
+      },
+      {
+        flag: "LowPruning" as const,
+        label: "Low Pruning",
+        severity: "warning" as const,
+        detail: "test",
+        estimatedImpactPct: 50,
+      },
     ];
     const filtered = filterAndRankFlags(flags);
     expect(filtered).toHaveLength(2);
@@ -268,9 +297,27 @@ describe("filterAndRankFlags", () => {
 
   it("sorts measured flags by impact descending", () => {
     const flags = [
-      { flag: "HighSpill" as const, label: "High Spill", severity: "warning" as const, detail: "test", estimatedImpactPct: 30 },
-      { flag: "LowPruning" as const, label: "Low Pruning", severity: "warning" as const, detail: "test", estimatedImpactPct: 80 },
-      { flag: "HighShuffle" as const, label: "High Shuffle", severity: "warning" as const, detail: "test", estimatedImpactPct: 50 },
+      {
+        flag: "HighSpill" as const,
+        label: "High Spill",
+        severity: "warning" as const,
+        detail: "test",
+        estimatedImpactPct: 30,
+      },
+      {
+        flag: "LowPruning" as const,
+        label: "Low Pruning",
+        severity: "warning" as const,
+        detail: "test",
+        estimatedImpactPct: 80,
+      },
+      {
+        flag: "HighShuffle" as const,
+        label: "High Shuffle",
+        severity: "warning" as const,
+        detail: "test",
+        estimatedImpactPct: 50,
+      },
     ];
     const filtered = filterAndRankFlags(flags);
     expect(filtered[0].flag).toBe("LowPruning");

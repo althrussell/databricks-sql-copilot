@@ -42,7 +42,7 @@ export function TimelineSpan({
         "absolute top-0.5 bottom-0.5 rounded-[2px] cursor-pointer",
         "transition-opacity duration-75",
         "hover:ring-1 hover:ring-foreground/30",
-        isHighlighted && "ring-2 ring-primary z-10"
+        isHighlighted && "ring-2 ring-primary z-10",
       )}
       style={{
         left: `${leftPercent}%`,
@@ -78,7 +78,7 @@ export function TimelineSpan({
               ((query.queuedEndTimeMs - query.queuedStartTimeMs) /
                 (query.endTimeMs - query.startTimeMs)) *
                 100,
-              100
+              100,
             )}%`,
           }}
         />

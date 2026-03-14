@@ -91,12 +91,7 @@ export function MiniStepChart({
         strokeLinejoin="round"
       />
       {showEndDot && lastPoint && (
-        <circle
-          cx={lastPoint.x}
-          cy={lastPoint.y}
-          r={2}
-          fill={strokeColor}
-        />
+        <circle cx={lastPoint.x} cy={lastPoint.y} r={2} fill={strokeColor} />
       )}
     </svg>
   );

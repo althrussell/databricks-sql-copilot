@@ -67,12 +67,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -85,23 +80,27 @@ import {
 } from "@/components/ui/context-menu";
 import { explainScore } from "@/lib/domain/scoring";
 import { MiniStepChart } from "@/components/charts/mini-step-chart";
-import type {
-  Candidate,
-  WarehouseCost,
-  WarehouseActivity,
-} from "@/lib/domain/types";
+import type { Candidate, WarehouseCost, WarehouseActivity } from "@/lib/domain/types";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
-import { notifyError, notifySuccess, isPermissionError, extractPermissionDetails } from "@/lib/errors";
+import {
+  notifyError,
+  notifySuccess,
+  isPermissionError,
+  extractPermissionDetails,
+} from "@/lib/errors";
 import dynamic from "next/dynamic";
 
 const CustomRangePicker = dynamic(
   () => import("./components/dashboard/custom-range-picker").then((m) => m.CustomRangePicker),
-  { ssr: false, loading: () => <span className="h-7 w-24 rounded bg-muted animate-pulse inline-block" /> }
+  {
+    ssr: false,
+    loading: () => <span className="h-7 w-24 rounded bg-muted animate-pulse inline-block" />,
+  },
 );
 
 const DetailPanel = dynamic(
   () => import("./components/dashboard/detail-panel").then((m) => m.DetailPanel),
-  { ssr: false }
+  { ssr: false },
 );
 export {
   type QueryActionType,
@@ -138,7 +137,13 @@ function DeepLinkIcon({ href, label }: { href: string | null; label: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:text-primary/80 transition-colors" onClick={(e) => e.stopPropagation()}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-primary hover:text-primary/80 transition-colors"
+          onClick={(e) => e.stopPropagation()}
+        >
           <ExternalLink className="h-3 w-3" />
         </a>
       </TooltipTrigger>
@@ -172,7 +177,9 @@ function TriageCell({
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="space-y-1 cursor-help min-w-0">
-          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${style}`}>
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${style}`}
+          >
             <Sparkles className="h-2.5 w-2.5 opacity-60" />
             {insight.action}
           </span>
@@ -183,7 +190,9 @@ function TriageCell({
       </TooltipTrigger>
       <TooltipContent className="max-w-sm">
         <p className="text-xs leading-relaxed">{insight.insight}</p>
-        <p className="text-[10px] text-muted-foreground mt-1 opacity-70">Source: AI triage analysis</p>
+        <p className="text-[10px] text-muted-foreground mt-1 opacity-70">
+          Source: AI triage analysis
+        </p>
       </TooltipContent>
     </Tooltip>
   );
@@ -237,10 +246,17 @@ function ExpandedRowContent({
               AI Insight
             </h4>
             <div className="flex items-start gap-2 min-w-0">
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 mt-0.5 ${TRIAGE_ACTION_STYLE[triageInsight.action] ?? TRIAGE_ACTION_STYLE.investigate}`}>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium shrink-0 mt-0.5 ${TRIAGE_ACTION_STYLE[triageInsight.action] ?? TRIAGE_ACTION_STYLE.investigate}`}
+              >
                 {triageInsight.action}
               </span>
-              <p className="text-xs leading-relaxed min-w-0 break-words" style={{ overflowWrap: "anywhere" }}>{triageInsight.insight}</p>
+              <p
+                className="text-xs leading-relaxed min-w-0 break-words"
+                style={{ overflowWrap: "anywhere" }}
+              >
+                {triageInsight.insight}
+              </p>
             </div>
           </div>
         )}
@@ -256,7 +272,9 @@ function ExpandedRowContent({
               {candidate.performanceFlags.map((f) => (
                 <Tooltip key={f.flag}>
                   <TooltipTrigger asChild>
-                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-help ${flagSeverityColor(f.severity)}`}>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-help ${flagSeverityColor(f.severity)}`}
+                    >
                       {f.label}
                       {f.estimatedImpactPct != null && (
                         <span className="opacity-60">{f.estimatedImpactPct}%</span>
@@ -266,9 +284,13 @@ function ExpandedRowContent({
                   <TooltipContent className="max-w-xs">
                     <p className="text-xs">{f.detail}</p>
                     {f.estimatedImpactPct != null && (
-                      <p className="text-[10px] text-muted-foreground mt-1">Estimated impact: {f.estimatedImpactPct}% of task time</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Estimated impact: {f.estimatedImpactPct}% of task time
+                      </p>
                     )}
-                    <p className="text-[10px] text-muted-foreground opacity-70">Source: rule-based detection</p>
+                    <p className="text-[10px] text-muted-foreground opacity-70">
+                      Source: rule-based detection
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               ))}
@@ -279,9 +301,15 @@ function ExpandedRowContent({
         {/* Sample SQL */}
         <div className="space-y-1 min-w-0">
           <div className="flex items-center justify-between">
-            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Sample SQL</h4>
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+              Sample SQL
+            </h4>
             <Button variant="ghost" size="icon-xs" onClick={handleCopySql}>
-              {sqlCopied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+              {sqlCopied ? (
+                <Check className="h-3 w-3 text-emerald-500" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
             </Button>
           </div>
           <pre className="text-[11px] font-mono bg-muted/50 rounded-md p-2 max-h-32 overflow-auto whitespace-pre-wrap break-all border border-border/50">
@@ -295,7 +323,9 @@ function ExpandedRowContent({
       <div className="space-y-3 min-w-0 overflow-hidden">
         {/* Time Breakdown */}
         <div className="space-y-1.5 min-w-0">
-          <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Avg Time Breakdown</h4>
+          <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+            Avg Time Breakdown
+          </h4>
           {totalTime > 0 && (
             <div className="flex h-2.5 rounded-full overflow-hidden bg-muted">
               {TIME_SEGMENT_COLORS.map((seg, i) => {
@@ -310,7 +340,9 @@ function ExpandedRowContent({
                       />
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p className="text-xs">{seg.label}: {formatDuration(timeSegments[i])} ({pct.toFixed(0)}%)</p>
+                      <p className="text-xs">
+                        {seg.label}: {formatDuration(timeSegments[i])} ({pct.toFixed(0)}%)
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 );
@@ -332,27 +364,43 @@ function ExpandedRowContent({
 
         {/* I/O Stats */}
         <div className="space-y-1">
-          <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">I/O Stats</h4>
+          <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+            I/O Stats
+          </h4>
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
             <span className="text-muted-foreground truncate">Read</span>
-            <span className="font-medium tabular-nums text-right">{formatBytes(ws.totalReadBytes)}</span>
+            <span className="font-medium tabular-nums text-right">
+              {formatBytes(ws.totalReadBytes)}
+            </span>
             <span className="text-muted-foreground truncate">Written</span>
-            <span className="font-medium tabular-nums text-right">{formatBytes(ws.totalWrittenBytes)}</span>
+            <span className="font-medium tabular-nums text-right">
+              {formatBytes(ws.totalWrittenBytes)}
+            </span>
             <span className="text-muted-foreground truncate">Spill</span>
-            <span className="font-medium tabular-nums text-right">{formatBytes(ws.totalSpilledBytes)}</span>
+            <span className="font-medium tabular-nums text-right">
+              {formatBytes(ws.totalSpilledBytes)}
+            </span>
             <span className="text-muted-foreground truncate">Shuffle</span>
-            <span className="font-medium tabular-nums text-right">{formatBytes(ws.totalShuffleBytes)}</span>
+            <span className="font-medium tabular-nums text-right">
+              {formatBytes(ws.totalShuffleBytes)}
+            </span>
             <span className="text-muted-foreground truncate">Pruning Eff.</span>
-            <span className="font-medium tabular-nums text-right">{Math.round(ws.avgPruningEfficiency * 100)}%</span>
+            <span className="font-medium tabular-nums text-right">
+              {Math.round(ws.avgPruningEfficiency * 100)}%
+            </span>
             <span className="text-muted-foreground truncate">IO Cache</span>
-            <span className="font-medium tabular-nums text-right">{Math.round(ws.avgIoCachePercent)}%</span>
+            <span className="font-medium tabular-nums text-right">
+              {Math.round(ws.avgIoCachePercent)}%
+            </span>
           </div>
         </div>
 
         {/* Score Breakdown */}
         {reasons.length > 0 && (
           <div className="space-y-1">
-            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Why Ranked</h4>
+            <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+              Why Ranked
+            </h4>
             <ul className="space-y-0.5">
               {reasons.map((r, i) => (
                 <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
@@ -366,31 +414,63 @@ function ExpandedRowContent({
 
         {/* ── Actions ── */}
         <div className="flex items-center gap-1.5 pt-2 border-t border-border">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Actions:</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">
+            Actions:
+          </span>
           {currentAction === "dismiss" ? (
-            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-muted-foreground" onClick={() => onClearAction(candidate.fingerprint)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[11px] gap-1 text-muted-foreground"
+              onClick={() => onClearAction(candidate.fingerprint)}
+            >
               <Eye className="h-3 w-3" /> Undismiss
             </Button>
           ) : (
-            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-muted-foreground" onClick={() => onSetAction(candidate.fingerprint, "dismiss")}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[11px] gap-1 text-muted-foreground"
+              onClick={() => onSetAction(candidate.fingerprint, "dismiss")}
+            >
               <Ban className="h-3 w-3" /> Dismiss
             </Button>
           )}
           {currentAction === "watch" ? (
-            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-amber-600 dark:text-amber-400" onClick={() => onClearAction(candidate.fingerprint)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[11px] gap-1 text-amber-600 dark:text-amber-400"
+              onClick={() => onClearAction(candidate.fingerprint)}
+            >
               <Bookmark className="h-3 w-3 fill-current" /> Watching
             </Button>
           ) : (
-            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-muted-foreground" onClick={() => onSetAction(candidate.fingerprint, "watch")}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[11px] gap-1 text-muted-foreground"
+              onClick={() => onSetAction(candidate.fingerprint, "watch")}
+            >
               <Bookmark className="h-3 w-3" /> Watch
             </Button>
           )}
           {currentAction === "applied" ? (
-            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-emerald-600 dark:text-emerald-400" onClick={() => onClearAction(candidate.fingerprint)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[11px] gap-1 text-emerald-600 dark:text-emerald-400"
+              onClick={() => onClearAction(candidate.fingerprint)}
+            >
               <CheckCheck className="h-3 w-3" /> Applied
             </Button>
           ) : (
-            <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-muted-foreground" onClick={() => onSetAction(candidate.fingerprint, "applied")}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-[11px] gap-1 text-muted-foreground"
+              onClick={() => onSetAction(candidate.fingerprint, "applied")}
+            >
               <CheckCheck className="h-3 w-3" /> Mark Applied
             </Button>
           )}
@@ -401,7 +481,6 @@ function ExpandedRowContent({
 }
 
 /* ── Sub-components ── */
-
 
 function ScoreBar({ score }: { score: number }) {
   return (
@@ -421,7 +500,6 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-
 /* ── Empty / Error states ── */
 
 function EmptyState({ message }: { message?: string }) {
@@ -433,8 +511,7 @@ function EmptyState({ message }: { message?: string }) {
         </div>
         <p className="text-base font-semibold">No queries found</p>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          {message ??
-            "Try widening the time window or removing the warehouse filter."}
+          {message ?? "Try widening the time window or removing the warehouse filter."}
         </p>
       </CardContent>
     </Card>
@@ -453,24 +530,26 @@ function ErrorBanner({ message }: { message: string }) {
             <ShieldAlert className="h-4 w-4 text-destructive" />
           </div>
           <div className="space-y-2">
-            <p className="text-sm font-semibold text-destructive">
-              Insufficient Permissions
-            </p>
+            <p className="text-sm font-semibold text-destructive">Insufficient Permissions</p>
             <p className="text-sm text-muted-foreground">
-              The service principal used by this app does not have the required
-              access. Ask your workspace administrator to:
+              The service principal used by this app does not have the required access. Ask your
+              workspace administrator to:
             </p>
             <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1 pl-1">
               {details.schemas.map((s) => (
                 <li key={s}>
-                  Grant <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">USE SCHEMA</code> on{" "}
-                  <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">{s}</code>
+                  Grant{" "}
+                  <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">USE SCHEMA</code>{" "}
+                  on <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">{s}</code>
                 </li>
               ))}
               {details.endpointAccess && (
                 <li>
-                  Grant <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">CAN MONITOR</code> on
-                  the SQL warehouse
+                  Grant{" "}
+                  <code className="text-xs bg-muted px-1 py-0.5 rounded font-mono">
+                    CAN MONITOR
+                  </code>{" "}
+                  on the SQL warehouse
                 </li>
               )}
             </ul>
@@ -487,17 +566,13 @@ function ErrorBanner({ message }: { message: string }) {
           <AlertTriangle className="h-4 w-4 text-destructive" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-destructive">
-            Failed to load data
-          </p>
+          <p className="text-sm font-semibold text-destructive">Failed to load data</p>
           <p className="mt-0.5 text-sm text-muted-foreground">{message}</p>
         </div>
       </CardContent>
     </Card>
   );
 }
-
-
 
 /* ── Main Dashboard ── */
 
@@ -550,12 +625,17 @@ export function Dashboard({
         if (data.warehouseCosts) setEnrichedCosts(data.warehouseCosts);
         if (data.dataSourceHealth) setEnrichmentHealth(data.dataSourceHealth);
         setEnrichmentLoaded(true);
-      } catch { /* ignore parse errors */ }
+      } catch {
+        /* ignore parse errors */
+      }
     }
 
     // Already present (SSR or fast stream)
     const existing = document.getElementById("enrichment-data");
-    if (existing) { consumeEnrichment(existing); return; }
+    if (existing) {
+      consumeEnrichment(existing);
+      return;
+    }
 
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
@@ -573,7 +653,9 @@ export function Dashboard({
   }, []);
 
   // ── AI Triage insights (streamed in from Phase 3) ──
-  const [triageInsights, setTriageInsights] = useState<Record<string, { insight: string; action: string }>>({});
+  const [triageInsights, setTriageInsights] = useState<
+    Record<string, { insight: string; action: string }>
+  >({});
   const [triageLoaded, setTriageLoaded] = useState(false);
 
   useEffect(() => {
@@ -582,11 +664,16 @@ export function Dashboard({
         const data = JSON.parse(el.textContent ?? "{}");
         setTriageInsights(data);
         setTriageLoaded(true);
-      } catch { /* ignore parse errors */ }
+      } catch {
+        /* ignore parse errors */
+      }
     }
 
     const existing = document.getElementById("ai-triage-data");
-    if (existing) { consumeTriage(existing); return; }
+    if (existing) {
+      consumeTriage(existing);
+      return;
+    }
 
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
@@ -619,22 +706,23 @@ export function Dashboard({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [timePreset, setTimePreset] = useState(initialTimePreset);
-  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(initialCustomRange);
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(
+    initialCustomRange,
+  );
   const isCustomMode = customRange !== null;
   const [warehouseFilter, setWarehouseFilter] = useState(() => {
     const fromUrl = searchParams.get("warehouse");
     return fromUrl && warehouses.some((w) => w.warehouseId === fromUrl) ? fromUrl : "all";
   });
   const [workspaceFilter, setWorkspaceFilter] = useState("all");
-  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(
-    null
-  );
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [flagFilter, setFlagFilter] = useState<string | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
   // ── Query Actions (Lakebase persistence) ──
-  const [queryActions, setQueryActions] = useState<Record<string, QueryActionEntry>>(initialQueryActions);
+  const [queryActions, setQueryActions] =
+    useState<Record<string, QueryActionEntry>>(initialQueryActions);
   const [showDismissed, setShowDismissed] = useState(false);
 
   const setAction = useCallback(async (fingerprint: string, action: QueryActionType) => {
@@ -650,7 +738,11 @@ export function Dashboard({
         body: JSON.stringify({ fingerprint, action }),
       });
       if (!res.ok) throw new Error(`Server error (${res.status})`);
-      const actionLabels: Record<string, string> = { dismiss: "Query dismissed", watch: "Query marked as watched", applied: "Recommendation applied" };
+      const actionLabels: Record<string, string> = {
+        dismiss: "Query dismissed",
+        watch: "Query marked as watched",
+        applied: "Recommendation applied",
+      };
       notifySuccess(actionLabels[action] ?? "Action saved");
     } catch (err) {
       notifyError("Update query action", err);
@@ -678,11 +770,11 @@ export function Dashboard({
 
   const dismissedCount = useMemo(
     () => Object.values(queryActions).filter((a) => a.action === "dismiss").length,
-    [queryActions]
+    [queryActions],
   );
   const appliedCount = useMemo(
     () => Object.values(queryActions).filter((a) => a.action === "applied").length,
-    [queryActions]
+    [queryActions],
   );
 
   // ── Expandable rows ──
@@ -738,9 +830,7 @@ export function Dashboard({
       result = result.filter((c) => c.workspaceId === workspaceFilter);
     }
     if (flagFilter) {
-      result = result.filter((c) =>
-        c.performanceFlags.some((f) => f.flag === flagFilter)
-      );
+      result = result.filter((c) => c.performanceFlags.some((f) => f.flag === flagFilter));
     }
     if (tableSearch.trim()) {
       const q = tableSearch.trim().toLowerCase();
@@ -749,11 +839,20 @@ export function Dashboard({
           c.sampleQueryText.toLowerCase().includes(q) ||
           c.topUsers.some((u) => u.toLowerCase().includes(q)) ||
           c.warehouseName.toLowerCase().includes(q) ||
-          (c.workspaceName && c.workspaceName.toLowerCase().includes(q))
+          (c.workspaceName && c.workspaceName.toLowerCase().includes(q)),
       );
     }
     return result;
-  }, [candidates, warehouseFilter, workspaceFilter, flagFilter, tableSearch, minDurationSec, showDismissed, queryActions]);
+  }, [
+    candidates,
+    warehouseFilter,
+    workspaceFilter,
+    flagFilter,
+    tableSearch,
+    minDurationSec,
+    showDismissed,
+    queryActions,
+  ]);
 
   // Sorted view
   const sorted = useMemo(() => {
@@ -782,11 +881,13 @@ export function Dashboard({
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const paged = useMemo(
     () => sorted.slice(page * pageSize, (page + 1) * pageSize),
-    [sorted, page, pageSize]
+    [sorted, page, pageSize],
   );
 
   // Reset page when filters change
-  useEffect(() => { setPage(0); }, [warehouseFilter, flagFilter, tableSearch, minDurationSec, sortKey, sortDir, pageSize]);
+  useEffect(() => {
+    setPage(0);
+  }, [warehouseFilter, flagFilter, tableSearch, minDurationSec, sortKey, sortDir, pageSize]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -799,9 +900,7 @@ export function Dashboard({
 
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col) return <ArrowUpDown className="h-3 w-3 opacity-30" />;
-    return sortDir === "desc"
-      ? <ArrowDown className="h-3 w-3" />
-      : <ArrowUp className="h-3 w-3" />;
+    return sortDir === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />;
   }
 
   // Collect all unique flags across candidates for filter chips
@@ -823,16 +922,10 @@ export function Dashboard({
   const kpis = useMemo(() => {
     const uniqueWarehouses = new Set(filtered.map((c) => c.warehouseId)).size;
     const highImpact = filtered.filter((c) => c.impactScore >= 50).length;
-    const totalDuration = filtered.reduce(
-      (s, c) => s + c.windowStats.totalDurationMs,
-      0
-    );
+    const totalDuration = filtered.reduce((s, c) => s + c.windowStats.totalDurationMs, 0);
     const totalRuns = filtered.reduce((s, c) => s + c.windowStats.count, 0);
     const allUsers = new Set(filtered.flatMap((c) => c.topUsers));
-    const totalAllocatedCost = filtered.reduce(
-      (s, c) => s + c.allocatedCostDollars,
-      0
-    );
+    const totalAllocatedCost = filtered.reduce((s, c) => s + c.allocatedCostDollars, 0);
     return {
       uniqueWarehouses,
       highImpact,
@@ -852,10 +945,7 @@ export function Dashboard({
     const totalDBUs = relevantCosts.reduce((s, c) => s + c.totalDBUs, 0);
     const perWarehouse = new Map<string, number>();
     for (const c of relevantCosts) {
-      perWarehouse.set(
-        c.warehouseId,
-        (perWarehouse.get(c.warehouseId) ?? 0) + c.totalDBUs
-      );
+      perWarehouse.set(c.warehouseId, (perWarehouse.get(c.warehouseId) ?? 0) + c.totalDBUs);
     }
     return { totalDBUs, relevantCosts, perWarehouse };
   }, [warehouseCosts, warehouseFilter]);
@@ -876,23 +966,59 @@ export function Dashboard({
         userRunCounts.set(u, (userRunCounts.get(u) ?? 0) + c.windowStats.count);
       }
     }
-    let best: { label: string; value: string; icon: React.ComponentType<{ className?: string }>; color: string; score: number } | null = null;
+    let best: {
+      label: string;
+      value: string;
+      icon: React.ComponentType<{ className?: string }>;
+      color: string;
+      score: number;
+    } | null = null;
 
     if (userRunCounts.size > 0) {
       const [topUser, topUserRuns] = [...userRunCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-      best = { icon: Crown, label: "Busiest User", value: `${topUser.split("@")[0]} (${formatCount(topUserRuns)})`, color: "border-l-blue-500", score: topUserRuns };
+      best = {
+        icon: Crown,
+        label: "Busiest User",
+        value: `${topUser.split("@")[0]} (${formatCount(topUserRuns)})`,
+        color: "border-l-blue-500",
+        score: topUserRuns,
+      };
     }
 
     // Biggest spill
-    const worstSpill = [...filtered].sort((a, b) => b.windowStats.totalSpilledBytes - a.windowStats.totalSpilledBytes)[0];
-    if (worstSpill && worstSpill.windowStats.totalSpilledBytes > 1e9 && (!best || worstSpill.windowStats.totalSpilledBytes > 10e9)) {
-      best = { icon: Flame, label: "Biggest Spill", value: formatBytes(worstSpill.windowStats.totalSpilledBytes), color: "border-l-red-500", score: 0 };
+    const worstSpill = [...filtered].sort(
+      (a, b) => b.windowStats.totalSpilledBytes - a.windowStats.totalSpilledBytes,
+    )[0];
+    if (
+      worstSpill &&
+      worstSpill.windowStats.totalSpilledBytes > 1e9 &&
+      (!best || worstSpill.windowStats.totalSpilledBytes > 10e9)
+    ) {
+      best = {
+        icon: Flame,
+        label: "Biggest Spill",
+        value: formatBytes(worstSpill.windowStats.totalSpilledBytes),
+        color: "border-l-red-500",
+        score: 0,
+      };
     }
 
     // Highest queue wait
-    const worstQueue = [...filtered].sort((a, b) => b.scoreBreakdown.capacity - a.scoreBreakdown.capacity)[0];
-    if (worstQueue && worstQueue.scoreBreakdown.capacity > 60 && (!best || best.label === "Busiest User")) {
-      best = { icon: Hourglass, label: "Worst Queue", value: `${worstQueue.warehouseName}`, color: "border-l-amber-500", score: 0 };
+    const worstQueue = [...filtered].sort(
+      (a, b) => b.scoreBreakdown.capacity - a.scoreBreakdown.capacity,
+    )[0];
+    if (
+      worstQueue &&
+      worstQueue.scoreBreakdown.capacity > 60 &&
+      (!best || best.label === "Busiest User")
+    ) {
+      best = {
+        icon: Hourglass,
+        label: "Worst Queue",
+        value: `${worstQueue.warehouseName}`,
+        color: "border-l-amber-500",
+        score: 0,
+      };
     }
 
     return best;
@@ -934,12 +1060,9 @@ export function Dashboard({
     setSheetOpen(true);
   }
 
-  const openInNewTab = useCallback(
-    (url: string | null) => {
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
-    },
-    []
-  );
+  const openInNewTab = useCallback((url: string | null) => {
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }, []);
 
   /** Navigate from a tile click: "query:fp", "warehouse:id", or "scroll:table" */
   // Unique warehouse list from candidates
@@ -965,7 +1088,10 @@ export function Dashboard({
   const activityByWarehouse = useMemo(() => {
     const map = new Map<string, number[]>();
     for (const wa of warehouseActivity) {
-      map.set(wa.warehouseId, wa.buckets.map((b) => b.count));
+      map.set(
+        wa.warehouseId,
+        wa.buckets.map((b) => b.count),
+      );
     }
     return map;
   }, [warehouseActivity]);
@@ -1069,9 +1195,7 @@ export function Dashboard({
             </Select>
           )}
 
-          {isPending && (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary ml-2" />
-          )}
+          {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary ml-2" />}
 
           {/* Compact data window indicator */}
           {!fetchError && (
@@ -1101,7 +1225,6 @@ export function Dashboard({
           )}
         </div>
 
-
         {/* ── Error ── */}
         {fetchError && <ErrorBanner message={fetchError} />}
 
@@ -1124,7 +1247,13 @@ export function Dashboard({
                           ) : (
                             <XCircle className="h-3 w-3 text-red-500" />
                           )}
-                          <span className={h.status === "ok" ? "text-muted-foreground" : "text-red-600 dark:text-red-400 font-medium"}>
+                          <span
+                            className={
+                              h.status === "ok"
+                                ? "text-muted-foreground"
+                                : "text-red-600 dark:text-red-400 font-medium"
+                            }
+                          >
                             {h.name.replace(/_/g, " ")}
                           </span>
                         </span>
@@ -1132,7 +1261,7 @@ export function Dashboard({
                       <TooltipContent className="max-w-xs">
                         {h.status === "ok"
                           ? `Loaded ${h.rowCount} rows`
-                          : h.error ?? "Failed to load"}
+                          : (h.error ?? "Failed to load")}
                       </TooltipContent>
                     </Tooltip>
                   ))}
@@ -1149,7 +1278,9 @@ export function Dashboard({
             <Card className="border-l-2 border-l-blue-500 gap-1 py-3 px-4">
               <div className="flex items-center gap-1.5">
                 <BarChart3 className="h-3.5 w-3.5 text-blue-500" />
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Runs</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Runs
+                </span>
               </div>
               <p className="text-xl font-bold tabular-nums text-foreground leading-tight">
                 {formatCount(warehouseFilter === "all" ? totalQueries : kpis.totalRuns)}
@@ -1157,12 +1288,20 @@ export function Dashboard({
             </Card>
 
             {/* Critical */}
-            <Card className={`border-l-2 gap-1 py-3 px-4 ${kpis.highImpact > 0 ? "border-l-red-500" : "border-l-muted"}`}>
+            <Card
+              className={`border-l-2 gap-1 py-3 px-4 ${kpis.highImpact > 0 ? "border-l-red-500" : "border-l-muted"}`}
+            >
               <div className="flex items-center gap-1.5">
-                <AlertTriangle className={`h-3.5 w-3.5 ${kpis.highImpact > 0 ? "text-red-500" : "text-muted-foreground"}`} />
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Critical</span>
+                <AlertTriangle
+                  className={`h-3.5 w-3.5 ${kpis.highImpact > 0 ? "text-red-500" : "text-muted-foreground"}`}
+                />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Critical
+                </span>
               </div>
-              <p className={`text-xl font-bold tabular-nums leading-tight ${kpis.highImpact > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+              <p
+                className={`text-xl font-bold tabular-nums leading-tight ${kpis.highImpact > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}
+              >
                 {kpis.highImpact}
               </p>
             </Card>
@@ -1171,7 +1310,9 @@ export function Dashboard({
             <Card className="border-l-2 border-l-amber-500 gap-1 py-3 px-4">
               <div className="flex items-center gap-1.5">
                 <Cpu className="h-3.5 w-3.5 text-amber-500" />
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Compute</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Compute
+                </span>
               </div>
               <p className="text-xl font-bold tabular-nums text-foreground leading-tight">
                 {formatDuration(kpis.totalDuration)}
@@ -1182,7 +1323,9 @@ export function Dashboard({
             <Card className="border-l-2 border-l-emerald-500 gap-1 py-3 px-4">
               <div className="flex items-center gap-1.5">
                 <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Est. Cost</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Est. Cost
+                </span>
               </div>
               <p className="text-xl font-bold tabular-nums text-foreground leading-tight">
                 {totalDollarCost > 0
@@ -1194,36 +1337,50 @@ export function Dashboard({
             </Card>
 
             {/* Top Insight */}
-            {topInsight ? (() => {
-              const InsightIcon = topInsight.icon;
-              return (
-                <Card className={`border-l-2 ${topInsight.color} gap-1 py-3 px-4`}>
-                  <div className="flex items-center gap-1.5">
-                    <InsightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{topInsight.label}</span>
-                  </div>
-                  <p className="text-sm font-bold text-foreground leading-tight truncate">
-                    {topInsight.value}
-                  </p>
-                </Card>
-              );
-            })() : (
+            {topInsight ? (
+              (() => {
+                const InsightIcon = topInsight.icon;
+                return (
+                  <Card className={`border-l-2 ${topInsight.color} gap-1 py-3 px-4`}>
+                    <div className="flex items-center gap-1.5">
+                      <InsightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {topInsight.label}
+                      </span>
+                    </div>
+                    <p className="text-sm font-bold text-foreground leading-tight truncate">
+                      {topInsight.value}
+                    </p>
+                  </Card>
+                );
+              })()
+            ) : (
               <Card className="border-l-2 border-l-muted gap-1 py-3 px-4">
                 <div className="flex items-center gap-1.5">
                   <Lightbulb className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Insight</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Insight
+                  </span>
                 </div>
                 <p className="text-sm font-bold text-muted-foreground leading-tight">{"\u2014"}</p>
               </Card>
             )}
 
             {/* Applied */}
-            <Card className={`border-l-2 gap-1 py-3 px-4 ${appliedCount > 0 ? "border-l-emerald-500" : "border-l-muted"}`}>
+            <Card
+              className={`border-l-2 gap-1 py-3 px-4 ${appliedCount > 0 ? "border-l-emerald-500" : "border-l-muted"}`}
+            >
               <div className="flex items-center gap-1.5">
-                <CheckCheck className={`h-3.5 w-3.5 ${appliedCount > 0 ? "text-emerald-500" : "text-muted-foreground"}`} />
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Applied</span>
+                <CheckCheck
+                  className={`h-3.5 w-3.5 ${appliedCount > 0 ? "text-emerald-500" : "text-muted-foreground"}`}
+                />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Applied
+                </span>
               </div>
-              <p className={`text-xl font-bold tabular-nums leading-tight ${appliedCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
+              <p
+                className={`text-xl font-bold tabular-nums leading-tight ${appliedCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}
+              >
                 {appliedCount}
               </p>
             </Card>
@@ -1277,7 +1434,9 @@ export function Dashboard({
                   </div>
                   <div className="rounded-lg bg-muted/30 border border-border p-2.5">
                     <p className="text-[11px] text-muted-foreground">Scaling</p>
-                    <p className="text-sm font-semibold">{selectedWarehouse.minClusters}&ndash;{selectedWarehouse.maxClusters} clusters</p>
+                    <p className="text-sm font-semibold">
+                      {selectedWarehouse.minClusters}&ndash;{selectedWarehouse.maxClusters} clusters
+                    </p>
                   </div>
                   <div className="rounded-lg bg-muted/30 border border-border p-2.5">
                     <p className="text-[11px] text-muted-foreground">Auto-stop</p>
@@ -1289,7 +1448,9 @@ export function Dashboard({
                   </div>
                   <div className="rounded-lg bg-muted/30 border border-border p-2.5">
                     <p className="text-[11px] text-muted-foreground">Created by</p>
-                    <p className="text-sm font-semibold truncate">{selectedWarehouse.createdBy.split("@")[0]}</p>
+                    <p className="text-sm font-semibold truncate">
+                      {selectedWarehouse.createdBy.split("@")[0]}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -1328,7 +1489,9 @@ export function Dashboard({
                           )}
                         </div>
                         <span className="tabular-nums font-medium ml-2 shrink-0">
-                          {c.totalDollars > 0 ? formatDollars(c.totalDollars) : `${formatDBUs(c.totalDBUs)} DBU`}
+                          {c.totalDollars > 0
+                            ? formatDollars(c.totalDollars)
+                            : `${formatDBUs(c.totalDBUs)} DBU`}
                         </span>
                       </div>
                     ))}
@@ -1338,7 +1501,6 @@ export function Dashboard({
             </Card>
           </div>
         )}
-
 
         {/* ── Table ── */}
         {!fetchError && candidates.length === 0 && <EmptyState />}
@@ -1369,7 +1531,10 @@ export function Dashboard({
                 <span className="text-xs text-muted-foreground">s</span>
               </div>
               {allFlags.length > 0 && (
-                <Select value={flagFilter ?? "all"} onValueChange={(v) => setFlagFilter(v === "all" ? null : v)}>
+                <Select
+                  value={flagFilter ?? "all"}
+                  onValueChange={(v) => setFlagFilter(v === "all" ? null : v)}
+                >
                   <SelectTrigger className="w-auto h-8 text-xs gap-1.5">
                     <ShieldAlert className="h-3 w-3 text-muted-foreground" />
                     <SelectValue placeholder="All flags" />
@@ -1418,420 +1583,485 @@ export function Dashboard({
               </Card>
             )}
 
-            {filtered.length > 0 && (<Card>
-              <div className="rounded-xl">
-                <Table className="table-fixed">
-                  <colgroup>
-                    <col style={{ width: "3.5%" }} />  {/* # */}
-                    <col style={{ width: "7%" }} />    {/* Impact */}
-                    <col style={{ width: "19%" }} />   {/* Query */}
-                    <col style={{ width: "19%" }} />   {/* AI Insight */}
-                    <col style={{ width: "4%" }} />    {/* Source */}
-                    <col style={{ width: "11%" }} />   {/* Warehouse */}
-                    <col style={{ width: "9%" }} />    {/* User / Source */}
-                    <col style={{ width: "4.5%" }} />  {/* Runs */}
-                    <col style={{ width: "5%" }} />    {/* p95 */}
-                    <col style={{ width: "5%" }} />    {/* Cost */}
-                    <col style={{ width: "4.5%" }} />  {/* Flags */}
-                    <col style={{ width: "8.5%" }} />  {/* Actions */}
-                  </colgroup>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="px-2">#</TableHead>
-                      <TableHead className="px-2">
-                        <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors" onClick={() => handleSort("impact")}>
-                          Impact <SortIcon col="impact" />
-                        </button>
-                      </TableHead>
-                      <TableHead>Query</TableHead>
-                      <TableHead>AI Insight</TableHead>
-                      <TableHead className="text-center px-1">Src</TableHead>
-                      <TableHead>Warehouse</TableHead>
-                      <TableHead>User</TableHead>
-                      <TableHead className="text-right px-2">
-                        <button className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("runs")}>
-                          Runs <SortIcon col="runs" />
-                        </button>
-                      </TableHead>
-                      <TableHead className="text-right px-2">
-                        <button className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("p95")}>
-                          p95 <SortIcon col="p95" />
-                        </button>
-                      </TableHead>
-                      <TableHead className="text-right px-2">
-                        <button className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("cost")}>
-                          Cost <SortIcon col="cost" />
-                        </button>
-                      </TableHead>
-                      <TableHead className="text-right px-2">
-                        <button className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors ml-auto" onClick={() => handleSort("flags")}>
-                          Flags <SortIcon col="flags" />
-                        </button>
-                      </TableHead>
-                      <TableHead className="text-right px-2">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paged.map((c, idx) => {
-                      const OriginIcon = originIcon(c.queryOrigin);
-                      const rowWsUrl = c.workspaceUrl || workspaceUrl;
-                      const profileLink = buildLink(
-                        rowWsUrl,
-                        "query-profile",
-                        c.sampleStatementId,
-                        { queryStartTimeMs: new Date(c.sampleStartedAt).getTime() }
-                      );
-                      const whLink = buildLink(
-                        rowWsUrl,
-                        "warehouse",
-                        c.warehouseId
-                      );
-                      const src = c.querySource;
-                      const srcLink = src.dashboardId
-                        ? buildLink(rowWsUrl, "dashboard", src.dashboardId)
-                        : src.legacyDashboardId
-                          ? buildLink(rowWsUrl, "legacy-dashboard", src.legacyDashboardId)
-                          : src.jobId
-                            ? buildLink(rowWsUrl, "job", src.jobId)
-                            : src.notebookId
-                              ? buildLink(rowWsUrl, "notebook", src.notebookId)
-                              : null;
+            {filtered.length > 0 && (
+              <Card>
+                <div className="rounded-xl">
+                  <Table className="table-fixed">
+                    <colgroup>
+                      <col style={{ width: "3.5%" }} /> {/* # */}
+                      <col style={{ width: "7%" }} /> {/* Impact */}
+                      <col style={{ width: "19%" }} /> {/* Query */}
+                      <col style={{ width: "19%" }} /> {/* AI Insight */}
+                      <col style={{ width: "4%" }} /> {/* Source */}
+                      <col style={{ width: "11%" }} /> {/* Warehouse */}
+                      <col style={{ width: "9%" }} /> {/* User / Source */}
+                      <col style={{ width: "4.5%" }} /> {/* Runs */}
+                      <col style={{ width: "5%" }} /> {/* p95 */}
+                      <col style={{ width: "5%" }} /> {/* Cost */}
+                      <col style={{ width: "4.5%" }} /> {/* Flags */}
+                      <col style={{ width: "8.5%" }} /> {/* Actions */}
+                    </colgroup>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="px-2">#</TableHead>
+                        <TableHead className="px-2">
+                          <button
+                            className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                            onClick={() => handleSort("impact")}
+                          >
+                            Impact <SortIcon col="impact" />
+                          </button>
+                        </TableHead>
+                        <TableHead>Query</TableHead>
+                        <TableHead>AI Insight</TableHead>
+                        <TableHead className="text-center px-1">Src</TableHead>
+                        <TableHead>Warehouse</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead className="text-right px-2">
+                          <button
+                            className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors ml-auto"
+                            onClick={() => handleSort("runs")}
+                          >
+                            Runs <SortIcon col="runs" />
+                          </button>
+                        </TableHead>
+                        <TableHead className="text-right px-2">
+                          <button
+                            className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors ml-auto"
+                            onClick={() => handleSort("p95")}
+                          >
+                            p95 <SortIcon col="p95" />
+                          </button>
+                        </TableHead>
+                        <TableHead className="text-right px-2">
+                          <button
+                            className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors ml-auto"
+                            onClick={() => handleSort("cost")}
+                          >
+                            Cost <SortIcon col="cost" />
+                          </button>
+                        </TableHead>
+                        <TableHead className="text-right px-2">
+                          <button
+                            className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors ml-auto"
+                            onClick={() => handleSort("flags")}
+                          >
+                            Flags <SortIcon col="flags" />
+                          </button>
+                        </TableHead>
+                        <TableHead className="text-right px-2">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paged.map((c, idx) => {
+                        const OriginIcon = originIcon(c.queryOrigin);
+                        const rowWsUrl = c.workspaceUrl || workspaceUrl;
+                        const profileLink = buildLink(
+                          rowWsUrl,
+                          "query-profile",
+                          c.sampleStatementId,
+                          { queryStartTimeMs: new Date(c.sampleStartedAt).getTime() },
+                        );
+                        const whLink = buildLink(rowWsUrl, "warehouse", c.warehouseId);
+                        const src = c.querySource;
+                        const srcLink = src.dashboardId
+                          ? buildLink(rowWsUrl, "dashboard", src.dashboardId)
+                          : src.legacyDashboardId
+                            ? buildLink(rowWsUrl, "legacy-dashboard", src.legacyDashboardId)
+                            : src.jobId
+                              ? buildLink(rowWsUrl, "job", src.jobId)
+                              : src.notebookId
+                                ? buildLink(rowWsUrl, "notebook", src.notebookId)
+                                : null;
 
-                      const isExpanded = expandedRows.has(c.fingerprint);
-                      const rowReasons = explainScore(c.scoreBreakdown);
+                        const isExpanded = expandedRows.has(c.fingerprint);
+                        const rowReasons = explainScore(c.scoreBreakdown);
 
-                      return (
-                        <React.Fragment key={c.fingerprint}>
-                        <ContextMenu>
-                          <ContextMenuTrigger asChild>
-                            <TableRow
-                              className={`cursor-pointer group ${isExpanded ? "bg-muted/20" : ""}`}
-                              onClick={() => toggleExpand(c.fingerprint)}
-                            >
-                              <TableCell className="text-xs text-muted-foreground tabular-nums px-2">
-                                <div className="flex items-center gap-0.5">
-                                  <ChevronRight
-                                    className={`h-3 w-3 transition-transform duration-200 shrink-0 ${expandedRows.has(c.fingerprint) ? "rotate-90" : ""}`}
-                                  />
-                                  {page * pageSize + idx + 1}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1">
-                                  <ScoreBar score={c.impactScore} />
-                                  {queryActions[c.fingerprint]?.action === "watch" && (
-                                    <Bookmark className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0" />
-                                  )}
-                                  {queryActions[c.fingerprint]?.action === "applied" && (
-                                    <CheckCheck className="h-3 w-3 text-emerald-500 shrink-0" />
-                                  )}
-                                  {queryActions[c.fingerprint]?.action === "dismiss" && (
-                                    <Ban className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="whitespace-normal overflow-hidden">
-                                <div className="space-y-1 min-w-0">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <p className="font-mono text-xs truncate cursor-help">
-                                        {truncateQuery(c.sampleQueryText, 80)}
-                                      </p>
-                                    </TooltipTrigger>
-                                    <TooltipContent
-                                      side="bottom"
-                                      align="start"
-                                      className="max-w-md"
-                                    >
-                                      <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                                        {c.sampleQueryText.slice(0, 500)}
-                                        {c.sampleQueryText.length > 500
-                                          ? "\u2026"
-                                          : ""}
-                                      </pre>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                  <div className="flex items-center gap-1.5">
-                                    {c.tags.slice(0, 2).map((tag) => (
-                                      <StatusBadge
-                                        key={tag}
-                                        status={tagToStatus(tag)}
-                                        className="text-[10px] px-1.5 py-0"
-                                      >
-                                        {tag}
-                                      </StatusBadge>
-                                    ))}
-                                    {c.dbtMeta.isDbt && (
-                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400">
-                                        dbt
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell className="whitespace-normal overflow-hidden">
-                                <TriageCell
-                                  insight={triageInsights[c.fingerprint] ?? null}
-                                  loading={!triageLoaded}
-                                />
-                              </TableCell>
-                              <TableCell className="text-center px-1">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="inline-flex">
-                                      <OriginIcon className="h-4 w-4 text-muted-foreground" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    {originLabel(c.queryOrigin)}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TableCell>
-                              <TableCell className="whitespace-normal overflow-hidden">
-                                <div className="min-w-0">
-                                  <span className="text-xs truncate block">
-                                    {c.warehouseName}
-                                  </span>
-                                  {c.workspaceName && c.workspaceName !== "Unknown" && (
-                                    <span className="text-[10px] text-muted-foreground truncate block">
-                                      {c.workspaceName}
-                                    </span>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="min-w-0 cursor-help">
-                                      <span className="text-xs truncate block">
-                                        {c.topUsers[0]?.split("@")[0] ?? "\u2014"}
-                                      </span>
-                                      <span className="text-[10px] text-muted-foreground truncate block">
-                                        {originLabel(c.queryOrigin)}
-                                      </span>
+                        return (
+                          <React.Fragment key={c.fingerprint}>
+                            <ContextMenu>
+                              <ContextMenuTrigger asChild>
+                                <TableRow
+                                  className={`cursor-pointer group ${isExpanded ? "bg-muted/20" : ""}`}
+                                  onClick={() => toggleExpand(c.fingerprint)}
+                                >
+                                  <TableCell className="text-xs text-muted-foreground tabular-nums px-2">
+                                    <div className="flex items-center gap-0.5">
+                                      <ChevronRight
+                                        className={`h-3 w-3 transition-transform duration-200 shrink-0 ${expandedRows.has(c.fingerprint) ? "rotate-90" : ""}`}
+                                      />
+                                      {page * pageSize + idx + 1}
                                     </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <div className="space-y-1">
-                                      <p className="font-semibold">
-                                        {c.uniqueUserCount} user
-                                        {c.uniqueUserCount !== 1 ? "s" : ""}
-                                      </p>
-                                      {c.topUsers.map((u) => (
-                                        <p key={u} className="text-xs">
-                                          {u}
-                                        </p>
-                                      ))}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-1">
+                                      <ScoreBar score={c.impactScore} />
+                                      {queryActions[c.fingerprint]?.action === "watch" && (
+                                        <Bookmark className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0" />
+                                      )}
+                                      {queryActions[c.fingerprint]?.action === "applied" && (
+                                        <CheckCheck className="h-3 w-3 text-emerald-500 shrink-0" />
+                                      )}
+                                      {queryActions[c.fingerprint]?.action === "dismiss" && (
+                                        <Ban className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+                                      )}
                                     </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums font-medium text-xs px-2">
-                                <span>{c.windowStats.count}</span>
-                                {(c.failedCount > 0 || c.canceledCount > 0) && (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="ml-0.5 text-[10px]">
-                                        {c.failedCount > 0 && (
-                                          <span className="text-red-500">{c.failedCount}F</span>
-                                        )}
-                                        {c.canceledCount > 0 && (
-                                          <span className="text-amber-500 ml-0.5">{c.canceledCount}C</span>
-                                        )}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p className="text-xs">
-                                        {c.windowStats.count} total runs
-                                        {c.failedCount > 0 && ` · ${c.failedCount} failed`}
-                                        {c.canceledCount > 0 && ` · ${c.canceledCount} canceled`}
-                                      </p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums font-semibold text-xs px-2">
-                                {formatDuration(c.windowStats.p95Ms)}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums text-xs px-2">
-                                {c.allocatedCostDollars > 0
-                                  ? formatDollars(c.allocatedCostDollars)
-                                  : c.allocatedDBUs > 0
-                                    ? `${formatDBUs(c.allocatedDBUs)} DBU`
-                                    : "\u2014"}
-                              </TableCell>
-                              <TableCell className="text-right px-2">
-                                {c.performanceFlags.length > 0 ? (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="inline-flex items-center gap-0.5 justify-end">
-                                        <ShieldAlert className={`h-3 w-3 ${c.performanceFlags.some((f) => f.severity === "critical") ? "text-red-500" : "text-amber-500"}`} />
-                                        <span className="text-xs font-medium">
-                                          {c.performanceFlags.length}
-                                        </span>
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent className="max-w-xs">
-                                      <div className="space-y-1">
-                                        {c.performanceFlags.map((f) => (
-                                          <p key={f.flag} className="text-xs">
-                                            <span className="font-semibold">{f.label}{f.estimatedImpactPct != null ? ` (${f.estimatedImpactPct}%)` : ""}:</span>{" "}
-                                            {f.detail}
+                                  </TableCell>
+                                  <TableCell className="whitespace-normal overflow-hidden">
+                                    <div className="space-y-1 min-w-0">
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <p className="font-mono text-xs truncate cursor-help">
+                                            {truncateQuery(c.sampleQueryText, 80)}
                                           </p>
+                                        </TooltipTrigger>
+                                        <TooltipContent
+                                          side="bottom"
+                                          align="start"
+                                          className="max-w-md"
+                                        >
+                                          <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                                            {c.sampleQueryText.slice(0, 500)}
+                                            {c.sampleQueryText.length > 500 ? "\u2026" : ""}
+                                          </pre>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                      <div className="flex items-center gap-1.5">
+                                        {c.tags.slice(0, 2).map((tag) => (
+                                          <StatusBadge
+                                            key={tag}
+                                            status={tagToStatus(tag)}
+                                            className="text-[10px] px-1.5 py-0"
+                                          >
+                                            {tag}
+                                          </StatusBadge>
                                         ))}
+                                        {c.dbtMeta.isDbt && (
+                                          <Badge
+                                            variant="outline"
+                                            className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-600 dark:border-blue-700 dark:text-blue-400"
+                                          >
+                                            dbt
+                                          </Badge>
+                                        )}
                                       </div>
-                                      <p className="text-[10px] text-muted-foreground mt-1.5 opacity-70">Source: rule-based detection</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                ) : (
-                                  <span className="text-muted-foreground text-xs">{"\u2014"}</span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right px-2">
-                                <div className="flex items-center justify-end gap-0.5">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleRowClick(c);
-                                        }}
-                                      >
-                                        <PanelRightOpen className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Quick View Panel</TooltipContent>
-                                  </Tooltip>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          router.push(`/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`);
-                                        }}
-                                      >
-                                        <Sparkles className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>AI Analyse &amp; Optimise</TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          </ContextMenuTrigger>
-                          <ContextMenuContent className="w-56">
-                            <ContextMenuItem onClick={() => handleRowClick(c)}>
-                              <Search className="mr-2 h-4 w-4" />
-                              Quick View
-                            </ContextMenuItem>
-                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?warehouse=${c.warehouseId}`)}>
-                              <Maximize2 className="mr-2 h-4 w-4" />
-                              Full Details
-                            </ContextMenuItem>
-                            <ContextMenuItem onClick={() => router.push(`/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`)}>
-                              <Sparkles className="mr-2 h-4 w-4" />
-                              AI Analyse &amp; Optimise
-                            </ContextMenuItem>
-                            {profileLink && (
-                              <ContextMenuItem onClick={() => openInNewTab(profileLink)}>
-                                <ExternalLink className="mr-2 h-4 w-4" />
-                                Open Query Profile
-                              </ContextMenuItem>
-                            )}
-                            <ContextMenuSeparator />
-                            {whLink && (
-                              <ContextMenuItem onClick={() => openInNewTab(whLink)}>
-                                <Warehouse className="mr-2 h-4 w-4" />
-                                Open Warehouse
-                              </ContextMenuItem>
-                            )}
-                            {srcLink && (
-                              <ContextMenuItem onClick={() => openInNewTab(srcLink)}>
-                                <OriginIcon className="mr-2 h-4 w-4" />
-                                Open {originLabel(c.queryOrigin)}
-                              </ContextMenuItem>
-                            )}
-                            <ContextMenuSeparator />
-                            <ContextMenuSub>
-                              <ContextMenuSubTrigger>
-                                <Warehouse className="mr-2 h-4 w-4" />
-                                Filter by Warehouse
-                              </ContextMenuSubTrigger>
-                              <ContextMenuSubContent>
-                                <ContextMenuItem onClick={() => setWarehouseFilter(c.warehouseId)}>
-                                  {c.warehouseName}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="whitespace-normal overflow-hidden">
+                                    <TriageCell
+                                      insight={triageInsights[c.fingerprint] ?? null}
+                                      loading={!triageLoaded}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="text-center px-1">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex">
+                                          <OriginIcon className="h-4 w-4 text-muted-foreground" />
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent>{originLabel(c.queryOrigin)}</TooltipContent>
+                                    </Tooltip>
+                                  </TableCell>
+                                  <TableCell className="whitespace-normal overflow-hidden">
+                                    <div className="min-w-0">
+                                      <span className="text-xs truncate block">
+                                        {c.warehouseName}
+                                      </span>
+                                      {c.workspaceName && c.workspaceName !== "Unknown" && (
+                                        <span className="text-[10px] text-muted-foreground truncate block">
+                                          {c.workspaceName}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div className="min-w-0 cursor-help">
+                                          <span className="text-xs truncate block">
+                                            {c.topUsers[0]?.split("@")[0] ?? "\u2014"}
+                                          </span>
+                                          <span className="text-[10px] text-muted-foreground truncate block">
+                                            {originLabel(c.queryOrigin)}
+                                          </span>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <div className="space-y-1">
+                                          <p className="font-semibold">
+                                            {c.uniqueUserCount} user
+                                            {c.uniqueUserCount !== 1 ? "s" : ""}
+                                          </p>
+                                          {c.topUsers.map((u) => (
+                                            <p key={u} className="text-xs">
+                                              {u}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TableCell>
+                                  <TableCell className="text-right tabular-nums font-medium text-xs px-2">
+                                    <span>{c.windowStats.count}</span>
+                                    {(c.failedCount > 0 || c.canceledCount > 0) && (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="ml-0.5 text-[10px]">
+                                            {c.failedCount > 0 && (
+                                              <span className="text-red-500">{c.failedCount}F</span>
+                                            )}
+                                            {c.canceledCount > 0 && (
+                                              <span className="text-amber-500 ml-0.5">
+                                                {c.canceledCount}C
+                                              </span>
+                                            )}
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p className="text-xs">
+                                            {c.windowStats.count} total runs
+                                            {c.failedCount > 0 && ` · ${c.failedCount} failed`}
+                                            {c.canceledCount > 0 &&
+                                              ` · ${c.canceledCount} canceled`}
+                                          </p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right tabular-nums font-semibold text-xs px-2">
+                                    {formatDuration(c.windowStats.p95Ms)}
+                                  </TableCell>
+                                  <TableCell className="text-right tabular-nums text-xs px-2">
+                                    {c.allocatedCostDollars > 0
+                                      ? formatDollars(c.allocatedCostDollars)
+                                      : c.allocatedDBUs > 0
+                                        ? `${formatDBUs(c.allocatedDBUs)} DBU`
+                                        : "\u2014"}
+                                  </TableCell>
+                                  <TableCell className="text-right px-2">
+                                    {c.performanceFlags.length > 0 ? (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="inline-flex items-center gap-0.5 justify-end">
+                                            <ShieldAlert
+                                              className={`h-3 w-3 ${c.performanceFlags.some((f) => f.severity === "critical") ? "text-red-500" : "text-amber-500"}`}
+                                            />
+                                            <span className="text-xs font-medium">
+                                              {c.performanceFlags.length}
+                                            </span>
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs">
+                                          <div className="space-y-1">
+                                            {c.performanceFlags.map((f) => (
+                                              <p key={f.flag} className="text-xs">
+                                                <span className="font-semibold">
+                                                  {f.label}
+                                                  {f.estimatedImpactPct != null
+                                                    ? ` (${f.estimatedImpactPct}%)`
+                                                    : ""}
+                                                  :
+                                                </span>{" "}
+                                                {f.detail}
+                                              </p>
+                                            ))}
+                                          </div>
+                                          <p className="text-[10px] text-muted-foreground mt-1.5 opacity-70">
+                                            Source: rule-based detection
+                                          </p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    ) : (
+                                      <span className="text-muted-foreground text-xs">
+                                        {"\u2014"}
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right px-2">
+                                    <div className="flex items-center justify-end gap-0.5">
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon-xs"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleRowClick(c);
+                                            }}
+                                          >
+                                            <PanelRightOpen className="h-3.5 w-3.5" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>Quick View Panel</TooltipContent>
+                                      </Tooltip>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon-xs"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              router.push(
+                                                `/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`,
+                                              );
+                                            }}
+                                          >
+                                            <Sparkles className="h-3.5 w-3.5" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>AI Analyse &amp; Optimise</TooltipContent>
+                                      </Tooltip>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              </ContextMenuTrigger>
+                              <ContextMenuContent className="w-56">
+                                <ContextMenuItem onClick={() => handleRowClick(c)}>
+                                  <Search className="mr-2 h-4 w-4" />
+                                  Quick View
                                 </ContextMenuItem>
-                              </ContextMenuSubContent>
-                            </ContextMenuSub>
-                            <ContextMenuItem
-                              onClick={() => {
-                                navigator.clipboard.writeText(c.sampleQueryText);
-                              }}
-                            >
-                              <Terminal className="mr-2 h-4 w-4" />
-                              Copy SQL
-                            </ContextMenuItem>
-                          </ContextMenuContent>
-                        </ContextMenu>
-                        {isExpanded && (
-                          <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border/50">
-                            <TableCell colSpan={12} className="px-6 py-4 whitespace-normal">
-                              <ExpandedRowContent
-                                candidate={c}
-                                triageInsight={triageInsights[c.fingerprint] ?? null}
-                                reasons={rowReasons}
-                                currentAction={queryActions[c.fingerprint]?.action ?? null}
-                                onSetAction={setAction}
-                                onClearAction={clearAction}
-                              />
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                                <ContextMenuItem
+                                  onClick={() =>
+                                    router.push(
+                                      `/queries/${c.fingerprint}?warehouse=${c.warehouseId}`,
+                                    )
+                                  }
+                                >
+                                  <Maximize2 className="mr-2 h-4 w-4" />
+                                  Full Details
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onClick={() =>
+                                    router.push(
+                                      `/queries/${c.fingerprint}?action=analyse&warehouse=${c.warehouseId}`,
+                                    )
+                                  }
+                                >
+                                  <Sparkles className="mr-2 h-4 w-4" />
+                                  AI Analyse &amp; Optimise
+                                </ContextMenuItem>
+                                {profileLink && (
+                                  <ContextMenuItem onClick={() => openInNewTab(profileLink)}>
+                                    <ExternalLink className="mr-2 h-4 w-4" />
+                                    Open Query Profile
+                                  </ContextMenuItem>
+                                )}
+                                <ContextMenuSeparator />
+                                {whLink && (
+                                  <ContextMenuItem onClick={() => openInNewTab(whLink)}>
+                                    <Warehouse className="mr-2 h-4 w-4" />
+                                    Open Warehouse
+                                  </ContextMenuItem>
+                                )}
+                                {srcLink && (
+                                  <ContextMenuItem onClick={() => openInNewTab(srcLink)}>
+                                    <OriginIcon className="mr-2 h-4 w-4" />
+                                    Open {originLabel(c.queryOrigin)}
+                                  </ContextMenuItem>
+                                )}
+                                <ContextMenuSeparator />
+                                <ContextMenuSub>
+                                  <ContextMenuSubTrigger>
+                                    <Warehouse className="mr-2 h-4 w-4" />
+                                    Filter by Warehouse
+                                  </ContextMenuSubTrigger>
+                                  <ContextMenuSubContent>
+                                    <ContextMenuItem
+                                      onClick={() => setWarehouseFilter(c.warehouseId)}
+                                    >
+                                      {c.warehouseName}
+                                    </ContextMenuItem>
+                                  </ContextMenuSubContent>
+                                </ContextMenuSub>
+                                <ContextMenuItem
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(c.sampleQueryText);
+                                  }}
+                                >
+                                  <Terminal className="mr-2 h-4 w-4" />
+                                  Copy SQL
+                                </ContextMenuItem>
+                              </ContextMenuContent>
+                            </ContextMenu>
+                            {isExpanded && (
+                              <TableRow className="bg-muted/30 hover:bg-muted/30 border-b border-border/50">
+                                <TableCell colSpan={12} className="px-6 py-4 whitespace-normal">
+                                  <ExpandedRowContent
+                                    candidate={c}
+                                    triageInsight={triageInsights[c.fingerprint] ?? null}
+                                    reasons={rowReasons}
+                                    currentAction={queryActions[c.fingerprint]?.action ?? null}
+                                    onSetAction={setAction}
+                                    onClearAction={clearAction}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
 
-              {/* ── Pagination ── */}
-              <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Rows per page</span>
-                  <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
-                    <SelectTrigger className="h-7 w-[60px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[10, 25, 50, 100].map((n) => (
-                        <SelectItem key={n} value={String(n)}>{n}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                {/* ── Pagination ── */}
+                <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Rows per page</span>
+                    <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                      <SelectTrigger className="h-7 w-[60px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[10, 25, 50, 100].map((n) => (
+                          <SelectItem key={n} value={String(n)}>
+                            {n}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground tabular-nums mr-2">
+                      {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} of{" "}
+                      {sorted.length}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={page === 0}
+                      onClick={() => setPage(0)}
+                    >
+                      <ChevronsLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={page === 0}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => setPage(totalPages - 1)}
+                    >
+                      <ChevronsRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-muted-foreground tabular-nums mr-2">
-                    {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)} of {sorted.length}
-                  </span>
-                  <Button variant="ghost" size="icon-xs" disabled={page === 0} onClick={() => setPage(0)}>
-                    <ChevronsLeft className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon-xs" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon-xs" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon-xs" disabled={page >= totalPages - 1} onClick={() => setPage(totalPages - 1)}>
-                    <ChevronsRight className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-            </Card>
+              </Card>
             )}
           </div>
         )}
@@ -1842,7 +2072,9 @@ export function Dashboard({
           open={sheetOpen}
           onOpenChange={setSheetOpen}
           workspaceUrl={workspaceUrl}
-          currentAction={selectedCandidate ? queryActions[selectedCandidate.fingerprint]?.action ?? null : null}
+          currentAction={
+            selectedCandidate ? (queryActions[selectedCandidate.fingerprint]?.action ?? null) : null
+          }
           onSetAction={setAction}
           onClearAction={clearAction}
         />

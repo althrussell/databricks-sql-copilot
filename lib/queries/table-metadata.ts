@@ -38,7 +38,7 @@ export interface TableDetail {
 }
 
 export interface MaintenanceHistory {
-  lastOptimize: string | null;   // ISO timestamp
+  lastOptimize: string | null; // ISO timestamp
   lastVacuum: string | null;
   lastAnalyze: string | null;
   optimizeCount: number;
@@ -95,10 +95,7 @@ export function extractTableNames(sql: string): string[] {
   ];
 
   const prefixGroup = prefixes.join("|");
-  const pattern = new RegExp(
-    `(?:${prefixGroup})\\s+(${dottedName})`,
-    "gi"
-  );
+  const pattern = new RegExp(`(?:${prefixGroup})\\s+(${dottedName})`, "gi");
 
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(sql)) !== null) {
@@ -130,12 +127,10 @@ export function extractTableNames(sql: string): string[] {
  * DESCRIBE DETAIL — table physical details (partitioning, clustering, size).
  */
 async function fetchDescribeDetail(
-  tableName: string
+  tableName: string,
 ): Promise<{ detail: TableDetail | null; error: string | null }> {
   try {
-    const result = await executeQuery<Record<string, unknown>>(
-      `DESCRIBE DETAIL ${tableName}`
-    );
+    const result = await executeQuery<Record<string, unknown>>(`DESCRIBE DETAIL ${tableName}`);
 
     if (result.rows.length === 0) {
       return { detail: null, error: "DESCRIBE DETAIL returned no rows" };
@@ -165,9 +160,7 @@ async function fetchDescribeDetail(
     // Parse properties map
     const parseProps = (val: unknown): Record<string, string> => {
       if (typeof val === "object" && val !== null && !Array.isArray(val)) {
-        return Object.fromEntries(
-          Object.entries(val).map(([k, v]) => [k, String(v)])
-        );
+        return Object.fromEntries(Object.entries(val).map(([k, v]) => [k, String(v)]));
       }
       if (typeof val === "string") {
         try {
@@ -183,9 +176,7 @@ async function fetchDescribeDetail(
     // Managed tables in Unity Catalog store data under the metastore's managed storage.
     // External tables have explicit cloud storage paths.
     const EXTERNAL_PREFIXES = ["s3://", "abfss://", "gs://", "wasbs://", "adl://"];
-    const isManaged = location
-      ? !EXTERNAL_PREFIXES.some((p) => location.startsWith(p))
-      : true; // No location = likely managed
+    const isManaged = location ? !EXTERNAL_PREFIXES.some((p) => location.startsWith(p)) : true; // No location = likely managed
 
     return {
       detail: {
@@ -213,13 +204,11 @@ async function fetchDescribeDetail(
  * INFORMATION_SCHEMA.COLUMNS — column names, types, nullability.
  */
 async function fetchColumns(
-  tableName: string
+  tableName: string,
 ): Promise<{ columns: ColumnInfo[] | null; error: string | null }> {
   try {
     // Parse the table name into parts
-    const parts = tableName
-      .split(".")
-      .map((p) => p.replace(/`/g, "").trim());
+    const parts = tableName.split(".").map((p) => p.replace(/`/g, "").trim());
 
     if (parts.length < 2) {
       return { columns: null, error: "Need at least schema.table" };
@@ -237,9 +226,7 @@ async function fetchColumns(
       catalog = "";
     }
 
-    const catalogFilter = catalog
-      ? `AND table_catalog = '${escapeIdentifierPart(catalog)}'`
-      : "";
+    const catalogFilter = catalog ? `AND table_catalog = '${escapeIdentifierPart(catalog)}'` : "";
 
     const sql = `
       SELECT
@@ -278,8 +265,7 @@ async function fetchColumns(
         ordinalPosition: Number(r.ordinal_position) || 0,
         comment: r.comment ?? null,
         isPartitionColumn:
-          r.partition_ordinal_position != null &&
-          Number(r.partition_ordinal_position) > 0,
+          r.partition_ordinal_position != null && Number(r.partition_ordinal_position) > 0,
       })),
       error: null,
     };
@@ -295,11 +281,11 @@ async function fetchColumns(
  * DESCRIBE TABLE EXTENDED ... AS JSON — full definition for metric views.
  */
 async function fetchExtendedDescription(
-  tableName: string
+  tableName: string,
 ): Promise<{ description: string | null; isMetricView: boolean; error: string | null }> {
   try {
     const result = await executeQuery<Record<string, unknown>>(
-      `DESCRIBE TABLE EXTENDED ${tableName} AS JSON`
+      `DESCRIBE TABLE EXTENDED ${tableName} AS JSON`,
     );
 
     if (result.rows.length === 0) {
@@ -334,7 +320,7 @@ async function fetchExtendedDescription(
  * Only works on Delta tables. Fails gracefully for views/external tables.
  */
 async function fetchMaintenanceHistory(
-  tableName: string
+  tableName: string,
 ): Promise<{ history: MaintenanceHistory | null; error: string | null }> {
   try {
     const sql = `
@@ -454,9 +440,7 @@ async function fetchTableMetadata(tableName: string): Promise<TableMetadata> {
  * Extract table names from SQL and fetch metadata for each in parallel.
  * This is the main entry point — call before building the AI prompt.
  */
-export async function fetchAllTableMetadata(
-  sql: string
-): Promise<TableMetadata[]> {
+export async function fetchAllTableMetadata(sql: string): Promise<TableMetadata[]> {
   const tableNames = extractTableNames(sql);
 
   if (tableNames.length === 0) {
@@ -468,9 +452,7 @@ export async function fetchAllTableMetadata(
 
   console.log(`[table-metadata] Fetching metadata for: ${capped.join(", ")}`);
 
-  const results = await Promise.all(
-    capped.map((name) => fetchTableMetadata(name))
-  );
+  const results = await Promise.all(capped.map((name) => fetchTableMetadata(name)));
 
   // Log summary
   for (const r of results) {
@@ -512,7 +494,7 @@ const triageSummaryCache = new Map<string, TableSummaryForTriage>();
  * Uses an in-memory cache to avoid repeated calls.
  */
 async function fetchTableSummaryForTriage(
-  tableName: string
+  tableName: string,
 ): Promise<TableSummaryForTriage | null> {
   const cached = triageSummaryCache.get(tableName);
   if (cached) return cached;
@@ -548,7 +530,7 @@ async function fetchTableSummaryForTriage(
  * Returns a Map of tableName → TableSummaryForTriage.
  */
 export async function fetchTriageTableContext(
-  sqlTexts: string[]
+  sqlTexts: string[],
 ): Promise<Map<string, TableSummaryForTriage>> {
   // Extract and deduplicate table names across all SQL texts
   const allTables = new Set<string>();
@@ -564,12 +546,10 @@ export async function fetchTriageTableContext(
   const capped = [...allTables].slice(0, 10);
 
   console.log(
-    `[triage-metadata] Fetching lightweight metadata for ${capped.length} tables: ${capped.join(", ")}`
+    `[triage-metadata] Fetching lightweight metadata for ${capped.length} tables: ${capped.join(", ")}`,
   );
 
-  const results = await Promise.allSettled(
-    capped.map((name) => fetchTableSummaryForTriage(name))
-  );
+  const results = await Promise.allSettled(capped.map((name) => fetchTableSummaryForTriage(name)));
 
   const map = new Map<string, TableSummaryForTriage>();
   for (let i = 0; i < capped.length; i++) {
@@ -579,9 +559,7 @@ export async function fetchTriageTableContext(
     }
   }
 
-  console.log(
-    `[triage-metadata] Got metadata for ${map.size}/${capped.length} tables`
-  );
+  console.log(`[triage-metadata] Got metadata for ${map.size}/${capped.length} tables`);
 
   return map;
 }
@@ -590,9 +568,7 @@ export async function fetchTriageTableContext(
  * Format triage table context into a compact string for the prompt.
  * One line per table with key details.
  */
-export function formatTriageTableContext(
-  tables: Map<string, TableSummaryForTriage>
-): string {
+export function formatTriageTableContext(tables: Map<string, TableSummaryForTriage>): string {
   if (tables.size === 0) return "";
 
   const lines: string[] = [];

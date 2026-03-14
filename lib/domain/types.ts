@@ -59,12 +59,7 @@ export interface WarehouseActivity {
 }
 
 /** Color mode options for the query timeline */
-export type TimelineColorMode =
-  | "status"
-  | "source"
-  | "user"
-  | "bytes"
-  | "spill";
+export type TimelineColorMode = "status" | "source" | "user" | "bytes" | "spill";
 
 // ── Core domain types ──────────────────────────────────────────────
 
@@ -215,13 +210,7 @@ export interface Candidate {
     queryTag: string | null;
   };
   tags: string[];
-  status:
-    | "NEW"
-    | "WATCHING"
-    | "DISMISSED"
-    | "DRAFTED"
-    | "VALIDATED"
-    | "APPROVED";
+  status: "NEW" | "WATCHING" | "DISMISSED" | "DRAFTED" | "VALIDATED" | "APPROVED";
 }
 
 /* ── Unified Insight Record ──────────────────────────────────────── */
@@ -236,10 +225,10 @@ export type InsightTargetSurface = "query" | "table" | "compute" | "cloud_storag
  * Source of the insight — how it was detected.
  */
 export type InsightSource =
-  | "builtin_rule"      // Our deterministic rule-based detection
-  | "ai_triage"         // AI-generated triage insight
-  | "ai_deep_analysis"  // AI-generated deep analysis
-  | "system_table";     // Future: system.query.performance_insights
+  | "builtin_rule" // Our deterministic rule-based detection
+  | "ai_triage" // AI-generated triage insight
+  | "ai_deep_analysis" // AI-generated deep analysis
+  | "system_table"; // Future: system.query.performance_insights
 
 /**
  * Unified insight record that can be populated by either

@@ -1,9 +1,6 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { WarehouseCost } from "@/lib/domain/types";
-import {
-  validateIdentifier,
-  validateTimestamp,
-} from "@/lib/validation";
+import { validateIdentifier, validateTimestamp } from "@/lib/validation";
 
 export interface GetWarehouseCostsParams {
   startTime: string; // ISO timestamp
@@ -24,9 +21,7 @@ export interface GetWarehouseCostsParams {
  *   2. Price lookup — gets effective price per SKU valid at the midpoint
  *      of the window (prices rarely change within a short time window)
  */
-export async function getWarehouseCosts(
-  params: GetWarehouseCostsParams
-): Promise<WarehouseCost[]> {
+export async function getWarehouseCosts(params: GetWarehouseCostsParams): Promise<WarehouseCost[]> {
   const { startTime, endTime, warehouseId } = params;
 
   const validStart = validateTimestamp(startTime, "startTime");
@@ -41,8 +36,7 @@ export async function getWarehouseCosts(
   const endDate = validEnd.slice(0, 10);
 
   // Midpoint of the time window — used to pick the effective price
-  const midpointMs =
-    (new Date(validStart).getTime() + new Date(validEnd).getTime()) / 2;
+  const midpointMs = (new Date(validStart).getTime() + new Date(validEnd).getTime()) / 2;
   const midpoint = new Date(midpointMs).toISOString();
 
   // ── Query 1: DBU totals per warehouse + SKU ──

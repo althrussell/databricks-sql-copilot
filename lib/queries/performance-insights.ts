@@ -137,7 +137,7 @@ export function flagToInsightRecord(
     fingerprint?: string;
     statementId?: string;
     warehouseId?: string;
-  } = {}
+  } = {},
 ): InsightRecord {
   const mapping = FLAG_INSIGHT_MAP[flag.flag] ?? {
     insightType: flag.label,
@@ -150,9 +150,7 @@ export function flagToInsightRecord(
     source: "builtin_rule" as InsightSource,
     insightType: mapping.insightType,
     targetSurface: mapping.targetSurface,
-    targetName: mapping.targetSurface === "compute"
-      ? (context.warehouseId ?? "unknown")
-      : "query",
+    targetName: mapping.targetSurface === "compute" ? (context.warehouseId ?? "unknown") : "query",
     recommendation: flag.detail,
     detail: flag.detail,
     estimatedImpactPct: flag.estimatedImpactPct ?? null,
@@ -174,7 +172,7 @@ export function flagsToInsightRecords(
     fingerprint?: string;
     statementId?: string;
     warehouseId?: string;
-  } = {}
+  } = {},
 ): InsightRecord[] {
   return flags.map((f) => flagToInsightRecord(f, context));
 }
@@ -252,21 +250,17 @@ export function flagsToInsightRecords(
  */
 export function mergeInsights(
   builtinInsights: InsightRecord[],
-  systemTableInsights: InsightRecord[] = []
+  systemTableInsights: InsightRecord[] = [],
 ): InsightRecord[] {
   if (systemTableInsights.length === 0) return builtinInsights;
 
   // System table insights override builtin for the same insight type
   const systemTypes = new Set(systemTableInsights.map((i) => i.insightType));
-  const filtered = builtinInsights.filter(
-    (i) => !systemTypes.has(i.insightType)
-  );
+  const filtered = builtinInsights.filter((i) => !systemTypes.has(i.insightType));
 
   // Combine and sort by impact descending
   const merged = [...systemTableInsights, ...filtered];
-  merged.sort(
-    (a, b) => (b.estimatedImpactPct ?? 0) - (a.estimatedImpactPct ?? 0)
-  );
+  merged.sort((a, b) => (b.estimatedImpactPct ?? 0) - (a.estimatedImpactPct ?? 0));
 
   return merged;
 }

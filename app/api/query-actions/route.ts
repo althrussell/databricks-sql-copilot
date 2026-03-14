@@ -16,7 +16,10 @@ export async function GET() {
   try {
     const actions = await getQueryActions();
     // Convert Map to plain object for JSON serialisation
-    const obj: Record<string, { action: string; note: string | null; actedBy: string | null; actedAt: string }> = {};
+    const obj: Record<
+      string,
+      { action: string; note: string | null; actedBy: string | null; actedAt: string }
+    > = {};
     for (const [fp, act] of actions) {
       obj[fp] = {
         action: act.action,
@@ -49,7 +52,7 @@ export async function POST(request: Request) {
     if (!action || !VALID_ACTIONS.includes(action)) {
       return NextResponse.json(
         { error: `action must be one of: ${VALID_ACTIONS.join(", ")}` },
-        { status: 400 }
+        { status: 400 },
       );
     }
 

@@ -95,17 +95,26 @@ const AGG_PATTERN = /\b(GROUP\s+BY|SUM\s*\(|COUNT\s*\(|AVG\s*\(|MIN\s*\(|MAX\s*\
 export function computeFlags(
   candidate: Candidate,
   thresholds: FlagThresholds = DEFAULT_THRESHOLDS,
-  tableContext?: FlagTableContext
+  tableContext?: FlagTableContext,
 ): FlagResult[] {
   const flags: FlagResult[] = [];
   const ws = candidate.windowStats;
 
-  const totalTaskTimeMs = ws.avgCompilationMs + ws.avgQueueWaitMs + ws.avgComputeWaitMs + ws.avgExecutionMs + ws.avgFetchMs;
+  const totalTaskTimeMs =
+    ws.avgCompilationMs +
+    ws.avgQueueWaitMs +
+    ws.avgComputeWaitMs +
+    ws.avgExecutionMs +
+    ws.avgFetchMs;
 
   // Gather table metadata for enrichment
   const tables = tableContext?.tables;
-  const hasClusteredTable = tables ? [...tables.values()].some(t => t.clusteringColumns.length > 0) : false;
-  const hasPredOptEnabled = tables ? [...tables.values()].some(t => t.predictiveOptEnabled) : false;
+  const hasClusteredTable = tables
+    ? [...tables.values()].some((t) => t.clusteringColumns.length > 0)
+    : false;
+  const hasPredOptEnabled = tables
+    ? [...tables.values()].some((t) => t.predictiveOptEnabled)
+    : false;
 
   if (ws.p95Ms > thresholds.longRunningMs) {
     flags.push({
@@ -113,9 +122,10 @@ export function computeFlags(
       label: "Long Running",
       severity: ws.p95Ms > thresholds.longRunningMs * 3 ? "critical" : "warning",
       detail: `P95 latency ${(ws.p95Ms / 1000).toFixed(1)}s exceeds ${(thresholds.longRunningMs / 1000).toFixed(0)}s threshold`,
-      estimatedImpactPct: totalTaskTimeMs > 0
-        ? Math.min(100, Math.round(((ws.p95Ms - thresholds.longRunningMs) / ws.p95Ms) * 100))
-        : undefined,
+      estimatedImpactPct:
+        totalTaskTimeMs > 0
+          ? Math.min(100, Math.round(((ws.p95Ms - thresholds.longRunningMs) / ws.p95Ms) * 100))
+          : undefined,
     });
   }
 
@@ -128,8 +138,8 @@ export function computeFlags(
     // Enrich with table size context
     if (tables) {
       const tableSizes = [...tables.values()]
-        .filter(t => t.sizeInBytes != null)
-        .map(t => ({ name: t.tableName, size: t.sizeInBytes! }));
+        .filter((t) => t.sizeInBytes != null)
+        .map((t) => ({ name: t.tableName, size: t.sizeInBytes! }));
       if (tableSizes.length > 0) {
         const totalTableSize = tableSizes.reduce((s, t) => s + t.size, 0);
         spillDetail += `. Tables total ${formatSize(totalTableSize)}`;
@@ -167,10 +177,7 @@ export function computeFlags(
     });
   }
 
-  if (
-    ws.avgPruningEfficiency < thresholds.lowPruningPct &&
-    ws.totalReadRows > 0
-  ) {
+  if (ws.avgPruningEfficiency < thresholds.lowPruningPct && ws.totalReadRows > 0) {
     const pruneImpact = Math.round((1 - ws.avgPruningEfficiency) * 100);
     let pruneDetail = `Pruning efficiency ${(ws.avgPruningEfficiency * 100).toFixed(0)}% (threshold: ${(thresholds.lowPruningPct * 100).toFixed(0)}%)`;
 
@@ -194,9 +201,8 @@ export function computeFlags(
   }
 
   if (ws.avgQueueWaitMs > thresholds.highQueueWaitMs) {
-    const queueImpact = totalTaskTimeMs > 0
-      ? Math.round((ws.avgQueueWaitMs / totalTaskTimeMs) * 100)
-      : undefined;
+    const queueImpact =
+      totalTaskTimeMs > 0 ? Math.round((ws.avgQueueWaitMs / totalTaskTimeMs) * 100) : undefined;
     flags.push({
       flag: "HighQueueTime",
       label: "Queued",
@@ -207,9 +213,8 @@ export function computeFlags(
   }
 
   if (ws.avgCompilationMs > thresholds.highCompileMs) {
-    const compileImpact = totalTaskTimeMs > 0
-      ? Math.round((ws.avgCompilationMs / totalTaskTimeMs) * 100)
-      : undefined;
+    const compileImpact =
+      totalTaskTimeMs > 0 ? Math.round((ws.avgCompilationMs / totalTaskTimeMs) * 100) : undefined;
     let compileDetail = `Avg ${(ws.avgCompilationMs / 1000).toFixed(1)}s compile time`;
 
     // Add ANALYZE TABLE recommendation for compilation-heavy queries
@@ -309,9 +314,8 @@ export function computeFlags(
     ws.avgQueueWaitMs / ws.avgExecutionMs > thresholds.highQueueRatioPct
   ) {
     const pct = Math.round((ws.avgQueueWaitMs / ws.avgExecutionMs) * 100);
-    const queueRatioImpact = totalTaskTimeMs > 0
-      ? Math.round((ws.avgQueueWaitMs / totalTaskTimeMs) * 100)
-      : pct;
+    const queueRatioImpact =
+      totalTaskTimeMs > 0 ? Math.round((ws.avgQueueWaitMs / totalTaskTimeMs) * 100) : pct;
     flags.push({
       flag: "HighQueueRatio",
       label: "Queue Dominated",
@@ -327,7 +331,10 @@ export function computeFlags(
     ws.cacheHitRate < thresholds.coldQueryCacheHitPct &&
     ws.avgIoCachePercent < thresholds.coldQueryIoCachePct
   ) {
-    const coldImpact = Math.min(80, Math.round((1 - ws.cacheHitRate) * (100 - ws.avgIoCachePercent)));
+    const coldImpact = Math.min(
+      80,
+      Math.round((1 - ws.cacheHitRate) * (100 - ws.avgIoCachePercent)),
+    );
     let coldDetail = `Result cache ${(ws.cacheHitRate * 100).toFixed(0)}%, IO cache ${ws.avgIoCachePercent.toFixed(0)}% — query never benefits from caching. Table may need OPTIMIZE or Liquid Clustering`;
 
     // Enrich with Predictive Optimization recommendation
@@ -353,9 +360,8 @@ export function computeFlags(
       ws.avgCompilationMs > 1_000
     ) {
       const pct = Math.round((ws.avgCompilationMs / totalCompileExec) * 100);
-      const compileHeavyImpact = totalTaskTimeMs > 0
-        ? Math.round((ws.avgCompilationMs / totalTaskTimeMs) * 100)
-        : pct;
+      const compileHeavyImpact =
+        totalTaskTimeMs > 0 ? Math.round((ws.avgCompilationMs / totalTaskTimeMs) * 100) : pct;
       flags.push({
         flag: "CompilationHeavy",
         label: "Compilation Heavy",
@@ -399,7 +405,7 @@ const MIN_IMPACT_PCT = 10;
  */
 export function filterAndRankFlags(
   flags: FlagResult[],
-  minImpactPct: number = MIN_IMPACT_PCT
+  minImpactPct: number = MIN_IMPACT_PCT,
 ): FlagResult[] {
   const measured: FlagResult[] = [];
   const unmeasured: FlagResult[] = [];

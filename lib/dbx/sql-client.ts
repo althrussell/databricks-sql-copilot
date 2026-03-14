@@ -170,7 +170,7 @@ export interface QueryResult<T = Record<string, unknown>> {
  */
 export async function executeQuery<T = Record<string, unknown>>(
   sql: string,
-  options: { maxRows?: number } = {}
+  options: { maxRows?: number } = {},
 ): Promise<QueryResult<T>> {
   const oboToken = await getOboToken();
   return executeQueryInner<T>(sql, options, false, oboToken);
@@ -209,7 +209,7 @@ async function executeQueryInner<T>(
 
     if (truncated) {
       console.warn(
-        `[sql-client] Result truncated at ${maxRows} rows — query may have more results`
+        `[sql-client] Result truncated at ${maxRows} rows — query may have more results`,
       );
     }
 
@@ -218,14 +218,13 @@ async function executeQueryInner<T>(
     if (!isRetry && !oboToken && ownsSession && isAuthError(error)) {
       console.warn(
         "[sql-client] Auth error detected, rotating client and retrying:",
-        error instanceof Error ? error.message : String(error)
+        error instanceof Error ? error.message : String(error),
       );
       resetClient();
       return executeQueryInner<T>(sql, options, true, oboToken);
     }
 
-    const message =
-      error instanceof Error ? error.message : "Unknown SQL execution error";
+    const message = error instanceof Error ? error.message : "Unknown SQL execution error";
     throw new Error(`Databricks SQL query failed: ${message}`);
   } finally {
     if (operation) {

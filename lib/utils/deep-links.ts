@@ -34,7 +34,7 @@ export type DeepLinkType =
 export function buildDeepLink(
   type: DeepLinkType,
   id: string | null | undefined,
-  extras?: { queryStartTimeMs?: number }
+  extras?: { queryStartTimeMs?: number },
 ): string | null {
   if (!id) return null;
   const base = getWorkspaceUrl();
@@ -74,18 +74,13 @@ export function buildDeepLink(
  * Returns the first matching source link, or null.
  */
 export function buildSourceLink(source: QuerySource): string | null {
-  if (source.dashboardId)
-    return buildDeepLink("dashboard", source.dashboardId);
-  if (source.legacyDashboardId)
-    return buildDeepLink("legacy-dashboard", source.legacyDashboardId);
+  if (source.dashboardId) return buildDeepLink("dashboard", source.dashboardId);
+  if (source.legacyDashboardId) return buildDeepLink("legacy-dashboard", source.legacyDashboardId);
   if (source.jobId) return buildDeepLink("job", source.jobId);
-  if (source.notebookId)
-    return buildDeepLink("notebook", source.notebookId);
+  if (source.notebookId) return buildDeepLink("notebook", source.notebookId);
   if (source.alertId) return buildDeepLink("alert", source.alertId);
-  if (source.sqlQueryId)
-    return buildDeepLink("sql-query", source.sqlQueryId);
-  if (source.genieSpaceId)
-    return buildDeepLink("genie", source.genieSpaceId);
+  if (source.sqlQueryId) return buildDeepLink("sql-query", source.sqlQueryId);
+  if (source.genieSpaceId) return buildDeepLink("genie", source.genieSpaceId);
   return null;
 }
 

@@ -1,9 +1,6 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { WarehouseActivity } from "@/lib/domain/types";
-import {
-  validateIdentifier,
-  validateTimestamp,
-} from "@/lib/validation";
+import { validateIdentifier, validateTimestamp } from "@/lib/validation";
 
 /**
  * Raw row from the time-bucketed activity query.
@@ -27,12 +24,7 @@ export async function getWarehouseActivityBuckets(params: {
   warehouseId?: string;
   bucketIntervalMinutes?: number;
 }): Promise<WarehouseActivity[]> {
-  const {
-    startTime,
-    endTime,
-    warehouseId,
-    bucketIntervalMinutes = 60,
-  } = params;
+  const { startTime, endTime, warehouseId, bucketIntervalMinutes = 60 } = params;
 
   const validStart = validateTimestamp(startTime, "startTime");
   const validEnd = validateTimestamp(endTime, "endTime");

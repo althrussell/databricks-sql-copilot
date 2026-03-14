@@ -77,10 +77,7 @@ async function QueryDetailLoader({
   const catchAndLog =
     <T,>(label: string, fallback: T) =>
     (err: unknown) => {
-      console.error(
-        `[${label}] fetch failed:`,
-        err instanceof Error ? err.message : err
-      );
+      console.error(`[${label}] fetch failed:`, err instanceof Error ? err.message : err);
       return fallback;
     };
 
@@ -92,7 +89,7 @@ async function QueryDetailLoader({
       warehouseId,
     }),
     getWarehouseCosts({ startTime: start, endTime: end }).catch(
-      catchAndLog("costs", [] as WarehouseCost[])
+      catchAndLog("costs", [] as WarehouseCost[]),
     ),
   ]);
 

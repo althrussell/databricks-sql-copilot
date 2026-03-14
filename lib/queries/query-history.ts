@@ -1,10 +1,6 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { QueryRun, QuerySource, QueryOrigin } from "@/lib/domain/types";
-import {
-  validateIdentifier,
-  validateTimestamp,
-  validateLimit,
-} from "@/lib/validation";
+import { validateIdentifier, validateTimestamp, validateLimit } from "@/lib/validation";
 
 export interface ListRecentQueriesParams {
   /** Optional — if omitted, queries from ALL warehouses are returned */
@@ -79,9 +75,7 @@ interface WorkspaceRow {
  *   - status column is execution_status
  *   - query_source is a struct with nested fields
  */
-export async function listRecentQueries(
-  params: ListRecentQueriesParams
-): Promise<QueryRun[]> {
+export async function listRecentQueries(params: ListRecentQueriesParams): Promise<QueryRun[]> {
   const { warehouseId, startTime, endTime, limit = 500 } = params;
 
   const validStart = validateTimestamp(startTime, "startTime");
@@ -163,7 +157,7 @@ export async function listRecentQueries(
 async function fetchWorkspaceLookup(): Promise<Map<string, WorkspaceRow>> {
   try {
     const result = await executeQuery<WorkspaceRow>(
-      `SELECT workspace_id, workspace_name, workspace_url FROM system.access.workspaces_latest`
+      `SELECT workspace_id, workspace_name, workspace_url FROM system.access.workspaces_latest`,
     );
     const map = new Map<string, WorkspaceRow>();
     for (const row of result.rows) {
@@ -173,7 +167,7 @@ async function fetchWorkspaceLookup(): Promise<Map<string, WorkspaceRow>> {
   } catch (err) {
     console.warn(
       "[query-history] workspace enrichment unavailable (user may lack SELECT on system.access.workspaces_latest):",
-      err instanceof Error ? err.message : String(err)
+      err instanceof Error ? err.message : String(err),
     );
     return new Map();
   }
