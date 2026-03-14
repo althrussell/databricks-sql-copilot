@@ -122,20 +122,17 @@ function DurationTrendChart({ data }: { data: JobDurationPoint[] }) {
   }
 
   const W = 600,
-    H = 140,
-    PAD = { top: 12, right: 16, bottom: 24, left: 52 };
+    H = 120,
+    PAD = { top: 8, right: 16, bottom: 24, left: 48 };
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
 
-  // Use robust max: clip outliers by using the p90 of all values × 1.2
-  // so one extreme run doesn't flatten the entire chart.
-  const allVals = data
-    .flatMap((d) => [d.p95Seconds, d.p50Seconds])
-    .filter((v) => v > 0)
-    .sort((a, b) => a - b);
-  const rawMax = Math.max(...allVals, 1);
-  const p90Idx = Math.min(Math.floor(allVals.length * 0.9), allVals.length - 1);
-  const robustMax = allVals.length > 3 ? allVals[p90Idx] * 1.3 : rawMax;
+  // Robust Y-axis: use p90 of all values * 1.3 to prevent one outlier
+  // from flattening the rest of the chart.
+  const allVals = data.flatMap((d) => [d.p95Seconds, d.p50Seconds]).filter((v) => v > 0);
+  const sorted = [...allVals].sort((a, b) => a - b);
+  const p90Idx = Math.floor(sorted.length * 0.9);
+  const robustMax = sorted.length > 0 ? sorted[Math.min(p90Idx, sorted.length - 1)] * 1.3 : 1;
   const maxVal = Math.max(robustMax, 1);
 
   const toX = (i: number) => PAD.left + (i / (data.length - 1)) * innerW;
@@ -147,6 +144,12 @@ function DurationTrendChart({ data }: { data: JobDurationPoint[] }) {
   const p50Path = data
     .map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.p50Seconds).toFixed(1)}`)
     .join(" ");
+
+  // Area fill under p95 line
+  const p95Area =
+    p95Path +
+    ` L${toX(data.length - 1).toFixed(1)},${(PAD.top + innerH).toFixed(1)}` +
+    ` L${toX(0).toFixed(1)},${(PAD.top + innerH).toFixed(1)} Z`;
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((t) => ({ pct: t, val: maxVal * t }));
 
@@ -178,46 +181,19 @@ function DurationTrendChart({ data }: { data: JobDurationPoint[] }) {
         ))}
 
         {/* p95 area fill */}
+        <path d={p95Area} fill="#f97316" opacity={0.12} />
+        {/* p95 line — orange */}
+        <path d={p95Path} fill="none" stroke="#f97316" strokeWidth={2} opacity={0.9} />
+        {/* p50 line — cyan */}
         <path
-          d={`${p95Path} L${toX(data.length - 1).toFixed(1)},${(PAD.top + innerH).toFixed(1)} L${toX(0).toFixed(1)},${(PAD.top + innerH).toFixed(1)} Z`}
-          fill="#f97316"
-          opacity={0.12}
+          d={p50Path}
+          fill="none"
+          stroke="#22d3ee"
+          strokeWidth={1.5}
+          strokeDasharray="4,3"
+          opacity={0.7}
         />
-        {/* p95 line — bright orange, high contrast on dark */}
-        <path d={p95Path} fill="none" stroke="#f97316" strokeWidth={2.5} />
-        {/* p50 line — cyan, distinct from p95 */}
-        <path d={p50Path} fill="none" stroke="#22d3ee" strokeWidth={2} strokeDasharray="5,3" />
 
-        {/* Always-visible p95 data point dots */}
-        {data.map((d, i) => (
-          <Tooltip key={i}>
-            <TooltipTrigger asChild>
-              <circle
-                cx={toX(i)}
-                cy={toY(d.p95Seconds)}
-                r={4}
-                fill="#f97316"
-                className="cursor-pointer"
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="text-xs font-medium">{new Date(d.date).toLocaleDateString()}</p>
-              <p className="text-xs">
-                <span className="text-orange-400">p95:</span> {formatDuration(d.p95Seconds)}
-              </p>
-              <p className="text-xs">
-                <span className="text-cyan-400">p50:</span> {formatDuration(d.p50Seconds)}
-              </p>
-              <p className="text-xs text-muted-foreground">{d.totalRuns} runs</p>
-            </TooltipContent>
-          </Tooltip>
-        ))}
-        {/* Always-visible p50 data point dots */}
-        {data.map((d, i) => (
-          <circle key={`p50-${i}`} cx={toX(i)} cy={toY(d.p50Seconds)} r={3} fill="#22d3ee" />
-        ))}
-
-        {/* X-axis labels */}
         {data.map((d, i) => {
           const skip = data.length > 14 ? Math.ceil(data.length / 7) : 1;
           if (i % skip !== 0 && i !== data.length - 1) return null;
@@ -235,6 +211,40 @@ function DurationTrendChart({ data }: { data: JobDurationPoint[] }) {
             </text>
           );
         })}
+
+        {/* p50 dots — always visible */}
+        {data.map((d, i) => (
+          <circle
+            key={`p50-${i}`}
+            cx={toX(i)}
+            cy={toY(d.p50Seconds)}
+            r={2.5}
+            fill="#22d3ee"
+            opacity={0.4}
+          />
+        ))}
+
+        {/* p95 dots — always visible, with tooltip */}
+        {data.map((d, i) => (
+          <Tooltip key={`p95-${i}`}>
+            <TooltipTrigger asChild>
+              <circle
+                cx={toX(i)}
+                cy={toY(d.p95Seconds)}
+                r={3.5}
+                fill="#f97316"
+                opacity={0.8}
+                className="cursor-pointer hover:opacity-100"
+              />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs font-medium">{new Date(d.date).toLocaleDateString()}</p>
+              <p className="text-xs">p95: {formatDuration(d.p95Seconds)}</p>
+              <p className="text-xs">p50: {formatDuration(d.p50Seconds)}</p>
+              <p className="text-xs text-muted-foreground">{d.totalRuns} runs</p>
+            </TooltipContent>
+          </Tooltip>
+        ))}
       </svg>
       <div className="flex items-center gap-4 mt-1">
         <div className="flex items-center gap-1.5">
@@ -248,9 +258,6 @@ function DurationTrendChart({ data }: { data: JobDurationPoint[] }) {
           />
           <span className="text-[10px] text-muted-foreground">p50</span>
         </div>
-        <span className="text-[10px] text-muted-foreground ml-auto">
-          {data.reduce((s, d) => s + d.totalRuns, 0)} total runs across {data.length} days
-        </span>
       </div>
     </div>
   );
@@ -283,12 +290,13 @@ function PhaseBreakdown({ phase }: { phase: JobRunPhaseStats }) {
     },
   ].filter((s) => s.seconds > 0);
 
-  if (segments.length === 0)
+  if (segments.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
         No phase-level timing data available for this job.
       </p>
     );
+  }
 
   return (
     <div className="space-y-2">

@@ -1,14 +1,13 @@
 import { Suspense } from "react";
 import Link from "next/link";
-
 import { listRecentQueries } from "@/lib/queries/query-history";
 import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2 } from "lucide-react";
-import type { QueryRun, WarehouseCost } from "@/lib/domain/types";
+import type { WarehouseCost, QueryRun } from "@/lib/domain/types";
 import { QueryDetailClient } from "./query-detail-client";
 
 export const revalidate = 300; // cache for 5 minutes
@@ -114,11 +113,11 @@ async function QueryDetailLoader({
     };
 
   let queryResult: QueryRun[] = [];
-  let queryError: string | null = null;
   let costResult: WarehouseCost[] = [];
+  let queryError: string | null = null;
 
   try {
-    const [qr, cr] = await Promise.all([
+    [queryResult, costResult] = await Promise.all([
       listRecentQueries({
         startTime: start,
         endTime: end,
@@ -129,17 +128,15 @@ async function QueryDetailLoader({
         catchAndLog("costs", [] as WarehouseCost[]),
       ),
     ]);
-    queryResult = qr;
-    costResult = cr;
   } catch (err) {
     queryError = err instanceof Error ? err.message : String(err);
-    console.error("[query-detail] Initial query failed:", queryError);
+    console.error("[query-detail] fetch failed:", queryError);
   }
 
   let candidates = buildCandidates(queryResult, costResult);
   let candidate = candidates.find((c) => c.fingerprint === fingerprint);
 
-  // Fallback: if the fingerprint is not in the selected range, broaden lookup
+  // Fallback: broaden to 24h if fingerprint not in the selected range
   if (!candidate && !queryError) {
     const fallbackStart = new Date(new Date(end).getTime() - 24 * 60 * 60 * 1000).toISOString();
     const [fallbackQueries, fallbackCosts] = await Promise.all([
@@ -148,7 +145,7 @@ async function QueryDetailLoader({
         endTime: end,
         limit: 5000,
         warehouseId,
-      }).catch(catchAndLog("queries_fallback", [])),
+      }).catch(catchAndLog("queries_fallback", [] as QueryRun[])),
       getWarehouseCosts({ startTime: fallbackStart, endTime: end }).catch(
         catchAndLog("costs_fallback", [] as WarehouseCost[]),
       ),
@@ -160,47 +157,30 @@ async function QueryDetailLoader({
   if (!candidate) {
     const sampleFingerprints = candidates.slice(0, 5).map((c) => c.fingerprint);
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-destructive">Query Not Found</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {queryError && (
-            <div className="p-3 rounded bg-destructive/10 text-destructive">
-              <p className="font-medium">SQL Error:</p>
-              <p className="font-mono text-xs mt-1">{queryError}</p>
-            </div>
-          )}
-          <p>
-            <span className="font-medium">Fingerprint:</span>{" "}
-            <code className="text-xs">{fingerprint}</code>
-          </p>
-          <p>
-            <span className="font-medium">Warehouse:</span>{" "}
-            <code className="text-xs">{warehouseId ?? "all"}</code>
-          </p>
-          <p>
-            <span className="font-medium">Time range:</span> {start} → {end}
-          </p>
-          <p>
-            <span className="font-medium">Queries found:</span> {queryResult.length}
-          </p>
-          <p>
-            <span className="font-medium">Candidates built:</span> {candidates.length}
-          </p>
-          {sampleFingerprints.length > 0 && (
-            <div>
-              <p className="font-medium">Sample fingerprints in results:</p>
-              <ul className="list-disc pl-5 mt-1 space-y-0.5">
-                {sampleFingerprints.map((fp) => (
-                  <li key={fp}>
-                    <code className="text-xs">{fp}</code>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <p className="text-muted-foreground mt-4">
+      <Card className="border-l-4 border-l-amber-500">
+        <CardContent className="py-6 space-y-3">
+          <h2 className="text-lg font-semibold">Query Not Found</h2>
+          {queryError && <p className="text-sm text-red-400">SQL Error: {queryError}</p>}
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p>
+              Fingerprint: <code className="text-xs">{fingerprint}</code>
+            </p>
+            <p>
+              Warehouse: <code className="text-xs">{warehouseId ?? "all"}</code>
+            </p>
+            <p>
+              Time range: {start} → {end}
+            </p>
+            <p>Queries found: {queryResult.length}</p>
+            <p>Candidates built: {candidates.length}</p>
+            {sampleFingerprints.length > 0 && (
+              <p>
+                Sample fingerprints in results:{" "}
+                <code className="text-xs">{sampleFingerprints.join(", ")}</code>
+              </p>
+            )}
+          </div>
+          <p className="text-sm">
             The query fingerprint from the dashboard could not be matched in the query history for
             this time window. Try returning to the dashboard and clicking the query again.
           </p>
