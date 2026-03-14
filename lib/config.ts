@@ -150,12 +150,7 @@ export function getSparkHotspotLimit(): number {
   return Math.max(5, Math.min(200, Math.floor(parsed)));
 }
 
-function parseMinutes(
-  raw: string | undefined,
-  fallback: number,
-  min: number,
-  max: number
-): number {
+function parseMinutes(raw: string | undefined, fallback: number, min: number, max: number): number {
   const parsed = raw ? Number(raw.trim()) : fallback;
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(parsed)));

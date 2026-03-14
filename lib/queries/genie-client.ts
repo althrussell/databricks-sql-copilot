@@ -19,11 +19,18 @@ async function getSpBearerToken(): Promise<string> {
   const tokenUrl = `https://${config.serverHostname}/oidc/v1/token`;
   const body = new URLSearchParams({ grant_type: "client_credentials", scope: "all-apis" });
   const credentials = btoa(`${config.auth.clientId}:${config.auth.clientSecret}`);
-  const response = await fetchWithTimeout(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${credentials}` },
-    body: body.toString(),
-  }, { timeoutMs: TIMEOUTS.AUTH });
+  const response = await fetchWithTimeout(
+    tokenUrl,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${credentials}`,
+      },
+      body: body.toString(),
+    },
+    { timeoutMs: TIMEOUTS.AUTH },
+  );
   if (!response.ok) throw new Error("Genie SP OAuth failed: " + response.status);
   const data = (await response.json()) as { access_token: string };
   return data.access_token;
@@ -37,14 +44,22 @@ export interface GenieError {
 
 function parseGenieError(status: number, body: string, context: string): GenieError {
   let parsed: { error_code?: string; message?: string } = {};
-  try { parsed = JSON.parse(body); } catch { /* raw text */ }
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    /* raw text */
+  }
 
   const errorCode = parsed.error_code ?? String(status);
   const rawMsg = parsed.message ?? body;
   const config = getConfig();
-  const spId = config.auth.mode === "oauth" ? config.auth.clientId : "your-app-service-principal-id";
+  const spId =
+    config.auth.mode === "oauth" ? config.auth.clientId : "your-app-service-principal-id";
 
-  if (status === 404 && (errorCode === "RESOURCE_DOES_NOT_EXIST" || rawMsg.includes("does not exist"))) {
+  if (
+    status === 404 &&
+    (errorCode === "RESOURCE_DOES_NOT_EXIST" || rawMsg.includes("does not exist"))
+  ) {
     return {
       code: "GENIE_SPACE_NOT_FOUND",
       message: `The Genie Space does not exist or the app's Service Principal does not have access.`,
@@ -58,8 +73,10 @@ function parseGenieError(status: number, body: string, context: string): GenieEr
   }
 
   if (status === 403) {
-    if (rawMsg.includes("not authorized to use or monitor this SQL Endpoint") || rawMsg.includes("SQL Endpoint")) {
-      const warehouseMatch = rawMsg.match(/SQL Endpoint/i);
+    if (
+      rawMsg.includes("not authorized to use or monitor this SQL Endpoint") ||
+      rawMsg.includes("SQL Endpoint")
+    ) {
       return {
         code: "WAREHOUSE_PERMISSION_DENIED",
         message: `The app's Service Principal cannot access the SQL warehouse used by this Genie Space.`,
@@ -148,12 +165,17 @@ export async function startGenieConversation(
   const config = getConfig();
   const token = await getSpBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/start-conversation`;
-  const res = await genieRequest(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ content: question }),
-    cache: "no-store",
-  }, 60000, "starting conversation");
+  const res = await genieRequest(
+    url,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content: question }),
+      cache: "no-store",
+    },
+    60000,
+    "starting conversation",
+  );
   const data = (await res.json()) as { conversation_id: string; message_id: string };
   return { conversationId: data.conversation_id, messageId: data.message_id };
 }
@@ -166,12 +188,17 @@ export async function continueGenieConversation(
   const config = getConfig();
   const token = await getSpBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/conversations/${conversationId}/messages`;
-  const res = await genieRequest(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ content: question }),
-    cache: "no-store",
-  }, 60000, "continuing conversation");
+  const res = await genieRequest(
+    url,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content: question }),
+      cache: "no-store",
+    },
+    60000,
+    "continuing conversation",
+  );
   const data = (await res.json()) as { id: string };
   return { messageId: data.id };
 }
@@ -184,11 +211,16 @@ export async function pollGenieMessage(
   const config = getConfig();
   const token = await getSpBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/conversations/${conversationId}/messages/${messageId}`;
-  const res = await genieRequest(url, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  }, 30000, "polling message");
+  const res = await genieRequest(
+    url,
+    {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    },
+    30000,
+    "polling message",
+  );
   const data = (await res.json()) as {
     id: string;
     status: string;
@@ -223,11 +255,15 @@ export async function getGenieQueryResult(
   const config = getConfig();
   const token = await getSpBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/conversations/${conversationId}/messages/${messageId}/query-result`;
-  const res = await fetchWithTimeout(url, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  }, { timeoutMs: 30000 });
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    },
+    { timeoutMs: 30000 },
+  );
   if (!res.ok) return { columns: [], rows: [] };
   const data = (await res.json()) as {
     statement_response?: {

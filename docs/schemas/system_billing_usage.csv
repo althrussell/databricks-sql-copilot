@@ -1,0 +1,19 @@
+col_name,data_type,comment
+account_id,string,ID of the account this report was generated for
+workspace_id,string,ID of the Workspace this usage was associated with
+record_id,string,Unique ID for this usage record
+sku_name,string,Name of the SKU
+cloud,string,"Cloud this usage is relevant for. Possible values are AWS, AZURE, and GCP."
+usage_start_time,timestamp,The start time relevant to this usage record. Timezone information is recorded at the end of the value with +00:00 representing UTC timezone.
+usage_end_time,timestamp,The end time relevant to this usage record. Timezone information is recorded at the end of the value with +00:00 representing UTC timezone.
+usage_date,date,"Date of the usage record, this field can be used for faster aggregation by date"
+custom_tags,"map<string,string>",Tags applied by the users to this usage. Includes compute resource tags and jobs tags.
+usage_unit,string,Unit this usage is measured in. Possible values include DBUs.
+usage_quantity,"decimal(38,18)",Number of units consumed for this record.
+usage_metadata,"struct<cluster_id:string,job_id:string,warehouse_id:string,instance_pool_id:string,node_type:string,job_run_id:string,notebook_id:string,dlt_pipeline_id:string,endpoint_name:string,endpoint_id:string,dlt_update_id:string,dlt_maintenance_id:string,run_name:string,job_name:string,notebook_path:string,central_clean_room_id:string,source_region:string,destination_region:string,app_id:string,app_name:string,metastore_id:string,private_endpoint_name:string,storage_api_type:string,budget_policy_id:string,ai_runtime_pool_id:string,... 16 more fields>","System-provided metadata about the usage, including IDs for compute resources and jobs (if applicable). See [Analyze usage metadata](https://docs.databricks.com/en/admin/system-tables/billing.html#usage-metadata)."
+identity_metadata,"struct<run_as:string,created_by:string,owned_by:string>",System-provided metadata about the identities involved in the usage. See [Analyze identity metadata](https://docs.databricks.com/en/admin/system-tables/billing.html#identity-metadata).
+record_type,string,"Whether the record is original, a retraction, or a restatement. The value is ORIGINAL unless the record is related to a correction. See [Analyze correction records](https://docs.databricks.com/en/admin/system-tables/billing.html#record-type)."
+ingestion_date,date,Date the record was ingested into the usage table.
+billing_origin_product,string,"The product that originated the usage. Some products can be billed as different SKUs. For possible values, see [View information about the product associated with the usage](https://docs.databricks.com/en/admin/system-tables/billing.html#features)."
+product_features,"struct<jobs_tier:string,sql_tier:string,dlt_tier:string,is_serverless:boolean,is_photon:boolean,serving_type:string,networking:struct<connectivity_type:string>,ai_runtime:struct<compute_type:string>,model_serving:struct<offering_type:string>,ai_gateway:struct<feature_type:string>,performance_target:string,serverless_gpu:struct<workload_type:string>,agent_bricks:struct<problem_type:string,workload_type:string>,ai_functions:struct<ai_function:string>,apps:struct<compute_size:string>,lakeflow_connect:struct<task_type:string,zerobus_request_type:string>,lakebase:struct<storage_type:string,compute_type:string>>",Details about the specific product features used.
+usage_type,string,"The type of usage attributed to the product or workload for billing purposes. Possible values are COMPUTE_TIME, STORAGE_SPACE, NETWORK_BYTES, API_CALLS, TOKEN, or GPU_TIME."

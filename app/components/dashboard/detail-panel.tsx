@@ -166,6 +166,7 @@ export function DetailPanel({
   currentAction,
   onSetAction,
   onClearAction,
+  buildDetailHref,
 }: {
   candidate: Candidate | null;
   open: boolean;
@@ -174,6 +175,7 @@ export function DetailPanel({
   currentAction?: QueryActionType | null;
   onSetAction: (fp: string, action: QueryActionType) => void;
   onClearAction: (fp: string) => void;
+  buildDetailHref?: (fingerprint: string, warehouseId?: string, autoAnalyse?: boolean) => string;
 }) {
   if (!candidate) return null;
   const reasons = explainScore(candidate.scoreBreakdown);
@@ -253,7 +255,9 @@ export function DetailPanel({
             <Button
               onClick={() => {
                 onOpenChange(false);
-                window.location.href = `/queries/${candidate.fingerprint}?action=analyse&warehouse=${candidate.warehouseId}`;
+                window.location.href = buildDetailHref
+                  ? buildDetailHref(candidate.fingerprint, candidate.warehouseId, true)
+                  : `/queries/${candidate.fingerprint}?action=analyse&warehouse=${candidate.warehouseId}`;
               }}
               className="flex-1 gap-1.5"
               size="sm"
@@ -266,7 +270,9 @@ export function DetailPanel({
               size="sm"
               onClick={() => {
                 onOpenChange(false);
-                window.location.href = `/queries/${candidate.fingerprint}?warehouse=${candidate.warehouseId}`;
+                window.location.href = buildDetailHref
+                  ? buildDetailHref(candidate.fingerprint, candidate.warehouseId)
+                  : `/queries/${candidate.fingerprint}?warehouse=${candidate.warehouseId}`;
               }}
               className="gap-1.5"
             >

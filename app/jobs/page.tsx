@@ -60,19 +60,16 @@ async function JobsLoader({ preset }: { preset: string }) {
 
   const MIN_COST_LOOKBACK_MS = 24 * 60 * 60 * 1000;
   const costStart =
-    windowMs < MIN_COST_LOOKBACK_MS
-      ? new Date(endMs - MIN_COST_LOOKBACK_MS).toISOString()
-      : start;
+    windowMs < MIN_COST_LOOKBACK_MS ? new Date(endMs - MIN_COST_LOOKBACK_MS).toISOString() : start;
 
-  const [kpis, summaries, trend, terminations, comparison, creators] =
-    await Promise.allSettled([
-      getJobsKpis({ startTime: start, endTime: end }),
-      getJobSummaries({ startTime: start, endTime: end, limit: 50 }),
-      getJobFailureTrend({ startTime: start, endTime: end }),
-      getTerminationBreakdown({ startTime: start, endTime: end }),
-      getJobsKpisComparison({ startTime: start, endTime: end }),
-      getJobCreators({ startTime: start, endTime: end }),
-    ]);
+  const [kpis, summaries, trend, terminations, comparison, creators] = await Promise.allSettled([
+    getJobsKpis({ startTime: start, endTime: end }),
+    getJobSummaries({ startTime: start, endTime: end, limit: 50 }),
+    getJobFailureTrend({ startTime: start, endTime: end }),
+    getTerminationBreakdown({ startTime: start, endTime: end }),
+    getJobsKpisComparison({ startTime: start, endTime: end }),
+    getJobCreators({ startTime: start, endTime: end }),
+  ]);
 
   let kpisData =
     kpis.status === "fulfilled"
@@ -102,9 +99,7 @@ async function JobsLoader({ preset }: { preset: string }) {
   const comparisonData = comparison.status === "fulfilled" ? comparison.value : null;
 
   // Evaluate rule-based flags for every job
-  const flagsByJobId = Object.fromEntries(
-    summariesData.map((j) => [j.jobId, evaluateJobFlags(j)])
-  );
+  const flagsByJobId = Object.fromEntries(summariesData.map((j) => [j.jobId, evaluateJobFlags(j)]));
 
   // Run AI triage (graceful degradation)
   const triageMap = await triageJobs(summariesData, flagsByJobId).catch(() => ({}));
@@ -123,9 +118,7 @@ async function JobsLoader({ preset }: { preset: string }) {
       start={start}
       end={end}
       fetchError={
-        kpis.status === "rejected"
-          ? String((kpis as PromiseRejectedResult).reason)
-          : null
+        kpis.status === "rejected" ? String((kpis as PromiseRejectedResult).reason) : null
       }
     />
   );

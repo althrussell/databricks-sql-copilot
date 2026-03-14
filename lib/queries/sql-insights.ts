@@ -1,4 +1,6 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
+import { validateTimestamp } from "@/lib/validation";
+import { normalizeSql } from "@/lib/domain/sql-fingerprint";
 
 /* ──────────────────────────────────────────────────────────────────
  * SQL Dashboard Insights — lazy-loaded queries for collapsible panels
@@ -13,6 +15,12 @@ import { executeQuery } from "@/lib/dbx/sql-client";
  *     and w.warehouse_name (not w.name)
  *   - pruning columns: pruned_files / read_files (not partitions)
  * ────────────────────────────────────────────────────────────────── */
+
+function maskEmail(email: string): string {
+  const atIdx = email.indexOf("@");
+  if (atIdx <= 0) return email;
+  return email.slice(0, atIdx);
+}
 
 export interface RegressionEntry {
   fingerprint: string;
@@ -33,10 +41,15 @@ export async function getQueryRegressions(
   startTime: string,
   endTime: string,
 ): Promise<RegressionEntry[]> {
-  const s = new Date(startTime);
-  const e = new Date(endTime);
+  const validStart = validateTimestamp(startTime, "startTime");
+  const validEnd = validateTimestamp(endTime, "endTime");
+  const s = new Date(validStart);
+  const e = new Date(validEnd);
   const windowMs = e.getTime() - s.getTime();
-  const baselineStart = new Date(s.getTime() - windowMs).toISOString();
+  const baselineStart = validateTimestamp(
+    new Date(s.getTime() - windowMs).toISOString(),
+    "baselineStart",
+  );
 
   const sql = `
     WITH current_window AS (
@@ -49,7 +62,7 @@ export async function getQueryRegressions(
         AVG(total_duration_ms) AS avg_ms,
         COUNT(*) AS runs
       FROM system.query.history
-      WHERE start_time BETWEEN '${startTime}' AND '${endTime}'
+      WHERE start_time BETWEEN '${validStart}' AND '${validEnd}'
         AND statement_type NOT IN ('SET', 'USE', 'SHOW', 'DESCRIBE')
         AND total_duration_ms > 0
       GROUP BY MD5(statement_text)
@@ -62,7 +75,7 @@ export async function getQueryRegressions(
         AVG(total_duration_ms) AS avg_ms,
         COUNT(*) AS runs
       FROM system.query.history
-      WHERE start_time BETWEEN '${baselineStart}' AND '${startTime}'
+      WHERE start_time BETWEEN '${baselineStart}' AND '${validStart}'
         AND statement_type NOT IN ('SET', 'USE', 'SHOW', 'DESCRIBE')
         AND total_duration_ms > 0
       GROUP BY MD5(statement_text)
@@ -90,7 +103,11 @@ export async function getQueryRegressions(
     LIMIT 20
   `;
   const result = await executeQuery<RegressionEntry>(sql);
-  return result.rows;
+  return result.rows.map((r) => ({
+    ...r,
+    querySnippet: normalizeSql(r.querySnippet),
+    executedBy: maskEmail(r.executedBy),
+  }));
 }
 
 export interface UserLeaderboardEntry {
@@ -110,6 +127,9 @@ export async function getUserLeaderboard(
   startTime: string,
   endTime: string,
 ): Promise<UserLeaderboardEntry[]> {
+  const validStart = validateTimestamp(startTime, "startTime");
+  const validEnd = validateTimestamp(endTime, "endTime");
+
   const sql = `
     SELECT
       executed_by AS executedBy,
@@ -123,7 +143,7 @@ export async function getUserLeaderboard(
       COUNT(DISTINCT compute.warehouse_id) AS warehouseCount,
       ROUND(SUM(total_task_duration_ms) / 3600000.0, 2) AS estimatedCostDbu
     FROM system.query.history
-    WHERE start_time BETWEEN '${startTime}' AND '${endTime}'
+    WHERE start_time BETWEEN '${validStart}' AND '${validEnd}'
       AND statement_type NOT IN ('SET', 'USE', 'SHOW', 'DESCRIBE')
       AND total_duration_ms > 0
     GROUP BY executed_by
@@ -131,6 +151,8 @@ export async function getUserLeaderboard(
     LIMIT 20
   `;
   const result = await executeQuery<UserLeaderboardEntry>(sql);
-  return result.rows;
+  return result.rows.map((r) => ({
+    ...r,
+    executedBy: maskEmail(r.executedBy),
+  }));
 }
-

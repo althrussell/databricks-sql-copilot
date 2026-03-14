@@ -54,3 +54,7 @@ logs/
 
 # test coverage
 coverage/
+
+# external/generated docs (not project-owned)
+docs/Customer Facing_Best Practices for Databricks SQL.md
+docs/\[PRD\] Query Performance Insights with Assistant.md
