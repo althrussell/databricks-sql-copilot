@@ -25,16 +25,12 @@ export type { AiResult } from "./aiClient";
 /** Extended result type that includes cache info */
 export type AiResultWithCache = AiResult & { cached?: boolean };
 
-export async function diagnoseQuery(
-  candidate: Candidate
-): Promise<AiResult> {
+export async function diagnoseQuery(candidate: Candidate): Promise<AiResult> {
   // Fetch table metadata to enrich the AI prompt
   let tableMetadata;
   try {
     tableMetadata = await fetchAllTableMetadata(candidate.sampleQueryText);
-    console.log(
-      `[ai-actions] diagnose: fetched metadata for ${tableMetadata.length} table(s)`
-    );
+    console.log(`[ai-actions] diagnose: fetched metadata for ${tableMetadata.length} table(s)`);
   } catch (err) {
     console.error("[ai-actions] table metadata fetch failed:", err);
     tableMetadata = undefined;
@@ -54,7 +50,7 @@ export async function diagnoseQuery(
 
 export async function rewriteQuery(
   candidate: Candidate,
-  forceRefresh = false
+  forceRefresh = false,
 ): Promise<AiResultWithCache> {
   // Check Lakebase cache first (unless force refresh)
   if (!forceRefresh) {
@@ -66,12 +62,17 @@ export async function rewriteQuery(
           status: "success",
           mode: "rewrite",
           data: {
-            summary: cached.diagnosis?.summary as string[] ?? ["Cached analysis"],
-            rootCauses: (cached.diagnosis?.rootCauses as Array<{ cause: string; evidence: string; severity: "high" | "medium" | "low" }>) ?? [],
+            summary: (cached.diagnosis?.summary as string[]) ?? ["Cached analysis"],
+            rootCauses:
+              (cached.diagnosis?.rootCauses as Array<{
+                cause: string;
+                evidence: string;
+                severity: "high" | "medium" | "low";
+              }>) ?? [],
             rewrittenSql: cached.rewrittenSql,
             rationale: cached.rationale,
             risks: (cached.diagnosis?.risks as Array<{ risk: string; mitigation: string }>) ?? [],
-            validationPlan: cached.diagnosis?.validationPlan as string[] ?? [],
+            validationPlan: (cached.diagnosis?.validationPlan as string[]) ?? [],
           },
           cached: true,
         };
@@ -86,9 +87,7 @@ export async function rewriteQuery(
   let tableMetadata;
   try {
     tableMetadata = await fetchAllTableMetadata(candidate.sampleQueryText);
-    console.log(
-      `[ai-actions] rewrite: fetched metadata for ${tableMetadata.length} table(s)`
-    );
+    console.log(`[ai-actions] rewrite: fetched metadata for ${tableMetadata.length} table(s)`);
   } catch (err) {
     console.error("[ai-actions] table metadata fetch failed:", err);
     tableMetadata = undefined;
@@ -116,14 +115,13 @@ export async function rewriteQuery(
       try {
         const validation = await validateWithExplain(rewrittenSql);
         if (!validation.valid) {
-          console.warn(
-            `[ai-actions] EXPLAIN validation failed for rewrite: ${validation.error}`
-          );
+          console.warn(`[ai-actions] EXPLAIN validation failed for rewrite: ${validation.error}`);
           result.data.risks = [
             ...(result.data.risks ?? []),
             {
               risk: `EXPLAIN validation failed: ${validation.error}`,
-              mitigation: "Review the rewritten SQL carefully before executing. The AI-generated SQL may have syntax or semantic errors.",
+              mitigation:
+                "Review the rewritten SQL carefully before executing. The AI-generated SQL may have syntax or semantic errors.",
             },
           ];
         } else {
@@ -162,9 +160,7 @@ export async function rewriteQuery(
 
 /* ── Helpers ── */
 
-async function getWarehouseConfig(
-  warehouseId?: string
-): Promise<PromptContext["warehouseConfig"]> {
+async function getWarehouseConfig(warehouseId?: string): Promise<PromptContext["warehouseConfig"]> {
   if (!warehouseId) return undefined;
 
   try {

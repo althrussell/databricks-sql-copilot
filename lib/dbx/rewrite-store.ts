@@ -36,7 +36,7 @@ export async function getCachedRewrite(fingerprint: string): Promise<CachedRewri
           fingerprint,
           expiresAt: { gt: new Date() },
         },
-      })
+      }),
     );
 
     if (!row) return null;
@@ -72,7 +72,7 @@ export async function cacheRewrite(
     risks: string;
     validationPlan: string;
     modelUsed: string;
-  }
+  },
 ): Promise<void> {
   if (!isLakebaseEnabled()) return;
 
@@ -104,7 +104,7 @@ export async function cacheRewrite(
           createdAt: now,
           expiresAt,
         },
-      })
+      }),
     );
   } catch (err) {
     console.error("[rewrite-store] Failed to cache rewrite:", err);

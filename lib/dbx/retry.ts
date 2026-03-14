@@ -18,7 +18,7 @@ const NON_RETRYABLE_PATTERNS = [
   "INSUFFICIENT_PERMISSIONS",
   "PERMISSION_DENIED",
   "is not authorized",
-  "SQLSTATE: 42",       // syntax/semantic SQL error
+  "SQLSTATE: 42", // syntax/semantic SQL error
   "TABLE_OR_VIEW_NOT_FOUND",
   "UNRESOLVED_COLUMN",
   "PARSE_SYNTAX_ERROR",
@@ -80,7 +80,8 @@ export function isRateLimitError(error: unknown): boolean {
  */
 export function extractRetryAfterMs(error: unknown): number | null {
   // Check if error has a response-like structure with headers
-  const resp = (error as { response?: { headers?: { get?: (key: string) => string | null } } })?.response;
+  const resp = (error as { response?: { headers?: { get?: (key: string) => string | null } } })
+    ?.response;
   const headerValue = resp?.headers?.get?.("Retry-After") ?? resp?.headers?.get?.("retry-after");
 
   if (!headerValue) {
@@ -120,10 +121,7 @@ export interface RetryOptions {
  * Skips retry for non-retryable errors.
  * Uses Retry-After header for 429 responses when available.
  */
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  options: RetryOptions = {}
-): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
   const {
     maxRetries = 3,
     initialDelayMs = 500,
@@ -161,7 +159,7 @@ export async function withRetry<T>(
         delay = jitter;
         console.warn(
           `[retry] ${label} attempt ${attempt + 1}/${maxRetries} failed, retrying in ${Math.round(delay)}ms:`,
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error ? error.message : String(error),
         );
       }
 

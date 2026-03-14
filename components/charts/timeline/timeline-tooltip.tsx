@@ -16,11 +16,7 @@ interface TimelineTooltipProps {
  * Floating tooltip that appears when hovering over a timeline span.
  * Positioned relative to the hovered span, ensuring it stays within bounds.
  */
-export function TimelineTooltip({
-  query,
-  anchorRect,
-  containerRef,
-}: TimelineTooltipProps) {
+export function TimelineTooltip({ query, anchorRect, containerRef }: TimelineTooltipProps) {
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ top: number; left: number }>({
     top: 0,
@@ -28,15 +24,13 @@ export function TimelineTooltip({
   });
 
   useLayoutEffect(() => {
-    if (!query || !anchorRect || !containerRef.current || !tooltipRef.current)
-      return;
+    if (!query || !anchorRect || !containerRef.current || !tooltipRef.current) return;
 
     const container = containerRef.current.getBoundingClientRect();
     const tooltip = tooltipRef.current.getBoundingClientRect();
 
     let top = anchorRect.top - container.top - tooltip.height - 8;
-    let left =
-      anchorRect.left - container.left + anchorRect.width / 2 - tooltip.width / 2;
+    let left = anchorRect.left - container.left + anchorRect.width / 2 - tooltip.width / 2;
 
     // Keep within horizontal bounds
     left = Math.max(4, Math.min(left, container.width - tooltip.width - 4));
@@ -84,9 +78,7 @@ export function TimelineTooltip({
         {query.spillBytes > 0 && (
           <>
             <span className="text-muted-foreground">Spill</span>
-            <span className="text-destructive">
-              {formatBytes(query.spillBytes)}
-            </span>
+            <span className="text-destructive">{formatBytes(query.spillBytes)}</span>
           </>
         )}
 

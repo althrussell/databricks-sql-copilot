@@ -11,10 +11,7 @@ import { executeQuery } from "@/lib/dbx/sql-client";
 import { fingerprint as computeFingerprint } from "@/lib/domain/sql-fingerprint";
 import type { TimelineQuery } from "@/lib/domain/types";
 import type { TriageInsight } from "@/lib/ai/triage";
-import {
-  fetchTriageTableContext,
-  formatTriageTableContext,
-} from "@/lib/queries/table-metadata";
+import { fetchTriageTableContext, formatTriageTableContext } from "@/lib/queries/table-metadata";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import { renderPrompt } from "@/lib/ai/prompts/registry";
 
@@ -122,10 +119,8 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
     const totalBytesScanned = g.bytesScanned.reduce((a, b) => a + b, 0);
     const totalRowsProduced = g.rowsProduced.reduce((a, b) => a + b, 0);
     const totalSpillBytes = g.spillBytes.reduce((a, b) => a + b, 0);
-    const avgCacheHitPercent =
-      g.cacheHits.reduce((a, b) => a + b, 0) / g.cacheHits.length;
-    const avgQueueWaitMs =
-      g.queueWaits.reduce((a, b) => a + b, 0) / g.queueWaits.length;
+    const avgCacheHitPercent = g.cacheHits.reduce((a, b) => a + b, 0) / g.cacheHits.length;
+    const avgQueueWaitMs = g.queueWaits.reduce((a, b) => a + b, 0) / g.queueWaits.length;
 
     result.push({
       fingerprint: g.fingerprint,
@@ -152,10 +147,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
 }
 
 function patternSummaryLine(p: PatternSummary): string {
-  const queuePct =
-    p.avgDurationMs > 0
-      ? Math.round((p.avgQueueWaitMs / p.avgDurationMs) * 100)
-      : 0;
+  const queuePct = p.avgDurationMs > 0 ? Math.round((p.avgQueueWaitMs / p.avgDurationMs) * 100) : 0;
 
   return [
     `ID: ${p.fingerprint}`,
@@ -167,7 +159,9 @@ function patternSummaryLine(p: PatternSummary): string {
     `Queue: ${fmtMs(p.avgQueueWaitMs)} avg (${queuePct}% of duration)`,
     p.clientApplications.length > 0 ? `App: ${p.clientApplications.join(", ")}` : "",
     `Users: ${p.users.join(", ")}`,
-  ].filter(Boolean).join(" | ");
+  ]
+    .filter(Boolean)
+    .join(" | ");
 }
 
 /**
@@ -175,9 +169,7 @@ function patternSummaryLine(p: PatternSummary): string {
  * Groups by fingerprint, picks top N patterns, and sends a batch to the model.
  * Returns a map of fingerprint → TriageInsight.
  */
-export async function triageMonitorQueries(
-  queries: TimelineQuery[]
-): Promise<MonitorTriageMap> {
+export async function triageMonitorQueries(queries: TimelineQuery[]): Promise<MonitorTriageMap> {
   const patterns = groupByFingerprint(queries);
   if (patterns.length === 0) return {};
 
@@ -186,9 +178,7 @@ export async function triageMonitorQueries(
   // Fetch lightweight table metadata for context (parallel, cached, capped)
   let tableContextBlock = "";
   try {
-    const sqlTexts = top
-      .map((p) => p.sqlSnippet)
-      .filter((t) => t.length > 0);
+    const sqlTexts = top.map((p) => p.sqlSnippet).filter((t) => t.length > 0);
     const tableContext = await fetchTriageTableContext(sqlTexts);
     const formatted = formatTriageTableContext(tableContext);
     if (formatted) {
@@ -215,7 +205,7 @@ export async function triageMonitorQueries(
   try {
     const t0 = Date.now();
     console.log(
-      `[ai-triage-monitor] calling ${TRIAGE_MODEL} for ${top.length} patterns (prompt ~${escapedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`
+      `[ai-triage-monitor] calling ${TRIAGE_MODEL} for ${top.length} patterns (prompt ~${escapedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`,
     );
 
     // Use semaphore for concurrency control
@@ -224,8 +214,8 @@ export async function triageMonitorQueries(
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error(`AI triage timed out after ${TRIAGE_TIMEOUT_MS / 1000}s`)),
-          TRIAGE_TIMEOUT_MS
-        )
+          TRIAGE_TIMEOUT_MS,
+        ),
       );
       return Promise.race([resultPromise, timeoutPromise]);
     });
@@ -239,7 +229,7 @@ export async function triageMonitorQueries(
     const raw = result.rows[0].response;
     const parsed = parseMonitorTriageResponse(raw, top);
     console.log(
-      `[ai-triage-monitor] got insights for ${Object.keys(parsed).length}/${top.length} patterns in ${elapsed}s`
+      `[ai-triage-monitor] got insights for ${Object.keys(parsed).length}/${top.length} patterns in ${elapsed}s`,
     );
     return parsed;
   } catch (err: unknown) {
@@ -252,9 +242,7 @@ export async function triageMonitorQueries(
 /**
  * Build a lookup from query ID → fingerprint for the given queries.
  */
-export function buildQueryFingerprintMap(
-  queries: TimelineQuery[]
-): Map<string, string> {
+export function buildQueryFingerprintMap(queries: TimelineQuery[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const q of queries) {
     if (q.queryText) {
@@ -264,10 +252,7 @@ export function buildQueryFingerprintMap(
   return map;
 }
 
-function parseMonitorTriageResponse(
-  raw: string,
-  patterns: PatternSummary[]
-): MonitorTriageMap {
+function parseMonitorTriageResponse(raw: string, patterns: PatternSummary[]): MonitorTriageMap {
   let jsonStr = raw.trim();
 
   // Strip markdown code fences if present
@@ -283,13 +268,7 @@ function parseMonitorTriageResponse(
     jsonStr = jsonStr.slice(firstBracket, lastBracket + 1);
   }
 
-  const validActions = new Set([
-    "rewrite",
-    "cluster",
-    "optimize",
-    "resize",
-    "investigate",
-  ]);
+  const validActions = new Set(["rewrite", "cluster", "optimize", "resize", "investigate"]);
   const validFingerprints = new Set(patterns.map((p) => p.fingerprint));
 
   try {
@@ -302,19 +281,14 @@ function parseMonitorTriageResponse(
       if (!fp || !validFingerprints.has(fp)) continue;
       const action = validActions.has(item.action) ? item.action : "investigate";
       const insight =
-        typeof item.insight === "string" && item.insight.length > 0
-          ? item.insight
-          : null;
+        typeof item.insight === "string" && item.insight.length > 0 ? item.insight : null;
       if (insight) {
         result[fp] = { insight, action: action as TriageInsight["action"] };
       }
     }
     return result;
   } catch {
-    console.error(
-      "[ai-triage-monitor] JSON parse failed:",
-      jsonStr.slice(0, 500)
-    );
+    console.error("[ai-triage-monitor] JSON parse failed:", jsonStr.slice(0, 500));
     return {};
   }
 }

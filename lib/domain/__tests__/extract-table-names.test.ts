@@ -46,7 +46,8 @@ describe("extractTableNames", () => {
   });
 
   it("extracts target from MERGE INTO", () => {
-    const sql = "MERGE INTO catalog.schema.target USING catalog.schema.source ON target.id = source.id";
+    const sql =
+      "MERGE INTO catalog.schema.target USING catalog.schema.source ON target.id = source.id";
     const tables = extractTableNames(sql);
     expect(tables).toContain("catalog.schema.target");
     // NOTE: USING is not in the regex prefix list, so source is not extracted by default

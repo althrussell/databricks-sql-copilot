@@ -54,12 +54,8 @@ export function extractDbtMetadata(sql: string): DbtMetadata | null {
 /**
  * Check if a query was produced by dbt.
  */
-export function isDbtQuery(
-  sql: string,
-  clientApplication: string | null
-): boolean {
-  if (clientApplication && clientApplication.toLowerCase().includes("dbt"))
-    return true;
+export function isDbtQuery(sql: string, clientApplication: string | null): boolean {
+  if (clientApplication && clientApplication.toLowerCase().includes("dbt")) return true;
   const meta = extractDbtMetadata(sql);
   if (meta && meta.app?.toLowerCase() === "dbt") return true;
   return false;

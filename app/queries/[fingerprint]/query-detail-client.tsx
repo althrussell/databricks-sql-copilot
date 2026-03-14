@@ -47,18 +47,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { explainScore } from "@/lib/domain/scoring";
 import { rewriteQuery, type AiResultWithCache } from "@/lib/ai/actions";
 import type { Candidate, QueryOrigin } from "@/lib/domain/types";
@@ -120,9 +110,7 @@ function flagSeverityColor(severity: "warning" | "critical"): string {
   return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800";
 }
 
-function tagToStatus(
-  tag: string
-): "default" | "warning" | "error" | "info" | "cached" {
+function tagToStatus(tag: string): "default" | "warning" | "error" | "info" | "cached" {
   switch (tag) {
     case "slow":
       return "error";
@@ -181,7 +169,7 @@ function buildLink(
   base: string,
   type: string,
   id: string | null | undefined,
-  extras?: { queryStartTimeMs?: number }
+  extras?: { queryStartTimeMs?: number },
 ): string | null {
   if (!id || !base) return null;
   switch (type) {
@@ -281,9 +269,7 @@ function TimeBar({
   return (
     <div className="flex items-center gap-2">
       <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
-      <span className="text-[11px] text-muted-foreground w-24 shrink-0">
-        {label}
-      </span>
+      <span className="text-[11px] text-muted-foreground w-24 shrink-0">{label}</span>
       <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
         <div
           className="h-full rounded-full bg-primary/60 transition-all"
@@ -319,7 +305,12 @@ function ContextRow({
         {sub && <p className="text-[9px] text-muted-foreground font-mono leading-tight">{sub}</p>}
       </div>
       {href && (
-        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80 shrink-0">
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:text-primary/80 shrink-0"
+        >
           <ExternalLink className="h-3 w-3" />
         </a>
       )}
@@ -358,18 +349,13 @@ function RationaleBlock({ text }: { text: string }) {
         const body = titleMatch ? titleMatch[2] : item;
 
         return (
-          <div
-            key={i}
-            className="rounded-lg border border-border bg-muted/30 p-3 space-y-1"
-          >
+          <div key={i} className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
             <div className="flex items-start gap-2">
               <span className="text-xs font-bold tabular-nums text-primary mt-0.5 w-5 text-right shrink-0">
                 {i + 1}.
               </span>
               <div className="min-w-0">
-                {title && (
-                  <p className="text-sm font-semibold text-foreground">{title}</p>
-                )}
+                {title && <p className="text-sm font-semibold text-foreground">{title}</p>}
                 {body && (
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     <BoldInline text={body} />
@@ -432,7 +418,7 @@ export function QueryDetailClient({
     ws.avgComputeWaitMs,
     ws.avgExecutionMs,
     ws.avgFetchMs,
-    1
+    1,
   );
 
   // Use per-candidate workspace URL if available, fallback to global
@@ -454,17 +440,10 @@ export function QueryDetailClient({
               ? buildLink(effectiveWsUrl, "sql-query", src.sqlQueryId)
               : null;
 
-  const queryProfileLink = buildLink(
-    effectiveWsUrl,
-    "query-profile",
-    candidate.sampleStatementId,
-    { queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime() }
-  );
-  const warehouseLink = buildLink(
-    effectiveWsUrl,
-    "warehouse",
-    candidate.warehouseId
-  );
+  const queryProfileLink = buildLink(effectiveWsUrl, "query-profile", candidate.sampleStatementId, {
+    queryStartTimeMs: new Date(candidate.sampleStartedAt).getTime(),
+  });
+  const warehouseLink = buildLink(effectiveWsUrl, "warehouse", candidate.warehouseId);
 
   // SQL Editor link for testing rewrites
   const sqlEditorLink = effectiveWsUrl ? `${effectiveWsUrl}/sql/editor` : null;
@@ -475,11 +454,12 @@ export function QueryDetailClient({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const costString = candidate.allocatedCostDollars > 0
-    ? formatDollars(candidate.allocatedCostDollars)
-    : candidate.allocatedDBUs > 0
-      ? `${formatDBUs(candidate.allocatedDBUs)} DBUs`
-      : null;
+  const costString =
+    candidate.allocatedCostDollars > 0
+      ? formatDollars(candidate.allocatedCostDollars)
+      : candidate.allocatedDBUs > 0
+        ? `${formatDBUs(candidate.allocatedDBUs)} DBUs`
+        : null;
 
   /** Run a full AI analysis (rewrite mode gives diagnosis + rewrite in one shot) */
   function runAnalysis(forceRefresh = false) {
@@ -490,7 +470,10 @@ export function QueryDetailClient({
         setActiveAiTab("summary");
       } catch (err) {
         notifyError("AI analysis", err);
-        setAiResult({ status: "error", message: err instanceof Error ? err.message : "Analysis failed" });
+        setAiResult({
+          status: "error",
+          message: err instanceof Error ? err.message : "Analysis failed",
+        });
       }
     });
   }
@@ -538,8 +521,8 @@ export function QueryDetailClient({
                     {candidate.statementType} &middot; {candidate.warehouseName}
                     {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
                       <> &middot; {candidate.workspaceName}</>
-                    )}
-                    {" "}&middot; {ws.count} runs &middot; p95 {formatDuration(ws.p95Ms)}
+                    )}{" "}
+                    &middot; {ws.count} runs &middot; p95 {formatDuration(ws.p95Ms)}
                   </p>
                 </div>
               </div>
@@ -562,10 +545,17 @@ export function QueryDetailClient({
                       {analysing ? "Analysing\u2026" : aiResult ? "Re-analyse" : "AI Analyse"}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>AI diagnoses root causes and generates an optimised rewrite</TooltipContent>
+                  <TooltipContent>
+                    AI diagnoses root causes and generates an optimised rewrite
+                  </TooltipContent>
                 </Tooltip>
                 {queryProfileLink && (
-                  <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1" asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground gap-1"
+                    asChild
+                  >
                     <a href={queryProfileLink} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="h-3 w-3" />
                       Profile
@@ -578,17 +568,25 @@ export function QueryDetailClient({
             {/* Tags + Flags — compact row under hero */}
             <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-border">
               {candidate.tags.map((tag) => (
-                <StatusBadge key={tag} status={tagToStatus(tag)}>{tag}</StatusBadge>
+                <StatusBadge key={tag} status={tagToStatus(tag)}>
+                  {tag}
+                </StatusBadge>
               ))}
               {candidate.dbtMeta.isDbt && (
-                <Badge variant="outline" className="border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-400 text-[10px]">
-                  <Package className="h-3 w-3 mr-0.5" />dbt
+                <Badge
+                  variant="outline"
+                  className="border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-400 text-[10px]"
+                >
+                  <Package className="h-3 w-3 mr-0.5" />
+                  dbt
                 </Badge>
               )}
               {candidate.performanceFlags.map((pf) => (
                 <Tooltip key={pf.flag}>
                   <TooltipTrigger asChild>
-                    <span className={`inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-help ${flagSeverityColor(pf.severity)}`}>
+                    <span
+                      className={`inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-help ${flagSeverityColor(pf.severity)}`}
+                    >
                       <Flag className="h-2.5 w-2.5" />
                       {pf.label}
                     </span>
@@ -608,7 +606,8 @@ export function QueryDetailClient({
               <div>
                 <p className="text-sm font-medium">AI is analysing this query&hellip;</p>
                 <p className="text-xs text-muted-foreground">
-                  Diagnosing root causes, fetching table metadata, and generating an optimised rewrite. This may take 30-60 seconds.
+                  Diagnosing root causes, fetching table metadata, and generating an optimised
+                  rewrite. This may take 30-60 seconds.
                 </p>
               </div>
             </CardContent>
@@ -635,8 +634,17 @@ export function QueryDetailClient({
               <CardContent>
                 <div className="flex items-center justify-between mb-2">
                   <SectionLabel>Sample SQL</SectionLabel>
-                  <Button variant="ghost" size="sm" onClick={handleCopy} className="h-6 px-2 text-[10px] gap-1">
-                    {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopy}
+                    className="h-6 px-2 text-[10px] gap-1"
+                  >
+                    {copied ? (
+                      <Check className="h-3 w-3 text-emerald-500" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
                     {copied ? "Copied" : "Copy"}
                   </Button>
                 </div>
@@ -653,11 +661,36 @@ export function QueryDetailClient({
               <CardContent>
                 <SectionLabel>Time Breakdown (avg per execution)</SectionLabel>
                 <div className="space-y-1.5 mt-1">
-                  <TimeBar label="Compilation" ms={ws.avgCompilationMs} maxMs={maxTimeSegment} icon={Layers} />
-                  <TimeBar label="Queue Wait" ms={ws.avgQueueWaitMs} maxMs={maxTimeSegment} icon={Hourglass} />
-                  <TimeBar label="Compute Wait" ms={ws.avgComputeWaitMs} maxMs={maxTimeSegment} icon={Clock} />
-                  <TimeBar label="Execution" ms={ws.avgExecutionMs} maxMs={maxTimeSegment} icon={Cpu} />
-                  <TimeBar label="Result Fetch" ms={ws.avgFetchMs} maxMs={maxTimeSegment} icon={ArrowDownToLine} />
+                  <TimeBar
+                    label="Compilation"
+                    ms={ws.avgCompilationMs}
+                    maxMs={maxTimeSegment}
+                    icon={Layers}
+                  />
+                  <TimeBar
+                    label="Queue Wait"
+                    ms={ws.avgQueueWaitMs}
+                    maxMs={maxTimeSegment}
+                    icon={Hourglass}
+                  />
+                  <TimeBar
+                    label="Compute Wait"
+                    ms={ws.avgComputeWaitMs}
+                    maxMs={maxTimeSegment}
+                    icon={Clock}
+                  />
+                  <TimeBar
+                    label="Execution"
+                    ms={ws.avgExecutionMs}
+                    maxMs={maxTimeSegment}
+                    icon={Cpu}
+                  />
+                  <TimeBar
+                    label="Result Fetch"
+                    ms={ws.avgFetchMs}
+                    maxMs={maxTimeSegment}
+                    icon={ArrowDownToLine}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -667,14 +700,42 @@ export function QueryDetailClient({
               <CardContent>
                 <SectionLabel>I/O &amp; Resources</SectionLabel>
                 <div className="grid grid-cols-2 gap-1.5 mt-1 md:grid-cols-4">
-                  <IoCell icon={HardDrive} label="Data Read" value={formatBytes(ws.totalReadBytes)} />
-                  <IoCell icon={ArrowDownToLine} label="Data Written" value={formatBytes(ws.totalWrittenBytes)} />
+                  <IoCell
+                    icon={HardDrive}
+                    label="Data Read"
+                    value={formatBytes(ws.totalReadBytes)}
+                  />
+                  <IoCell
+                    icon={ArrowDownToLine}
+                    label="Data Written"
+                    value={formatBytes(ws.totalWrittenBytes)}
+                  />
                   <IoCell icon={Rows3} label="Rows Read" value={formatCount(ws.totalReadRows)} />
-                  <IoCell icon={Rows3} label="Rows Produced" value={formatCount(ws.totalProducedRows)} />
-                  <IoCell icon={Flame} label="Spill to Disk" value={formatBytes(ws.totalSpilledBytes)} />
-                  <IoCell icon={Network} label="Shuffle" value={formatBytes(ws.totalShuffleBytes)} />
-                  <IoCell icon={Database} label="IO Cache Hit" value={`${Math.round(ws.avgIoCachePercent)}%`} />
-                  <IoCell icon={FilterX} label="Pruning Eff." value={`${Math.round(ws.avgPruningEfficiency * 100)}%`} />
+                  <IoCell
+                    icon={Rows3}
+                    label="Rows Produced"
+                    value={formatCount(ws.totalProducedRows)}
+                  />
+                  <IoCell
+                    icon={Flame}
+                    label="Spill to Disk"
+                    value={formatBytes(ws.totalSpilledBytes)}
+                  />
+                  <IoCell
+                    icon={Network}
+                    label="Shuffle"
+                    value={formatBytes(ws.totalShuffleBytes)}
+                  />
+                  <IoCell
+                    icon={Database}
+                    label="IO Cache Hit"
+                    value={`${Math.round(ws.avgIoCachePercent)}%`}
+                  />
+                  <IoCell
+                    icon={FilterX}
+                    label="Pruning Eff."
+                    value={`${Math.round(ws.avgPruningEfficiency * 100)}%`}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -687,11 +748,14 @@ export function QueryDetailClient({
                   <div className="flex items-center gap-3 mt-1">
                     <Package className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
                     {candidate.dbtMeta.nodeId && (
-                      <code className="text-xs font-mono text-blue-600 dark:text-blue-400">{candidate.dbtMeta.nodeId}</code>
+                      <code className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                        {candidate.dbtMeta.nodeId}
+                      </code>
                     )}
                     {candidate.dbtMeta.queryTag && (
                       <span className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
-                        <Tag className="h-3 w-3" />{candidate.dbtMeta.queryTag}
+                        <Tag className="h-3 w-3" />
+                        {candidate.dbtMeta.queryTag}
                       </span>
                     )}
                   </div>
@@ -708,10 +772,28 @@ export function QueryDetailClient({
                 <div>
                   <SectionLabel>Execution</SectionLabel>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
-                    <MiniStat icon={BarChart3} label="Executions" value={ws.count.toString()} sub="in window" />
-                    <MiniStat icon={Timer} label="p95 Latency" value={formatDuration(ws.p95Ms)} sub={`p50: ${formatDuration(ws.p50Ms)}`} />
-                    <MiniStat icon={Cpu} label="Total Time" value={formatDuration(ws.totalDurationMs)} />
-                    <MiniStat icon={Zap} label="Parallelism" value={`${ws.avgTaskParallelism.toFixed(1)}x`} />
+                    <MiniStat
+                      icon={BarChart3}
+                      label="Executions"
+                      value={ws.count.toString()}
+                      sub="in window"
+                    />
+                    <MiniStat
+                      icon={Timer}
+                      label="p95 Latency"
+                      value={formatDuration(ws.p95Ms)}
+                      sub={`p50: ${formatDuration(ws.p50Ms)}`}
+                    />
+                    <MiniStat
+                      icon={Cpu}
+                      label="Total Time"
+                      value={formatDuration(ws.totalDurationMs)}
+                    />
+                    <MiniStat
+                      icon={Zap}
+                      label="Parallelism"
+                      value={`${ws.avgTaskParallelism.toFixed(1)}x`}
+                    />
                   </div>
                 </div>
 
@@ -739,11 +821,31 @@ export function QueryDetailClient({
                 <div>
                   <SectionLabel>Context</SectionLabel>
                   <div className="divide-y divide-border mt-1">
-                    <ContextRow icon={OriginIcon} label="Source" value={originLabel(candidate.queryOrigin)} href={sourceLink} />
-                    <ContextRow icon={MonitorSmartphone} label="Client App" value={candidate.clientApplication} />
-                    <ContextRow icon={Warehouse} label="Warehouse" value={candidate.warehouseName} sub={candidate.warehouseId} href={warehouseLink} />
+                    <ContextRow
+                      icon={OriginIcon}
+                      label="Source"
+                      value={originLabel(candidate.queryOrigin)}
+                      href={sourceLink}
+                    />
+                    <ContextRow
+                      icon={MonitorSmartphone}
+                      label="Client App"
+                      value={candidate.clientApplication}
+                    />
+                    <ContextRow
+                      icon={Warehouse}
+                      label="Warehouse"
+                      value={candidate.warehouseName}
+                      sub={candidate.warehouseId}
+                      href={warehouseLink}
+                    />
                     {candidate.workspaceName && candidate.workspaceName !== "Unknown" && (
-                      <ContextRow icon={Globe} label="Workspace" value={candidate.workspaceName} href={candidate.workspaceUrl || null} />
+                      <ContextRow
+                        icon={Globe}
+                        label="Workspace"
+                        value={candidate.workspaceName}
+                        href={candidate.workspaceUrl || null}
+                      />
                     )}
                   </div>
                 </div>
@@ -753,7 +855,10 @@ export function QueryDetailClient({
                   <SectionLabel>Why Ranked</SectionLabel>
                   <div className="space-y-1 mt-1">
                     {reasons.map((r, i) => (
-                      <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <div
+                        key={i}
+                        className="flex items-start gap-1.5 text-xs text-muted-foreground"
+                      >
                         <ChevronRight className="h-3 w-3 mt-0.5 text-primary shrink-0" />
                         <span>{r}</span>
                       </div>
@@ -763,11 +868,18 @@ export function QueryDetailClient({
                   <div className="mt-2 space-y-1">
                     {Object.entries(candidate.scoreBreakdown).map(([key, value]) => (
                       <div key={key} className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground w-14 capitalize">{key}</span>
+                        <span className="text-[10px] text-muted-foreground w-14 capitalize">
+                          {key}
+                        </span>
                         <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-                          <div className={`h-full rounded-full ${scoreColor(value)}`} style={{ width: `${value}%` }} />
+                          <div
+                            className={`h-full rounded-full ${scoreColor(value)}`}
+                            style={{ width: `${value}%` }}
+                          />
                         </div>
-                        <span className="text-[10px] font-medium tabular-nums w-5 text-right">{value}</span>
+                        <span className="text-[10px] font-medium tabular-nums w-5 text-right">
+                          {value}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -778,7 +890,10 @@ export function QueryDetailClient({
                   <SectionLabel>Users ({candidate.uniqueUserCount})</SectionLabel>
                   <div className="flex flex-wrap gap-1.5 mt-1">
                     {candidate.topUsers.map((user) => (
-                      <span key={user} className="inline-flex items-center gap-1 text-xs bg-muted/50 border border-border rounded-md px-2 py-0.5">
+                      <span
+                        key={user}
+                        className="inline-flex items-center gap-1 text-xs bg-muted/50 border border-border rounded-md px-2 py-0.5"
+                      >
                         <User className="h-3 w-3 text-muted-foreground" />
                         <span className="truncate max-w-[160px]">{user}</span>
                       </span>
@@ -826,7 +941,9 @@ function AiResultsPanel({
         <CardContent className="flex items-start gap-3 py-4">
           <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-red-700 dark:text-red-300">AI Analysis Failed</p>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+              AI Analysis Failed
+            </p>
             <p className="text-sm text-muted-foreground mt-1">{result.message}</p>
           </div>
         </CardContent>
@@ -840,7 +957,9 @@ function AiResultsPanel({
         <CardContent className="flex items-start gap-3 py-4">
           <ShieldAlert className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Guardrail Triggered</p>
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+              Guardrail Triggered
+            </p>
             <p className="text-sm text-muted-foreground mt-1">{result.message}</p>
           </div>
         </CardContent>
@@ -873,7 +992,10 @@ function AiResultsPanel({
             <Sparkles className="h-4 w-4 text-primary" />
             AI Analysis
             {cached && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400">
+              <Badge
+                variant="outline"
+                className="text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400"
+              >
                 Cached
               </Badge>
             )}
@@ -884,7 +1006,9 @@ function AiResultsPanel({
         <Tabs value={activeTab} onValueChange={onTabChange}>
           <TabsList className="w-full justify-start">
             {tabItems.map((tab) => (
-              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
+              <TabsTrigger key={tab.value} value={tab.value}>
+                {tab.label}
+              </TabsTrigger>
             ))}
           </TabsList>
 
@@ -943,7 +1067,11 @@ function AiResultsPanel({
                         onClick={() => handleCopyRewrite(rewriteData.rewrittenSql)}
                         className="h-6 px-2 text-[10px] gap-1"
                       >
-                        {rewriteCopied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                        {rewriteCopied ? (
+                          <Check className="h-3 w-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
                         {rewriteCopied ? "Copied" : "Copy SQL"}
                       </Button>
                       {sqlEditorLink && (
@@ -974,7 +1102,9 @@ function AiResultsPanel({
                     onClick={() => setShowOriginal(!showOriginal)}
                     className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <ChevronDown className={`h-3 w-3 transition-transform ${showOriginal ? "" : "-rotate-90"}`} />
+                    <ChevronDown
+                      className={`h-3 w-3 transition-transform ${showOriginal ? "" : "-rotate-90"}`}
+                    />
                     Original SQL (compare)
                   </button>
                   {showOriginal && (
@@ -1003,7 +1133,9 @@ function AiResultsPanel({
                       <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
                       <span className="text-sm font-medium">{r.risk}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground"><strong>Mitigation:</strong> {r.mitigation}</p>
+                    <p className="text-xs text-muted-foreground">
+                      <strong>Mitigation:</strong> {r.mitigation}
+                    </p>
                   </div>
                 ))}
               </TabsContent>
@@ -1011,7 +1143,9 @@ function AiResultsPanel({
               <TabsContent value="validation" className="mt-4 space-y-2">
                 {rewriteData.validationPlan.map((step, i) => (
                   <div key={i} className="flex items-start gap-2 text-sm">
-                    <span className="text-xs font-bold tabular-nums text-primary mt-0.5 w-5 text-right shrink-0">{i + 1}.</span>
+                    <span className="text-xs font-bold tabular-nums text-primary mt-0.5 w-5 text-right shrink-0">
+                      {i + 1}.
+                    </span>
                     <span>{step}</span>
                   </div>
                 ))}

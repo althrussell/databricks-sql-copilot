@@ -1,10 +1,6 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { WarehouseEvent } from "@/lib/domain/types";
-import {
-  validateIdentifier,
-  validateTimestamp,
-  validateLimit,
-} from "@/lib/validation";
+import { validateIdentifier, validateTimestamp, validateLimit } from "@/lib/validation";
 
 export interface ListWarehouseEventsParams {
   startTime: string; // ISO timestamp
@@ -32,7 +28,7 @@ interface WarehouseEventRow {
  * Now uses direct timestamp comparisons which allow the optimizer to use data-skipping.
  */
 export async function listWarehouseEvents(
-  params: ListWarehouseEventsParams
+  params: ListWarehouseEventsParams,
 ): Promise<WarehouseEvent[]> {
   const { startTime, endTime, warehouseId, limit = 200 } = params;
 

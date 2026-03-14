@@ -21,11 +21,11 @@ This project follows our [Code of Conduct](CODE_OF_CONDUCT.md). By participating
 
 ### Submitting Code
 
-1. **Fork** the repository and create a branch from `dev`.
+1. **Fork** the repository and create a branch from `main`.
 2. **Name your branch** descriptively: `feature/query-fingerprinting`, `fix/warehouse-selector-crash`.
 3. **Write code** following the standards below.
-4. **Test locally** — ensure `npm run lint`, `npm run test`, and `npm run build` all pass.
-5. **Open a Pull Request** against `dev` using the PR template.
+4. **Test locally** — ensure all checks pass (see Development Setup below).
+5. **Open a Pull Request** against `main` using the PR template.
 
 ## Development Setup
 
@@ -38,25 +38,31 @@ cd databricks-sql-copilot
 npm install
 
 # Copy env template and configure
-cp .env.local.example .env.local
+cp .env.example .env.local
 
 # Run development server
 npm run dev
 
 # Run checks (must pass before PR)
+npm run format:check
 npm run lint
+npm run typecheck
 npm run test
 npm run build
 ```
 
 ## Coding Standards
 
+See [STYLE_GUIDE.md](STYLE_GUIDE.md) for the full guide. Key points:
+
 - **TypeScript strict** — no `any` without justification.
 - **Next.js App Router** patterns for pages and server actions.
 - **shadcn/ui** for all UI components.
-- Keep SQL queries in `/lib/queries/` — one file per query, named and versioned.
+- Keep SQL queries in `/lib/queries/` — one file per query domain, named and versioned.
 - Use the shared data client at `/lib/dbx/sql-client.ts` for all Databricks SQL access.
 - PII redaction is on by default — never log raw SQL text unless explicitly enabled.
+- **Prettier** formats all code — pre-commit hooks enforce this automatically.
+- See [ARCHITECTURE.md](ARCHITECTURE.md) for the system overview and data flow.
 
 ## Pull Request Guidelines
 

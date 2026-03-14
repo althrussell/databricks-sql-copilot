@@ -13,11 +13,7 @@ import {
   listWarehousesRest,
 } from "@/lib/dbx/rest-client";
 import type { WarehouseInfo } from "@/lib/dbx/rest-client";
-import type {
-  WarehouseLiveStats,
-  EndpointMetric,
-  TimelineQuery,
-} from "@/lib/domain/types";
+import type { WarehouseLiveStats, EndpointMetric, TimelineQuery } from "@/lib/domain/types";
 import {
   triageMonitorQueries,
   buildQueryFingerprintMap,
@@ -28,9 +24,7 @@ import type { TriageInsight } from "@/lib/ai/triage";
 /**
  * Fetch live stats for a warehouse (running/queued commands, active clusters).
  */
-export async function fetchWarehouseStats(
-  warehouseId: string
-): Promise<WarehouseLiveStats> {
+export async function fetchWarehouseStats(warehouseId: string): Promise<WarehouseLiveStats> {
   return getWarehouseLiveStats(warehouseId);
 }
 
@@ -40,7 +34,7 @@ export async function fetchWarehouseStats(
 export async function fetchEndpointMetrics(
   warehouseId: string,
   startMs: number,
-  endMs: number
+  endMs: number,
 ): Promise<EndpointMetric[]> {
   return getEndpointMetrics(warehouseId, startMs, endMs);
 }
@@ -52,7 +46,7 @@ export async function fetchWarehouseQueries(
   warehouseId: string,
   startMs: number,
   endMs: number,
-  options?: { maxResults?: number; pageToken?: string }
+  options?: { maxResults?: number; pageToken?: string },
 ): Promise<{
   queries: TimelineQuery[];
   nextPageToken?: string;
@@ -64,9 +58,7 @@ export async function fetchWarehouseQueries(
 /**
  * Fetch warehouse detail info.
  */
-export async function fetchWarehouseDetail(
-  warehouseId: string
-): Promise<WarehouseInfo> {
+export async function fetchWarehouseDetail(warehouseId: string): Promise<WarehouseInfo> {
   return getWarehouseDetail(warehouseId);
 }
 
@@ -96,7 +88,7 @@ interface MonitorQuerySlim {
  * and returns a map of query ID → TriageInsight.
  */
 export async function fetchMonitorInsights(
-  slimQueries: MonitorQuerySlim[]
+  slimQueries: MonitorQuerySlim[],
 ): Promise<Record<string, TriageInsight>> {
   // Convert slim queries to the shape triageMonitorQueries expects
   const queries: TimelineQuery[] = slimQueries.map((q) => ({

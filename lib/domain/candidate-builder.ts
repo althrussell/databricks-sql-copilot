@@ -9,12 +9,12 @@
 import type { QueryRun, Candidate, QueryOrigin, WarehouseCost } from "@/lib/domain/types";
 import { fingerprint } from "@/lib/domain/sql-fingerprint";
 import { scoreCandidate, type ScoreInput } from "@/lib/domain/scoring";
-import { computeFlags, filterAndRankFlags, type FlagTableContext } from "@/lib/domain/performance-flags";
 import {
-  isDbtQuery,
-  extractDbtMetadata,
-  extractQueryTag,
-} from "@/lib/domain/dbt-parser";
+  computeFlags,
+  filterAndRankFlags,
+  type FlagTableContext,
+} from "@/lib/domain/performance-flags";
+import { isDbtQuery, extractDbtMetadata, extractQueryTag } from "@/lib/domain/dbt-parser";
 
 interface RunGroup {
   fingerprint: string;
@@ -68,7 +68,7 @@ function avg(values: number[]): number {
 export function buildCandidates(
   runs: QueryRun[],
   warehouseCosts: WarehouseCost[] = [],
-  tableContext?: FlagTableContext
+  tableContext?: FlagTableContext,
 ): Candidate[] {
   // Aggregate costs per warehouse (dollars come pre-computed from SQL join)
   const whDollarCost = new Map<string, number>();
@@ -120,33 +120,19 @@ export function buildCandidates(
     const p95Ms = percentile(durations, 0.95);
     const totalDurationMs = durations.reduce((s, d) => s + d, 0);
 
-    const totalSpilledBytes = groupRuns.reduce(
-      (s, r) => s + r.spilledLocalBytes,
-      0
-    );
+    const totalSpilledBytes = groupRuns.reduce((s, r) => s + r.spilledLocalBytes, 0);
     const totalReadBytes = groupRuns.reduce((s, r) => s + r.readBytes, 0);
 
-    const avgWaitingAtCapacityMs = avg(
-      groupRuns.map((r) => r.waitingAtCapacityDurationMs)
-    );
+    const avgWaitingAtCapacityMs = avg(groupRuns.map((r) => r.waitingAtCapacityDurationMs));
 
     const cachedCount = groupRuns.filter((r) => r.fromResultCache).length;
     const cacheHitRate = n > 0 ? cachedCount / n : 0;
 
     // Extended aggregate stats
-    const totalShuffleBytes = groupRuns.reduce(
-      (s, r) => s + r.shuffleReadBytes,
-      0
-    );
-    const totalWrittenBytes = groupRuns.reduce(
-      (s, r) => s + r.writtenBytes,
-      0
-    );
+    const totalShuffleBytes = groupRuns.reduce((s, r) => s + r.shuffleReadBytes, 0);
+    const totalWrittenBytes = groupRuns.reduce((s, r) => s + r.writtenBytes, 0);
     const totalReadRows = groupRuns.reduce((s, r) => s + r.readRows, 0);
-    const totalProducedRows = groupRuns.reduce(
-      (s, r) => s + r.producedRows,
-      0
-    );
+    const totalProducedRows = groupRuns.reduce((s, r) => s + r.producedRows, 0);
 
     // Pruning efficiency: prunedFiles / (prunedFiles + readFiles)
     const pruningEfficiencies = groupRuns
@@ -162,20 +148,14 @@ export function buildCandidates(
 
     // Time breakdown averages
     const avgCompilationMs = avg(groupRuns.map((r) => r.compilationDurationMs));
-    const avgQueueWaitMs = avg(
-      groupRuns.map((r) => r.waitingAtCapacityDurationMs)
-    );
-    const avgComputeWaitMs = avg(
-      groupRuns.map((r) => r.waitingForComputeDurationMs)
-    );
+    const avgQueueWaitMs = avg(groupRuns.map((r) => r.waitingAtCapacityDurationMs));
+    const avgComputeWaitMs = avg(groupRuns.map((r) => r.waitingForComputeDurationMs));
     const avgExecutionMs = avg(groupRuns.map((r) => r.executionDurationMs));
     const avgFetchMs = avg(groupRuns.map((r) => r.resultFetchDurationMs));
     const avgIoCachePercent = avg(groupRuns.map((r) => r.readIoCachePercent));
 
     // Pick the slowest run as the sample statement
-    const slowest = groupRuns.reduce((a, b) =>
-      b.durationMs > a.durationMs ? b : a
-    );
+    const slowest = groupRuns.reduce((a, b) => (b.durationMs > a.durationMs ? b : a));
 
     // Determine the warehouse that ran this query pattern the most
     const warehouseCounts = new Map<string, { count: number; name: string }>();
@@ -188,9 +168,7 @@ export function buildCandidates(
       entry.count++;
       warehouseCounts.set(whId, entry);
     }
-    const topWarehouse = [...warehouseCounts.entries()].sort(
-      (a, b) => b[1].count - a[1].count
-    )[0];
+    const topWarehouse = [...warehouseCounts.entries()].sort((a, b) => b[1].count - a[1].count)[0];
 
     // User attribution
     const userCounts = new Map<string, number>();
@@ -204,12 +182,8 @@ export function buildCandidates(
     const primaryOrigin = mode(origins) as QueryOrigin;
 
     // Statement type & client app (most common)
-    const primaryStmtType = mode(
-      groupRuns.map((r) => r.statementType ?? "SELECT")
-    );
-    const primaryClientApp = mode(
-      groupRuns.map((r) => r.clientApplication ?? "Unknown")
-    );
+    const primaryStmtType = mode(groupRuns.map((r) => r.statementType ?? "SELECT"));
+    const primaryClientApp = mode(groupRuns.map((r) => r.clientApplication ?? "Unknown"));
 
     const scoreInput: ScoreInput = {
       p95Ms,

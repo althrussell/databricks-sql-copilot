@@ -78,7 +78,7 @@ export interface PermissionDetails {
  * monitoring access is missing.
  */
 export function extractPermissionDetails(
-  errors: Array<{ label: string; message: string }>
+  errors: Array<{ label: string; message: string }>,
 ): PermissionDetails {
   const schemas = new Set<string>();
   let endpointAccess = false;
@@ -94,9 +94,7 @@ export function extractPermissionDetails(
 
   const parts: string[] = [];
   if (schemas.size > 0) {
-    parts.push(
-      `Grant USE SCHEMA on: ${[...schemas].join(", ")}`
-    );
+    parts.push(`Grant USE SCHEMA on: ${[...schemas].join(", ")}`);
   }
   if (endpointAccess) {
     parts.push("Grant CAN MONITOR on the SQL warehouse");

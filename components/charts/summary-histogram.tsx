@@ -82,7 +82,7 @@ export function SummaryHistogram({
               onBucketClick && "cursor-pointer",
               isActive
                 ? "bg-primary/10 ring-1 ring-primary/20"
-                : onBucketClick && "hover:bg-muted/50"
+                : onBucketClick && "hover:bg-muted/50",
             )}
             onClick={() => onBucketClick?.(bucket.label)}
           >
@@ -100,8 +100,7 @@ export function SummaryHistogram({
               />
             </div>
             <span className="text-xs text-muted-foreground w-14 text-right shrink-0 tabular-nums">
-              {bucket.count}{" "}
-              <span className="text-muted-foreground/60">({pct}%)</span>
+              {bucket.count} <span className="text-muted-foreground/60">({pct}%)</span>
             </span>
           </div>
         );

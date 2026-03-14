@@ -66,7 +66,7 @@ export async function POST(): Promise<NextResponse> {
       ]);
 
     console.log(
-      `[warehouse-health] data fetched: healthRows=${healthRows.length} userRows=${userRows.length} hourlyRows=${hourlyRows.length} warehouses=${warehouses.length} costs=${costs.length}`
+      `[warehouse-health] data fetched: healthRows=${healthRows.length} userRows=${userRows.length} hourlyRows=${hourlyRows.length} warehouses=${warehouses.length} costs=${costs.length}`,
     );
 
     if (healthRows.length === 0) {
@@ -91,7 +91,7 @@ export async function POST(): Promise<NextResponse> {
     recommendations.sort(
       (a, b) =>
         (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4) ||
-        b.metrics.weeklyCostDollars - a.metrics.weeklyCostDollars
+        b.metrics.weeklyCostDollars - a.metrics.weeklyCostDollars,
     );
 
     // Batch-fetch previous snapshots for trend indicators (single DB round-trip)
@@ -119,12 +119,12 @@ export async function POST(): Promise<NextResponse> {
             console.error(`[warehouse-health] snapshot save failed for ${whId}:`, err);
           }
         }
-      })
+      }),
     );
 
     const elapsed = Date.now() - start;
     console.log(
-      `[warehouse-health] done: ${recommendations.length} recommendations in ${(elapsed / 1000).toFixed(1)}s`
+      `[warehouse-health] done: ${recommendations.length} recommendations in ${(elapsed / 1000).toFixed(1)}s`,
     );
 
     return NextResponse.json({
@@ -135,9 +135,6 @@ export async function POST(): Promise<NextResponse> {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[warehouse-health] failed:", message);
-    return NextResponse.json(
-      { error: message, recommendations: [] },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message, recommendations: [] }, { status: 500 });
   }
 }

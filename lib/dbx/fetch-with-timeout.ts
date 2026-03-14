@@ -20,11 +20,11 @@ export class FetchCancelledError extends Error {
 
 /** Named timeout presets per operation type */
 export const TIMEOUTS = {
-  SQL_SUBMIT: 120_000,    // 2 min — SQL statement submission
-  SQL_POLL: 30_000,       // 30s — polling for async results
-  AUTH: 15_000,           // 15s — token exchange
-  REST_API: 30_000,       // 30s — general REST API calls
-  AI_QUERY: 120_000,      // 2 min — AI model calls
+  SQL_SUBMIT: 120_000, // 2 min — SQL statement submission
+  SQL_POLL: 30_000, // 30s — polling for async results
+  AUTH: 15_000, // 15s — token exchange
+  REST_API: 30_000, // 30s — general REST API calls
+  AI_QUERY: 120_000, // 2 min — AI model calls
 } as const;
 
 /**
@@ -36,7 +36,7 @@ export async function fetchWithTimeout(
   options: {
     timeoutMs?: number;
     signal?: AbortSignal;
-  } = {}
+  } = {},
 ): Promise<Response> {
   const { timeoutMs = TIMEOUTS.REST_API, signal: externalSignal } = options;
 

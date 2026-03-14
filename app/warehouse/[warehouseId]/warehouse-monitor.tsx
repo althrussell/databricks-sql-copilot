@@ -1,13 +1,6 @@
 "use client";
 
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-  useTransition,
-  useRef,
-} from "react";
+import React, { useState, useEffect, useMemo, useCallback, useTransition, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -36,12 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { QueryTimeline } from "@/components/charts/timeline/query-timeline";
 import { StepAreaChart } from "@/components/charts/step-area-chart";
 import { StackedBarsChart } from "@/components/charts/stacked-bars-chart";
@@ -49,11 +37,7 @@ import { SummaryHistogram } from "@/components/charts/summary-histogram";
 import { SummaryHeatmap } from "@/components/charts/summary-heatmap";
 import type { TimeRange } from "@/components/charts/timeline/use-timeline-zoom";
 import type { WarehouseInfo } from "@/lib/dbx/rest-client";
-import type {
-  EndpointMetric,
-  TimelineQuery,
-  WarehouseLiveStats,
-} from "@/lib/domain/types";
+import type { EndpointMetric, TimelineQuery, WarehouseLiveStats } from "@/lib/domain/types";
 import {
   fetchWarehouseStats,
   fetchEndpointMetrics,
@@ -90,12 +74,12 @@ const SOURCE_COLORS = [
   "var(--chart-3)", // teal/green
   "var(--chart-4)", // amber
   "var(--chart-5)", // purple
-  "#3b82f6",        // blue-500
-  "#f59e0b",        // amber-500
-  "#06b6d4",        // cyan-500
-  "#8b5cf6",        // violet-500
-  "#ec4899",        // pink-500
-  "#84cc16",        // lime-500
+  "#3b82f6", // blue-500
+  "#f59e0b", // amber-500
+  "#06b6d4", // cyan-500
+  "#8b5cf6", // violet-500
+  "#ec4899", // pink-500
+  "#84cc16", // lime-500
 ];
 
 // ── Range presets ──────────────────────────────────────────────────
@@ -146,23 +130,15 @@ export function WarehouseMonitor({
   const [rangeHours, setRangeHours] = useState(initialRangeHours);
   const [metrics, setMetrics] = useState<EndpointMetric[]>(initialMetrics);
   const [queries, setQueries] = useState<TimelineQuery[]>(initialQueries);
-  const [liveStats, setLiveStats] = useState<WarehouseLiveStats | null>(
-    initialLiveStats
-  );
-  const [nextPageToken, setNextPageToken] = useState<string | undefined>(
-    initialNextPageToken
-  );
+  const [liveStats, setLiveStats] = useState<WarehouseLiveStats | null>(initialLiveStats);
+  const [nextPageToken, setNextPageToken] = useState<string | undefined>(initialNextPageToken);
   const [hasNextPage, setHasNextPage] = useState(initialHasNextPage);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [insights, setInsights] = useState<Record<string, TriageInsight>>({});
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [highlightedQueryId, setHighlightedQueryId] = useState<string | null>(
-    null
-  );
-  const [sortColumn, setSortColumn] = useState<"duration" | "bytes" | "start">(
-    "duration"
-  );
+  const [highlightedQueryId, setHighlightedQueryId] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<"duration" | "bytes" | "start">("duration");
   const [sortAsc, setSortAsc] = useState(false);
   const [activeFilter, setActiveFilter] = useState<QueryFilter | null>(null);
   const [activeHeatmapCell, setActiveHeatmapCell] = useState<string | null>(null);
@@ -216,12 +192,11 @@ export function WarehouseMonitor({
 
         try {
           // Use allSettled so one permission-denied endpoint doesn't block the rest
-          const [metricsResult, queriesResult, statsResult] =
-            await Promise.allSettled([
-              fetchEndpointMetrics(warehouseId, startMs, endMs),
-              fetchWarehouseQueries(warehouseId, startMs, endMs),
-              fetchWarehouseStats(warehouseId),
-            ]);
+          const [metricsResult, queriesResult, statsResult] = await Promise.allSettled([
+            fetchEndpointMetrics(warehouseId, startMs, endMs),
+            fetchWarehouseQueries(warehouseId, startMs, endMs),
+            fetchWarehouseStats(warehouseId),
+          ]);
 
           if (metricsResult.status === "fulfilled") {
             setMetrics(metricsResult.value);
@@ -241,7 +216,7 @@ export function WarehouseMonitor({
         }
       });
     },
-    [warehouseId]
+    [warehouseId],
   );
 
   // ── Load more queries ──────────────────────────────────────────
@@ -293,7 +268,9 @@ export function WarehouseMonitor({
         cacheHitPercent: q.cacheHitPercent,
         userName: q.userName,
       }));
-      console.log(`[warehouse-monitor] requesting insights for ${slim.length} queries with SQL text`);
+      console.log(
+        `[warehouse-monitor] requesting insights for ${slim.length} queries with SQL text`,
+      );
       const result = await fetchMonitorInsights(slim);
       const count = Object.keys(result).length;
       setInsights(result);
@@ -336,7 +313,7 @@ export function WarehouseMonitor({
         test: (q) => q.status === status,
       });
     },
-    [toggleFilter]
+    [toggleFilter],
   );
 
   const filterBySource = useCallback(
@@ -347,7 +324,7 @@ export function WarehouseMonitor({
         test: (q) => q.sourceName === source,
       });
     },
-    [toggleFilter]
+    [toggleFilter],
   );
 
   const filterByUser = useCallback(
@@ -358,7 +335,7 @@ export function WarehouseMonitor({
         test: (q) => q.userName === user,
       });
     },
-    [toggleFilter]
+    [toggleFilter],
   );
 
   const filterByDuration = useCallback(
@@ -371,13 +348,13 @@ export function WarehouseMonitor({
         test: (q) => q.durationMs >= bucket.min && q.durationMs < bucket.max,
       });
     },
-    [toggleFilter]
+    [toggleFilter],
   );
 
   const filterByIO = useCallback(
     (filesRange: [number, number], bytesRange: [number, number], cellKey: string) => {
       const label = `Files ≤${filesRange[1]}, Bytes ≤${formatBytesShort(bytesRange[1])}`;
-      setActiveHeatmapCell((prev) => prev === cellKey ? null : cellKey);
+      setActiveHeatmapCell((prev) => (prev === cellKey ? null : cellKey));
       toggleFilter({
         type: "io",
         label,
@@ -388,7 +365,7 @@ export function WarehouseMonitor({
           q.bytesScanned < bytesRange[1],
       });
     },
-    [toggleFilter]
+    [toggleFilter],
   );
 
   // Auto-refresh every 15 seconds
@@ -412,7 +389,7 @@ export function WarehouseMonitor({
         scroll: false,
       });
     },
-    [warehouseId, refreshData, router]
+    [warehouseId, refreshData, router],
   );
 
   const handleTimelineRangeChange = useCallback(
@@ -423,7 +400,7 @@ export function WarehouseMonitor({
           const newQueries = await fetchWarehouseQueries(
             warehouseId,
             Math.round(range.start),
-            Math.round(range.end)
+            Math.round(range.end),
           );
           setQueries(newQueries.queries);
           setNextPageToken(newQueries.nextPageToken);
@@ -433,39 +410,48 @@ export function WarehouseMonitor({
         }
       });
     },
-    [warehouseId]
+    [warehouseId],
   );
 
   // ── Query click → scroll to table row ─────────────────────────
 
-  const handleQueryClick = useCallback((queryId: string) => {
-    // Clear any active filter so the clicked query is visible in the table
-    setActiveFilter(null);
-    setActiveHeatmapCell(null);
-    setHighlightedQueryId((prev) => (prev === queryId ? null : queryId));
-    setExpandedQueryId((prev) => (prev === queryId ? null : queryId));
-    // Jump to the page containing this query so it appears at the top
-    // We need the index in the sorted (unfiltered) list
-    // Use a setTimeout to let the filter-clear take effect first
-    setTimeout(() => {
-      // Re-derive sorted list (filter was cleared, so all queries are included)
-      const idx = queries
-        .slice()
-        .sort((a, b) => {
-          let diff = 0;
-          switch (sortColumn) {
-            case "duration": diff = a.durationMs - b.durationMs; break;
-            case "bytes": diff = a.bytesScanned - b.bytesScanned; break;
-            case "start": diff = a.startTimeMs - b.startTimeMs; break;
-          }
-          return sortAsc ? diff : -diff;
-        })
-        .findIndex((q) => q.id === queryId);
-      if (idx >= 0) {
-        setTablePage(Math.floor(idx / PAGE_SIZE));
-      }
-    }, 0);
-  }, [queries, sortColumn, sortAsc]);
+  const handleQueryClick = useCallback(
+    (queryId: string) => {
+      // Clear any active filter so the clicked query is visible in the table
+      setActiveFilter(null);
+      setActiveHeatmapCell(null);
+      setHighlightedQueryId((prev) => (prev === queryId ? null : queryId));
+      setExpandedQueryId((prev) => (prev === queryId ? null : queryId));
+      // Jump to the page containing this query so it appears at the top
+      // We need the index in the sorted (unfiltered) list
+      // Use a setTimeout to let the filter-clear take effect first
+      setTimeout(() => {
+        // Re-derive sorted list (filter was cleared, so all queries are included)
+        const idx = queries
+          .slice()
+          .sort((a, b) => {
+            let diff = 0;
+            switch (sortColumn) {
+              case "duration":
+                diff = a.durationMs - b.durationMs;
+                break;
+              case "bytes":
+                diff = a.bytesScanned - b.bytesScanned;
+                break;
+              case "start":
+                diff = a.startTimeMs - b.startTimeMs;
+                break;
+            }
+            return sortAsc ? diff : -diff;
+          })
+          .findIndex((q) => q.id === queryId);
+        if (idx >= 0) {
+          setTablePage(Math.floor(idx / PAGE_SIZE));
+        }
+      }, 0);
+    },
+    [queries, sortColumn, sortAsc],
+  );
 
   // ── Sorted queries for the table ──────────────────────────────
 
@@ -499,21 +485,46 @@ export function WarehouseMonitor({
   const safeTablePage = Math.min(tablePage, totalPages - 1);
   const paginatedQueries = sortedTableQueries.slice(
     safeTablePage * PAGE_SIZE,
-    (safeTablePage + 1) * PAGE_SIZE
+    (safeTablePage + 1) * PAGE_SIZE,
   );
 
   // ── CSV export ──────────────────────────────────────────────────
 
   const handleExportCsv = useCallback(() => {
     const headers = [
-      "Query ID", "Status", "User", "Source", "Client App", "Type",
-      "Duration (ms)", "Queue Wait (ms)", "Compilation (ms)", "Execution (ms)", "Fetch (ms)",
-      "Bytes Scanned", "Rows Produced", "Cache %", "Spill Bytes", "Started",
+      "Query ID",
+      "Status",
+      "User",
+      "Source",
+      "Client App",
+      "Type",
+      "Duration (ms)",
+      "Queue Wait (ms)",
+      "Compilation (ms)",
+      "Execution (ms)",
+      "Fetch (ms)",
+      "Bytes Scanned",
+      "Rows Produced",
+      "Cache %",
+      "Spill Bytes",
+      "Started",
     ];
     const rows = sortedTableQueries.map((q) => [
-      q.id, q.status, q.userName, q.sourceName, q.clientApplication, q.statementType,
-      q.durationMs, q.queueWaitMs, q.compilationTimeMs, q.executionTimeMs, q.fetchTimeMs,
-      q.bytesScanned, q.rowsProduced, q.cacheHitPercent, q.spillBytes,
+      q.id,
+      q.status,
+      q.userName,
+      q.sourceName,
+      q.clientApplication,
+      q.statementType,
+      q.durationMs,
+      q.queueWaitMs,
+      q.compilationTimeMs,
+      q.executionTimeMs,
+      q.fetchTimeMs,
+      q.bytesScanned,
+      q.rowsProduced,
+      q.cacheHitPercent,
+      q.spillBytes,
       new Date(q.startTimeMs).toISOString(),
     ]);
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -570,10 +581,7 @@ export function WarehouseMonitor({
   // The /stats endpoint may return 0 for serverless warehouses or if
   // the service principal lacks permission.  Fall back to num_clusters
   // from the warehouse detail API, which reflects currently running clusters.
-  const activeClusters = Math.max(
-    liveStats?.numActiveClusters ?? 0,
-    warehouse?.numClusters ?? 0
-  );
+  const activeClusters = Math.max(liveStats?.numActiveClusters ?? 0, warehouse?.numClusters ?? 0);
 
   // ── Metrics chart data ────────────────────────────────────────
 
@@ -693,7 +701,11 @@ export function WarehouseMonitor({
                 <span className="h-3 w-px bg-border" />
                 <span className="flex items-center gap-1 tabular-nums">
                   <Server className="h-3 w-3 text-muted-foreground" />
-                  <span className={activeClusters > 0 ? "text-foreground font-medium" : "text-muted-foreground"}>
+                  <span
+                    className={
+                      activeClusters > 0 ? "text-foreground font-medium" : "text-muted-foreground"
+                    }
+                  >
                     {activeClusters}
                   </span>
                   <span className="text-muted-foreground text-[10px]">
@@ -734,401 +746,515 @@ export function WarehouseMonitor({
 
           {/* Content */}
           <div className="p-4 space-y-3">
+            {partialErrors.length > 0 && (
+              <Card className="border-amber-200 dark:border-amber-800">
+                <CardContent className="flex items-start gap-3 py-3">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                      Some data could not be loaded
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {partialErrors.map((msg, i) => (
+                        <li key={i} className="text-xs text-muted-foreground">
+                          {msg}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-          {partialErrors.length > 0 && (
-            <Card className="border-amber-200 dark:border-amber-800">
-              <CardContent className="flex items-start gap-3 py-3">
-                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                <div className="flex-1">
-                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                    Some data could not be loaded
-                  </p>
-                  <ul className="mt-1 space-y-0.5">
-                    {partialErrors.map((msg, i) => (
-                      <li key={i} className="text-xs text-muted-foreground">{msg}</li>
-                    ))}
-                  </ul>
+            {/* ── Metrics timeline ─────────────────────────────── */}
+            <Card>
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-medium">Warehouse Metrics</h3>
+                  <div className="flex items-center gap-3 text-[10px]">
+                    <span className="flex items-center gap-1">
+                      <span
+                        className="inline-block w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: "var(--chart-3)" }}
+                      />
+                      Running
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span
+                        className="inline-block w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: "var(--chart-4)" }}
+                      />
+                      Queued
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span
+                        className="inline-block w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: "var(--chart-2)" }}
+                      />
+                      Throughput
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-1">
+                      Running / Queued Slots
+                    </div>
+                    <StackedBarsChart
+                      data={metricsChartData.stackedData}
+                      colors={["var(--chart-3)", "var(--chart-4)"]}
+                      labels={["Running", "Queued"]}
+                      height={60}
+                    />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-1">
+                      Throughput (queries/interval)
+                    </div>
+                    <StepAreaChart
+                      data={metricsChartData.throughputData}
+                      height={60}
+                      strokeColor="var(--chart-2)"
+                      valueLabel="Queries"
+                      formatValue={(v) => String(Math.round(v))}
+                    />
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          )}
 
-          {/* ── Metrics timeline ─────────────────────────────── */}
-          <Card>
-            <CardContent className="pt-3 pb-3">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-medium">Warehouse Metrics</h3>
-                <div className="flex items-center gap-3 text-[10px]">
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--chart-3)" }} />
-                    Running
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--chart-4)" }} />
-                    Queued
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--chart-2)" }} />
-                    Throughput
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-[10px] text-muted-foreground mb-1">Running / Queued Slots</div>
-                  <StackedBarsChart
-                    data={metricsChartData.stackedData}
-                    colors={["var(--chart-3)", "var(--chart-4)"]}
-                    labels={["Running", "Queued"]}
-                    height={60}
-                  />
-                </div>
-                <div>
-                  <div className="text-[10px] text-muted-foreground mb-1">Throughput (queries/interval)</div>
-                  <StepAreaChart
-                    data={metricsChartData.throughputData}
-                    height={60}
-                    strokeColor="var(--chart-2)"
-                    valueLabel="Queries"
-                    formatValue={(v) => String(Math.round(v))}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* ── Query Timeline ───────────────────────────────── */}
-          <Card>
-            <CardContent className="pt-3 pb-3">
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="text-xs font-medium flex items-center gap-1.5">
-                  <ZoomIn className="h-3.5 w-3.5 text-muted-foreground" />
-                  Query Timeline
-                </h3>
-              </div>
-              <QueryTimeline
-                queries={queries}
-                initialRange={timelineRange}
-                onRangeChange={handleTimelineRangeChange}
-                onQueryClick={handleQueryClick}
-                laneHeight={8}
-                maxLanes={80}
-                maxHeight={350}
-              />
-            </CardContent>
-          </Card>
-
-          {/* ── Query Table (full width) ────────────────────── */}
-          <Card ref={tableRef}>
-            <CardContent className="pt-3 pb-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xs font-medium">
-                    Queries
-                    {activeFilter
-                      ? ` (${sortedTableQueries.length} of ${queries.length})`
-                      : ` (${queries.length})`}
+            {/* ── Query Timeline ───────────────────────────────── */}
+            <Card>
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-xs font-medium flex items-center gap-1.5">
+                    <ZoomIn className="h-3.5 w-3.5 text-muted-foreground" />
+                    Query Timeline
                   </h3>
-                  {activeFilter && (
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px] gap-1 cursor-pointer hover:bg-destructive/20 transition-colors"
-                      onClick={() => setActiveFilter(null)}
-                    >
-                      {activeFilter.type}: {activeFilter.label}
-                      <X className="h-2.5 w-2.5" />
-                    </Badge>
-                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  {insightsMessage && (
-                    <span className="text-[10px] text-muted-foreground animate-in fade-in">
-                      {insightsMessage}
-                    </span>
-                  )}
-                  <Button
-                    variant={hasInsights ? "outline" : "default"}
-                    size="sm"
-                    className="h-6 text-[11px] gap-1.5"
-                    onClick={handleFetchInsights}
-                    disabled={isLoadingInsights || queries.length === 0}
-                  >
-                    {isLoadingInsights ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-3 w-3" />
+                <QueryTimeline
+                  queries={queries}
+                  initialRange={timelineRange}
+                  onRangeChange={handleTimelineRangeChange}
+                  onQueryClick={handleQueryClick}
+                  laneHeight={8}
+                  maxLanes={80}
+                  maxHeight={350}
+                />
+              </CardContent>
+            </Card>
+
+            {/* ── Query Table (full width) ────────────────────── */}
+            <Card ref={tableRef}>
+              <CardContent className="pt-3 pb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-medium">
+                      Queries
+                      {activeFilter
+                        ? ` (${sortedTableQueries.length} of ${queries.length})`
+                        : ` (${queries.length})`}
+                    </h3>
+                    {activeFilter && (
+                      <Badge
+                        variant="secondary"
+                        className="text-[10px] gap-1 cursor-pointer hover:bg-destructive/20 transition-colors"
+                        onClick={() => setActiveFilter(null)}
+                      >
+                        {activeFilter.type}: {activeFilter.label}
+                        <X className="h-2.5 w-2.5" />
+                      </Badge>
                     )}
-                    {isLoadingInsights
-                      ? "Analyzing…"
-                      : hasInsights
-                        ? "Refresh Insights"
-                        : "AI Insights"}
-                  </Button>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={handleExportCsv}
-                        disabled={queries.length === 0}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Export CSV</TooltipContent>
-                  </Tooltip>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {insightsMessage && (
+                      <span className="text-[10px] text-muted-foreground animate-in fade-in">
+                        {insightsMessage}
+                      </span>
+                    )}
+                    <Button
+                      variant={hasInsights ? "outline" : "default"}
+                      size="sm"
+                      className="h-6 text-[11px] gap-1.5"
+                      onClick={handleFetchInsights}
+                      disabled={isLoadingInsights || queries.length === 0}
+                    >
+                      {isLoadingInsights ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      {isLoadingInsights
+                        ? "Analyzing…"
+                        : hasInsights
+                          ? "Refresh Insights"
+                          : "AI Insights"}
+                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={handleExportCsv}
+                          disabled={queries.length === 0}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Export CSV</TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
-              </div>
-              <div className="border border-border rounded-md overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-6 px-2" />
-                      <TableHead className="w-8">Status</TableHead>
-                      <TableHead>User</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Client</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead
-                        className="cursor-pointer select-none"
-                        onClick={() => {
-                          if (sortColumn === "duration") setSortAsc(!sortAsc);
-                          else { setSortColumn("duration"); setSortAsc(false); }
-                        }}
-                      >
-                        Duration{sortColumn === "duration" && <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>}
-                      </TableHead>
-                      <TableHead>Queue</TableHead>
-                      <TableHead
-                        className="cursor-pointer select-none"
-                        onClick={() => {
-                          if (sortColumn === "bytes") setSortAsc(!sortAsc);
-                          else { setSortColumn("bytes"); setSortAsc(false); }
-                        }}
-                      >
-                        Bytes{sortColumn === "bytes" && <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>}
-                      </TableHead>
-                      <TableHead>Cache</TableHead>
-                      <TableHead>Spill</TableHead>
-                      <TableHead
-                        className="w-24 cursor-pointer select-none"
-                        onClick={() => {
-                          if (sortColumn === "start") setSortAsc(!sortAsc);
-                          else { setSortColumn("start"); setSortAsc(false); }
-                        }}
-                      >
-                        Started{sortColumn === "start" && <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>}
-                      </TableHead>
-                      {hasInsights && <TableHead className="min-w-[180px]">AI Insight</TableHead>}
-                      <TableHead className="w-10 text-center" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedQueries.length > 0 ? (
-                      paginatedQueries.map((q) => {
-                        const isExpanded = expandedQueryId === q.id;
-                        const colCount = 13 + (hasInsights ? 1 : 0);
-                        const queryProfileUrl = workspaceUrl
-                          ? `${workspaceUrl}/sql/history?queryId=${q.id}${q.startTimeMs ? `&queryStartTimeMs=${q.startTimeMs}` : ""}`
-                          : null;
-                        return (
-                          <React.Fragment key={q.id}>
-                            <TableRow
-                              id={`query-row-${q.id}`}
-                              className={`cursor-pointer transition-colors ${
-                                highlightedQueryId === q.id ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
-                              }`}
-                              onClick={() => handleQueryClick(q.id)}
-                            >
-                              <TableCell className="px-2 w-6">
-                                {isExpanded
-                                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-                              </TableCell>
-                              <TableCell><QueryStatusDot status={q.status} /></TableCell>
-                              <TableCell
-                                className="text-xs truncate max-w-[120px] cursor-pointer hover:text-primary transition-colors"
-                                onClick={(e) => { e.stopPropagation(); filterByUser(q.userName); }}
-                              >{q.userName}</TableCell>
-                              <TableCell
-                                className="text-xs cursor-pointer hover:text-primary transition-colors"
-                                onClick={(e) => { e.stopPropagation(); filterBySource(q.sourceName); }}
-                              >{q.sourceName}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground truncate max-w-[80px]">{q.clientApplication || "-"}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{q.statementType}</TableCell>
-                              <TableCell className="text-xs tabular-nums font-medium">{formatDuration(q.durationMs)}</TableCell>
-                              <TableCell className="text-xs tabular-nums">
-                                {q.queueWaitMs > 0 ? <span className="text-chart-4">{formatDuration(q.queueWaitMs)}</span> : "-"}
-                              </TableCell>
-                              <TableCell className="text-xs tabular-nums">{formatBytes(q.bytesScanned)}</TableCell>
-                              <TableCell className="text-xs tabular-nums">{q.cacheHitPercent > 0 ? `${q.cacheHitPercent}%` : "-"}</TableCell>
-                              <TableCell className="text-xs tabular-nums">
-                                {q.spillBytes > 0 ? <span className="text-destructive">{formatBytes(q.spillBytes)}</span> : "-"}
-                              </TableCell>
-                              <TableCell className="text-xs tabular-nums text-muted-foreground">{formatTime(q.startTimeMs)}</TableCell>
-                              {hasInsights && (
-                                <TableCell className="text-xs"><InsightCell insight={insights[q.id] ?? null} /></TableCell>
-                              )}
-                              <TableCell className="text-center">
-                                <div className="flex items-center gap-0.5 justify-center">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          router.push(`/queries/${q.fingerprint ?? q.id}?action=analyse`);
-                                        }}
-                                      >
-                                        <Sparkles className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>AI Analyse &amp; Optimise</TooltipContent>
-                                  </Tooltip>
-                                  {queryProfileUrl && (
+                <div className="border border-border rounded-md overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-6 px-2" />
+                        <TableHead className="w-8">Status</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Source</TableHead>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead
+                          className="cursor-pointer select-none"
+                          onClick={() => {
+                            if (sortColumn === "duration") setSortAsc(!sortAsc);
+                            else {
+                              setSortColumn("duration");
+                              setSortAsc(false);
+                            }
+                          }}
+                        >
+                          Duration
+                          {sortColumn === "duration" && (
+                            <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>
+                          )}
+                        </TableHead>
+                        <TableHead>Queue</TableHead>
+                        <TableHead
+                          className="cursor-pointer select-none"
+                          onClick={() => {
+                            if (sortColumn === "bytes") setSortAsc(!sortAsc);
+                            else {
+                              setSortColumn("bytes");
+                              setSortAsc(false);
+                            }
+                          }}
+                        >
+                          Bytes
+                          {sortColumn === "bytes" && (
+                            <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>
+                          )}
+                        </TableHead>
+                        <TableHead>Cache</TableHead>
+                        <TableHead>Spill</TableHead>
+                        <TableHead
+                          className="w-24 cursor-pointer select-none"
+                          onClick={() => {
+                            if (sortColumn === "start") setSortAsc(!sortAsc);
+                            else {
+                              setSortColumn("start");
+                              setSortAsc(false);
+                            }
+                          }}
+                        >
+                          Started
+                          {sortColumn === "start" && (
+                            <span className="ml-1">{sortAsc ? "↑" : "↓"}</span>
+                          )}
+                        </TableHead>
+                        {hasInsights && <TableHead className="min-w-[180px]">AI Insight</TableHead>}
+                        <TableHead className="w-10 text-center" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedQueries.length > 0 ? (
+                        paginatedQueries.map((q) => {
+                          const isExpanded = expandedQueryId === q.id;
+                          const colCount = 13 + (hasInsights ? 1 : 0);
+                          const queryProfileUrl = workspaceUrl
+                            ? `${workspaceUrl}/sql/history?queryId=${q.id}${q.startTimeMs ? `&queryStartTimeMs=${q.startTimeMs}` : ""}`
+                            : null;
+                          return (
+                            <React.Fragment key={q.id}>
+                              <TableRow
+                                id={`query-row-${q.id}`}
+                                className={`cursor-pointer transition-colors ${
+                                  highlightedQueryId === q.id
+                                    ? "bg-primary/10 ring-1 ring-primary/20"
+                                    : "hover:bg-muted/50"
+                                }`}
+                                onClick={() => handleQueryClick(q.id)}
+                              >
+                                <TableCell className="px-2 w-6">
+                                  {isExpanded ? (
+                                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                  ) : (
+                                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <QueryStatusDot status={q.status} />
+                                </TableCell>
+                                <TableCell
+                                  className="text-xs truncate max-w-[120px] cursor-pointer hover:text-primary transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    filterByUser(q.userName);
+                                  }}
+                                >
+                                  {q.userName}
+                                </TableCell>
+                                <TableCell
+                                  className="text-xs cursor-pointer hover:text-primary transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    filterBySource(q.sourceName);
+                                  }}
+                                >
+                                  {q.sourceName}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground truncate max-w-[80px]">
+                                  {q.clientApplication || "-"}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {q.statementType}
+                                </TableCell>
+                                <TableCell className="text-xs tabular-nums font-medium">
+                                  {formatDuration(q.durationMs)}
+                                </TableCell>
+                                <TableCell className="text-xs tabular-nums">
+                                  {q.queueWaitMs > 0 ? (
+                                    <span className="text-chart-4">
+                                      {formatDuration(q.queueWaitMs)}
+                                    </span>
+                                  ) : (
+                                    "-"
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs tabular-nums">
+                                  {formatBytes(q.bytesScanned)}
+                                </TableCell>
+                                <TableCell className="text-xs tabular-nums">
+                                  {q.cacheHitPercent > 0 ? `${q.cacheHitPercent}%` : "-"}
+                                </TableCell>
+                                <TableCell className="text-xs tabular-nums">
+                                  {q.spillBytes > 0 ? (
+                                    <span className="text-destructive">
+                                      {formatBytes(q.spillBytes)}
+                                    </span>
+                                  ) : (
+                                    "-"
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs tabular-nums text-muted-foreground">
+                                  {formatTime(q.startTimeMs)}
+                                </TableCell>
+                                {hasInsights && (
+                                  <TableCell className="text-xs">
+                                    <InsightCell insight={insights[q.id] ?? null} />
+                                  </TableCell>
+                                )}
+                                <TableCell className="text-center">
+                                  <div className="flex items-center gap-0.5 justify-center">
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <a
-                                          href={queryProfileUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-muted transition-colors"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-                                        </a>
-                                      </TooltipTrigger>
-                                      <TooltipContent>Open Query Profile in Databricks</TooltipContent>
-                                    </Tooltip>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                            {isExpanded && (
-                              <TableRow className="bg-muted/30 hover:bg-muted/30">
-                                <TableCell colSpan={colCount} className="py-3 px-4">
-                                  <div className="space-y-3">
-                                    {/* Time breakdown bar */}
-                                    <div>
-                                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Time Breakdown</p>
-                                      <TimeBreakdownBar
-                                        compilationMs={q.compilationTimeMs}
-                                        queueWaitMs={q.queueWaitMs}
-                                        executionMs={q.executionTimeMs}
-                                        fetchMs={q.fetchTimeMs}
-                                        totalMs={q.durationMs}
-                                      />
-                                    </div>
-                                    {/* Extra metrics */}
-                                    <div className="flex items-center gap-4 text-[11px]">
-                                      <span className="text-muted-foreground">Rows produced: <span className="text-foreground tabular-nums">{q.rowsProduced.toLocaleString()}</span></span>
-                                      <span className="text-muted-foreground">Files read: <span className="text-foreground tabular-nums">{q.filesRead.toLocaleString()}</span></span>
-                                      {q.clientApplication && <span className="text-muted-foreground">Client: <span className="text-foreground">{q.clientApplication}</span></span>}
-                                    </div>
-                                    {/* SQL + actions */}
-                                    <div className="flex items-start gap-3">
-                                      <div className="flex-1 min-w-0">
-                                        {q.queryText ? (
-                                          <>
-                                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">SQL Statement</p>
-                                            <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground/90 max-h-48 overflow-y-auto bg-background/50 rounded-md p-2 border border-border/50">
-                                              {q.queryText}
-                                            </pre>
-                                          </>
-                                        ) : (
-                                          <p className="text-xs text-muted-foreground italic">SQL text not available for this query.</p>
-                                        )}
-                                      </div>
-                                      <div className="flex flex-col gap-1.5 shrink-0">
                                         <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-7 text-[11px] gap-1.5"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            router.push(`/queries/${q.fingerprint ?? q.id}?action=analyse`);
+                                            router.push(
+                                              `/queries/${q.fingerprint ?? q.id}?action=analyse`,
+                                            );
                                           }}
                                         >
-                                          <Sparkles className="h-3 w-3" />
-                                          AI Analyse
+                                          <Sparkles className="h-3.5 w-3.5" />
                                         </Button>
-                                        {queryProfileUrl && (
+                                      </TooltipTrigger>
+                                      <TooltipContent>AI Analyse &amp; Optimise</TooltipContent>
+                                    </Tooltip>
+                                    {queryProfileUrl && (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
                                           <a
                                             href={queryProfileUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="inline-flex items-center justify-center h-7 rounded-md border border-border text-[11px] gap-1.5 px-2 hover:bg-muted transition-colors"
+                                            className="inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-muted transition-colors"
                                             onClick={(e) => e.stopPropagation()}
                                           >
-                                            <ExternalLink className="h-3 w-3" />
-                                            Query Profile
+                                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
                                           </a>
-                                        )}
-                                      </div>
-                                    </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          Open Query Profile in Databricks
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    )}
                                   </div>
                                 </TableCell>
                               </TableRow>
-                            )}
-                          </React.Fragment>
-                        );
-                      })
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={hasInsights ? 14 : 13} className="text-center text-sm text-muted-foreground h-20">
-                          {activeFilter ? "No queries match the current filter" : "No queries in this time range"}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-              {/* Pagination footer */}
-              <div className="flex items-center justify-between pt-2 px-1">
-                <span className="text-[11px] text-muted-foreground tabular-nums">
-                  {sortedTableQueries.length > 0
-                    ? `${(safeTablePage * PAGE_SIZE + 1).toLocaleString()}–${Math.min((safeTablePage + 1) * PAGE_SIZE, sortedTableQueries.length).toLocaleString()} of ${sortedTableQueries.length.toLocaleString()}`
-                    : "0"}{" "}
-                  queries{hasNextPage ? " (more available)" : ""}
-                </span>
-                <div className="flex items-center gap-1">
-                  {hasNextPage && (
-                    <Button variant="ghost" size="sm" className="text-[11px] h-6" onClick={handleLoadMore} disabled={isLoadingMore}>
-                      {isLoadingMore ? "Loading…" : "Load more from API"}
-                    </Button>
-                  )}
-                  {totalPages > 1 && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        disabled={safeTablePage === 0}
-                        onClick={() => setTablePage((p) => Math.max(0, p - 1))}
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                      </Button>
-                      <span className="text-[11px] tabular-nums text-muted-foreground min-w-[4rem] text-center">
-                        Page {safeTablePage + 1} of {totalPages}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        disabled={safeTablePage >= totalPages - 1}
-                        onClick={() => setTablePage((p) => Math.min(totalPages - 1, p + 1))}
-                      >
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  )}
+                              {isExpanded && (
+                                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                                  <TableCell colSpan={colCount} className="py-3 px-4">
+                                    <div className="space-y-3">
+                                      {/* Time breakdown bar */}
+                                      <div>
+                                        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+                                          Time Breakdown
+                                        </p>
+                                        <TimeBreakdownBar
+                                          compilationMs={q.compilationTimeMs}
+                                          queueWaitMs={q.queueWaitMs}
+                                          executionMs={q.executionTimeMs}
+                                          fetchMs={q.fetchTimeMs}
+                                          totalMs={q.durationMs}
+                                        />
+                                      </div>
+                                      {/* Extra metrics */}
+                                      <div className="flex items-center gap-4 text-[11px]">
+                                        <span className="text-muted-foreground">
+                                          Rows produced:{" "}
+                                          <span className="text-foreground tabular-nums">
+                                            {q.rowsProduced.toLocaleString()}
+                                          </span>
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                          Files read:{" "}
+                                          <span className="text-foreground tabular-nums">
+                                            {q.filesRead.toLocaleString()}
+                                          </span>
+                                        </span>
+                                        {q.clientApplication && (
+                                          <span className="text-muted-foreground">
+                                            Client:{" "}
+                                            <span className="text-foreground">
+                                              {q.clientApplication}
+                                            </span>
+                                          </span>
+                                        )}
+                                      </div>
+                                      {/* SQL + actions */}
+                                      <div className="flex items-start gap-3">
+                                        <div className="flex-1 min-w-0">
+                                          {q.queryText ? (
+                                            <>
+                                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
+                                                SQL Statement
+                                              </p>
+                                              <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground/90 max-h-48 overflow-y-auto bg-background/50 rounded-md p-2 border border-border/50">
+                                                {q.queryText}
+                                              </pre>
+                                            </>
+                                          ) : (
+                                            <p className="text-xs text-muted-foreground italic">
+                                              SQL text not available for this query.
+                                            </p>
+                                          )}
+                                        </div>
+                                        <div className="flex flex-col gap-1.5 shrink-0">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 text-[11px] gap-1.5"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              router.push(
+                                                `/queries/${q.fingerprint ?? q.id}?action=analyse`,
+                                              );
+                                            }}
+                                          >
+                                            <Sparkles className="h-3 w-3" />
+                                            AI Analyse
+                                          </Button>
+                                          {queryProfileUrl && (
+                                            <a
+                                              href={queryProfileUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-flex items-center justify-center h-7 rounded-md border border-border text-[11px] gap-1.5 px-2 hover:bg-muted transition-colors"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <ExternalLink className="h-3 w-3" />
+                                              Query Profile
+                                            </a>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={hasInsights ? 14 : 13}
+                            className="text-center text-sm text-muted-foreground h-20"
+                          >
+                            {activeFilter
+                              ? "No queries match the current filter"
+                              : "No queries in this time range"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+                {/* Pagination footer */}
+                <div className="flex items-center justify-between pt-2 px-1">
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                    {sortedTableQueries.length > 0
+                      ? `${(safeTablePage * PAGE_SIZE + 1).toLocaleString()}–${Math.min((safeTablePage + 1) * PAGE_SIZE, sortedTableQueries.length).toLocaleString()} of ${sortedTableQueries.length.toLocaleString()}`
+                      : "0"}{" "}
+                    queries{hasNextPage ? " (more available)" : ""}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {hasNextPage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-[11px] h-6"
+                        onClick={handleLoadMore}
+                        disabled={isLoadingMore}
+                      >
+                        {isLoadingMore ? "Loading…" : "Load more from API"}
+                      </Button>
+                    )}
+                    {totalPages > 1 && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          disabled={safeTablePage === 0}
+                          onClick={() => setTablePage((p) => Math.max(0, p - 1))}
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                        </Button>
+                        <span className="text-[11px] tabular-nums text-muted-foreground min-w-[4rem] text-center">
+                          Page {safeTablePage + 1} of {totalPages}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          disabled={safeTablePage >= totalPages - 1}
+                          onClick={() => setTablePage((p) => Math.min(totalPages - 1, p + 1))}
+                        >
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
@@ -1137,14 +1263,17 @@ export function WarehouseMonitor({
           <div className="p-3 space-y-3">
             {/* Status breakdown */}
             <div>
-              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Status</h4>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                Status
+              </h4>
               <div className="space-y-1">
                 {Object.entries(summaryStats.statusCounts).map(([status, count]) => (
                   <div
                     key={status}
                     className={`flex items-center justify-between text-xs cursor-pointer rounded-sm px-1.5 py-0.5 -mx-1.5 transition-colors ${
                       activeFilter?.type === "status" && activeFilter.label === status
-                        ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/50"
+                        ? "bg-primary/10 ring-1 ring-primary/20"
+                        : "hover:bg-muted/50"
                     }`}
                     onClick={() => filterByStatus(status)}
                   >
@@ -1162,7 +1291,9 @@ export function WarehouseMonitor({
 
             {/* Source breakdown */}
             <div>
-              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Sources</h4>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                Sources
+              </h4>
               <div className="space-y-1">
                 {summaryStats.topSources.map(([source, count], idx) => {
                   const pct = queries.length > 0 ? Math.round((count / queries.length) * 100) : 0;
@@ -1188,12 +1319,17 @@ export function WarehouseMonitor({
                         <span className="tabular-nums text-muted-foreground">{pct}%</span>
                       </div>
                       <div className="h-1 w-full rounded-full bg-muted overflow-hidden mt-0.5">
-                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: sourceColor }} />
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${pct}%`, backgroundColor: sourceColor }}
+                        />
                       </div>
                     </div>
                   );
                 })}
-                {summaryStats.topSources.length === 0 && <span className="text-[11px] text-muted-foreground">No data</span>}
+                {summaryStats.topSources.length === 0 && (
+                  <span className="text-[11px] text-muted-foreground">No data</span>
+                )}
               </div>
             </div>
 
@@ -1201,7 +1337,9 @@ export function WarehouseMonitor({
 
             {/* Duration histogram */}
             <div>
-              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Duration</h4>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                Duration
+              </h4>
               <SummaryHistogram
                 durations={queries.map((q) => q.durationMs)}
                 onBucketClick={filterByDuration}
@@ -1213,7 +1351,9 @@ export function WarehouseMonitor({
 
             {/* Top users */}
             <div>
-              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Top Users</h4>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                Top Users
+              </h4>
               <div className="space-y-1">
                 {summaryStats.topUsers.map(([user, count]) => {
                   const maxUserCount = summaryStats.topUsers[0]?.[1] ?? 1;
@@ -1232,12 +1372,17 @@ export function WarehouseMonitor({
                         <span className="tabular-nums text-muted-foreground">{count}</span>
                       </div>
                       <div className="h-1 w-full rounded-full bg-muted overflow-hidden mt-0.5">
-                        <div className="h-full rounded-full bg-chart-2 transition-all" style={{ width: `${pct}%` }} />
+                        <div
+                          className="h-full rounded-full bg-chart-2 transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
                     </div>
                   );
                 })}
-                {summaryStats.topUsers.length === 0 && <span className="text-[11px] text-muted-foreground">No data</span>}
+                {summaryStats.topUsers.length === 0 && (
+                  <span className="text-[11px] text-muted-foreground">No data</span>
+                )}
               </div>
             </div>
 
@@ -1245,26 +1390,36 @@ export function WarehouseMonitor({
 
             {/* Aggregate totals */}
             <div>
-              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Totals</h4>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                Totals
+              </h4>
               <div className="space-y-1.5 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Bytes Scanned</span>
-                  <span className="tabular-nums font-medium">{formatBytes(summaryStats.totalBytesScanned)}</span>
+                  <span className="tabular-nums font-medium">
+                    {formatBytes(summaryStats.totalBytesScanned)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Rows Produced</span>
-                  <span className="tabular-nums font-medium">{summaryStats.totalRowsProduced.toLocaleString()}</span>
+                  <span className="tabular-nums font-medium">
+                    {summaryStats.totalRowsProduced.toLocaleString()}
+                  </span>
                 </div>
                 {summaryStats.totalSpillBytes > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-destructive/80">Spill to Disk</span>
-                    <span className="tabular-nums font-medium text-destructive">{formatBytes(summaryStats.totalSpillBytes)}</span>
+                    <span className="tabular-nums font-medium text-destructive">
+                      {formatBytes(summaryStats.totalSpillBytes)}
+                    </span>
                   </div>
                 )}
                 {summaryStats.totalQueueWaitMs > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-chart-4">Total Queue Wait</span>
-                    <span className="tabular-nums font-medium text-chart-4">{formatDuration(summaryStats.totalQueueWaitMs)}</span>
+                    <span className="tabular-nums font-medium text-chart-4">
+                      {formatDuration(summaryStats.totalQueueWaitMs)}
+                    </span>
                   </div>
                 )}
               </div>
@@ -1274,14 +1429,18 @@ export function WarehouseMonitor({
 
             {/* I/O Heatmap */}
             <div>
-              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">I/O Heatmap</h4>
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                I/O Heatmap
+              </h4>
               <SummaryHeatmap
-                data={queries.map((q) => ({ filesRead: q.filesRead, bytesScanned: q.bytesScanned }))}
+                data={queries.map((q) => ({
+                  filesRead: q.filesRead,
+                  bytesScanned: q.bytesScanned,
+                }))}
                 onCellClick={filterByIO}
                 activeCell={activeFilter?.type === "io" ? activeHeatmapCell : null}
               />
             </div>
-
           </div>
         </aside>
       </div>
@@ -1370,7 +1529,9 @@ function InsightCell({ insight }: { insight: TriageInsight | null }) {
       </TooltipTrigger>
       <TooltipContent className="max-w-sm">
         <p className="text-xs leading-relaxed">{insight.insight}</p>
-        <p className="text-[10px] text-muted-foreground mt-1 opacity-70">Source: AI triage analysis</p>
+        <p className="text-[10px] text-muted-foreground mt-1 opacity-70">
+          Source: AI triage analysis
+        </p>
       </TooltipContent>
     </Tooltip>
   );
@@ -1402,7 +1563,12 @@ function TimeBreakdownBar({
   const accounted = compilationMs + queueWaitMs + executionMs + fetchMs;
   const other = Math.max(totalMs - accounted, 0);
   if (other > 0) {
-    segments.push({ label: "Other", ms: other, color: "bg-muted-foreground/30", textColor: "text-muted-foreground" });
+    segments.push({
+      label: "Other",
+      ms: other,
+      color: "bg-muted-foreground/30",
+      textColor: "text-muted-foreground",
+    });
   }
 
   return (
@@ -1422,15 +1588,15 @@ function TimeBreakdownBar({
         })}
       </div>
       <div className="flex items-center gap-3 mt-1 flex-wrap">
-        {segments.map((seg) => (
+        {segments.map((seg) =>
           seg.ms > 0 ? (
             <span key={seg.label} className="flex items-center gap-1 text-[10px]">
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${seg.color}`} />
               <span className={seg.textColor}>{seg.label}</span>
               <span className="tabular-nums text-muted-foreground">{formatDuration(seg.ms)}</span>
             </span>
-          ) : null
-        ))}
+          ) : null,
+        )}
       </div>
     </div>
   );
@@ -1441,8 +1607,7 @@ function TimeBreakdownBar({
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  if (ms < 3600000)
-    return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
   return `${(ms / 3600000).toFixed(1)}h`;
 }
 

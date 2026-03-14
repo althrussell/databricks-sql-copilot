@@ -71,9 +71,7 @@ async function getWorkspaceToken(): Promise<string> {
   const clientId = process.env.DATABRICKS_CLIENT_ID;
   const clientSecret = process.env.DATABRICKS_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    throw new Error(
-      "DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET not available"
-    );
+    throw new Error("DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET not available");
   }
 
   const host = getHost();
@@ -90,7 +88,7 @@ async function getWorkspaceToken(): Promise<string> {
         scope: "all-apis",
       }),
     },
-    { timeoutMs: TIMEOUTS.AUTH }
+    { timeoutMs: TIMEOUTS.AUTH },
   );
 
   if (!resp.ok) {
@@ -110,11 +108,7 @@ async function getWorkspaceToken(): Promise<string> {
 // REST API helpers
 // ---------------------------------------------------------------------------
 
-async function lakebaseApi(
-  method: string,
-  path: string,
-  body?: unknown
-): Promise<Response> {
+async function lakebaseApi(method: string, path: string, body?: unknown): Promise<Response> {
   const host = getHost();
   const token = await getWorkspaceToken();
   return fetchWithTimeout(
@@ -127,7 +121,7 @@ async function lakebaseApi(
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     },
-    { timeoutMs: LAKEBASE_API_TIMEOUT }
+    { timeoutMs: LAKEBASE_API_TIMEOUT },
   );
 }
 
@@ -146,16 +140,12 @@ async function projectExists(): Promise<boolean> {
 async function createProject(): Promise<void> {
   console.log("[lakebase] Creating Lakebase Autoscale project...", PROJECT_ID);
 
-  const resp = await lakebaseApi(
-    "POST",
-    `projects?project_id=${encodeURIComponent(PROJECT_ID)}`,
-    {
-      spec: {
-        display_name: DISPLAY_NAME,
-        pg_version: PG_VERSION,
-      },
-    }
-  );
+  const resp = await lakebaseApi("POST", `projects?project_id=${encodeURIComponent(PROJECT_ID)}`, {
+    spec: {
+      display_name: DISPLAY_NAME,
+      pg_version: PG_VERSION,
+    },
+  });
 
   if (resp.status === 409) {
     console.log("[lakebase] Project already exists (409)");
@@ -190,21 +180,17 @@ async function pollOperation(operationName: string): Promise<void> {
     const op = await resp.json();
     if (op.done) {
       if (op.error) {
-        throw new Error(
-          `Project creation failed: ${JSON.stringify(op.error)}`
-        );
+        throw new Error(`Project creation failed: ${JSON.stringify(op.error)}`);
       }
       return;
     }
 
     console.log(
-      `[lakebase] Waiting for project creation... (${Math.round((Date.now() - start) / 1_000)}s)`
+      `[lakebase] Waiting for project creation... (${Math.round((Date.now() - start) / 1_000)}s)`,
     );
   }
 
-  throw new Error(
-    `Project creation timed out after ${PROJECT_CREATION_TIMEOUT / 1_000}s`
-  );
+  throw new Error(`Project creation timed out after ${PROJECT_CREATION_TIMEOUT / 1_000}s`);
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +204,7 @@ async function resolveEndpoint(): Promise<{ host: string; name: string }> {
 
   const listResp = await lakebaseApi(
     "GET",
-    `projects/${PROJECT_ID}/branches/${BRANCH_ID}/endpoints`
+    `projects/${PROJECT_ID}/branches/${BRANCH_ID}/endpoints`,
   );
   if (!listResp.ok) {
     const text = await listResp.text();
@@ -226,13 +212,10 @@ async function resolveEndpoint(): Promise<{ host: string; name: string }> {
   }
 
   const data = await listResp.json();
-  const endpoints: Array<{ name: string }> =
-    data.endpoints ?? data.items ?? [];
+  const endpoints: Array<{ name: string }> = data.endpoints ?? data.items ?? [];
 
   if (endpoints.length === 0) {
-    throw new Error(
-      `No endpoints found on projects/${PROJECT_ID}/branches/${BRANCH_ID}`
-    );
+    throw new Error(`No endpoints found on projects/${PROJECT_ID}/branches/${BRANCH_ID}`);
   }
 
   const epName = endpoints[0].name;
@@ -247,7 +230,7 @@ async function resolveEndpoint(): Promise<{ host: string; name: string }> {
   if (!host) {
     throw new Error(
       `Endpoint ${epName} has no host — is the compute still starting? ` +
-        `Detail: ${JSON.stringify(detail)}`
+        `Detail: ${JSON.stringify(detail)}`,
     );
   }
 
@@ -274,7 +257,7 @@ async function resolveUsername(): Promise<string> {
         "Content-Type": "application/json",
       },
     },
-    { timeoutMs: TIMEOUTS.AUTH }
+    { timeoutMs: TIMEOUTS.AUTH },
   );
 
   if (!resp.ok) {
@@ -310,9 +293,7 @@ async function generateDbCredential(): Promise<string> {
 
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(
-      `Generate DB credential failed (${resp.status}): ${text}`
-    );
+    throw new Error(`Generate DB credential failed (${resp.status}): ${text}`);
   }
 
   const data: { token: string; expire_time?: string } = await resp.json();

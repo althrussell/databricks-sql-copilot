@@ -8,7 +8,11 @@
  * and sustained-pressure analysis.
  */
 
-import type { WarehouseHealthRow, WarehouseUserRow, WarehouseHourlyRow } from "@/lib/queries/warehouse-health";
+import type {
+  WarehouseHealthRow,
+  WarehouseUserRow,
+  WarehouseHourlyRow,
+} from "@/lib/queries/warehouse-health";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import type { WarehouseCost } from "@/lib/domain/types";
 import type {
@@ -100,7 +104,7 @@ export function aggregateByWarehouse(
   userRows: WarehouseUserRow[],
   warehouses: WarehouseOption[],
   costs: WarehouseCost[],
-  hourlyRows: WarehouseHourlyRow[] = []
+  hourlyRows: WarehouseHourlyRow[] = [],
 ): WarehouseHealthMetrics[] {
   // Group health rows by warehouse
   const byWarehouse = new Map<string, WarehouseHealthRow[]>();
@@ -162,7 +166,14 @@ export function aggregateByWarehouse(
     const hourlyRows = hourlyByWarehouse.get(warehouseId) ?? [];
     const hourlyMap = new Map<number, HourlyActivity>();
     for (let h = 0; h < 24; h++) {
-      hourlyMap.set(h, { hour: h, queries: 0, capacityQueueMin: 0, coldStartMin: 0, spillGiB: 0, avgRuntimeSec: 0 });
+      hourlyMap.set(h, {
+        hour: h,
+        queries: 0,
+        capacityQueueMin: 0,
+        coldStartMin: 0,
+        spillGiB: 0,
+        avgRuntimeSec: 0,
+      });
     }
     for (const hr of hourlyRows) {
       hourlyMap.set(hr.hourOfDay, {
@@ -178,19 +189,26 @@ export function aggregateByWarehouse(
 
     // 7-day totals
     const totalQueries = rows.reduce((s, r) => s + r.queries, 0);
-    const uniqueUsers = new Set(users.map((u) => u.executedBy)).size || rows.reduce((max, r) => Math.max(max, r.uniqueUsers), 0);
+    const uniqueUsers =
+      new Set(users.map((u) => u.executedBy)).size ||
+      rows.reduce((max, r) => Math.max(max, r.uniqueUsers), 0);
     const totalSpillGiB = rows.reduce((s, r) => s + r.spillGiB, 0);
     const totalCapacityQueueMin = rows.reduce((s, r) => s + r.capacityQueueMin, 0);
     const totalColdStartMin = rows.reduce((s, r) => s + r.coldStartMin, 0);
-    const avgRuntimeSec = totalQueries > 0
-      ? rows.reduce((s, r) => s + r.avgRuntimeSec * r.queries, 0) / totalQueries
-      : 0;
+    const avgRuntimeSec =
+      totalQueries > 0
+        ? rows.reduce((s, r) => s + r.avgRuntimeSec * r.queries, 0) / totalQueries
+        : 0;
     const p95Sec = Math.max(...rows.map((r) => r.p95Sec), 0);
 
     // Sustained pressure: count days above threshold
     const daysWithSpill = rows.filter((r) => r.spillGiB > SPILL_GIB_DAY_THRESHOLD).length;
-    const daysWithCapacityQueue = rows.filter((r) => r.capacityQueueMin > CAPACITY_QUEUE_MIN_DAY_THRESHOLD).length;
-    const daysWithColdStart = rows.filter((r) => r.coldStartMin > COLDSTART_MIN_DAY_THRESHOLD).length;
+    const daysWithCapacityQueue = rows.filter(
+      (r) => r.capacityQueueMin > CAPACITY_QUEUE_MIN_DAY_THRESHOLD,
+    ).length;
+    const daysWithColdStart = rows.filter(
+      (r) => r.coldStartMin > COLDSTART_MIN_DAY_THRESHOLD,
+    ).length;
     const activeDays = rows.length;
 
     // Top users (top 5 by query count)
@@ -261,7 +279,7 @@ function resolveConfidence(
   daysWithSpill: number,
   daysWithCapacityQueue: number,
   daysWithColdStart: number,
-  totalQueries: number
+  totalQueries: number,
 ): { confidence: ConfidenceLevel; reason: string } {
   // Max days any metric is sustained
   const maxDays = Math.max(daysWithSpill, daysWithCapacityQueue, daysWithColdStart);
@@ -287,11 +305,7 @@ function resolveConfidence(
   return { confidence: "low", reason: "No sustained pattern detected" };
 }
 
-function estimateCostForSize(
-  currentCost: number,
-  currentSize: string,
-  targetSize: string
-): number {
+function estimateCostForSize(currentCost: number, currentSize: string, targetSize: string): number {
   const currentMul = getSizeMultiplier(currentSize);
   const targetMul = getSizeMultiplier(targetSize);
   if (currentMul === 0) return currentCost;
@@ -301,7 +315,7 @@ function estimateCostForSize(
 function estimateCostForClusters(
   currentCost: number,
   currentMax: number,
-  targetMax: number
+  targetMax: number,
 ): number {
   if (currentMax <= 0) return currentCost;
   return currentCost * (targetMax / currentMax);
@@ -321,14 +335,14 @@ function estimateCostForClusters(
  */
 export function generateRecommendations(
   metrics: WarehouseHealthMetrics[],
-  serverlessPrice: number | null
+  serverlessPrice: number | null,
 ): WarehouseRecommendation[] {
   return metrics.map((m) => {
     const { confidence, reason: confidenceReason } = resolveConfidence(
       m.daysWithSpill,
       m.daysWithCapacityQueue,
       m.daysWithColdStart,
-      m.totalQueries
+      m.totalQueries,
     );
 
     // Waste: total queue minutes (capacity + cold start)
@@ -352,13 +366,18 @@ export function generateRecommendations(
     }
 
     // Determine action based on thresholds + sustained-pressure
-    const highSpill = m.totalSpillGiB >= SPILL_GIB_THRESHOLD && m.daysWithSpill >= MEDIUM_CONFIDENCE_DAYS;
-    const highCapacityQueue = m.totalCapacityQueueMin >= CAPACITY_QUEUE_MIN_THRESHOLD && m.daysWithCapacityQueue >= MEDIUM_CONFIDENCE_DAYS;
-    const highColdStart = m.totalColdStartMin >= COLDSTART_MIN_THRESHOLD && m.daysWithColdStart >= MEDIUM_CONFIDENCE_DAYS;
+    const highSpill =
+      m.totalSpillGiB >= SPILL_GIB_THRESHOLD && m.daysWithSpill >= MEDIUM_CONFIDENCE_DAYS;
+    const highCapacityQueue =
+      m.totalCapacityQueueMin >= CAPACITY_QUEUE_MIN_THRESHOLD &&
+      m.daysWithCapacityQueue >= MEDIUM_CONFIDENCE_DAYS;
+    const highColdStart =
+      m.totalColdStartMin >= COLDSTART_MIN_THRESHOLD &&
+      m.daysWithColdStart >= MEDIUM_CONFIDENCE_DAYS;
     const lowPressure =
       m.totalSpillGiB <= LOW_SPILL_GIB &&
       m.totalCapacityQueueMin <= LOW_CAPACITY_QUEUE_MIN &&
-      (m.totalCapacityQueueMin + m.totalColdStartMin) <= LOW_TOTAL_QUEUE_MIN;
+      m.totalCapacityQueueMin + m.totalColdStartMin <= LOW_TOTAL_QUEUE_MIN;
 
     let action: WarehouseAction = "no_change";
     let severity: RecommendationSeverity = "healthy";
@@ -374,14 +393,16 @@ export function generateRecommendations(
     const queueRatioHigh =
       m.avgRuntimeSec > 0 &&
       m.totalCapacityQueueMin > 0 &&
-      m.totalCapacityQueueMin / (m.avgRuntimeSec * m.totalQueries / 60) > 0.5;
+      m.totalCapacityQueueMin / ((m.avgRuntimeSec * m.totalQueries) / 60) > 0.5;
 
     // Rule 1: High cold starts + not serverless → suggest Serverless
     if (highColdStart && !m.isServerless) {
       action = "serverless";
       severity = confidence === "high" ? "critical" : "warning";
       headline = "Switch to Serverless";
-      const coldStartQueriesEstimate = Math.round(m.totalColdStartMin * 60 / (m.avgRuntimeSec || 10)); // rough count of queries affected
+      const coldStartQueriesEstimate = Math.round(
+        (m.totalColdStartMin * 60) / (m.avgRuntimeSec || 10),
+      ); // rough count of queries affected
       rationale = [
         `${m.totalColdStartMin.toFixed(1)} min of cold start wait over 7 days (${m.daysWithColdStart}/7 days).`,
         `Serverless SQL eliminates cold starts entirely — instant start, no idle cost, elastic scaling.`,
@@ -392,7 +413,9 @@ export function generateRecommendations(
         serverlessCostEstimate
           ? `Estimated serverless cost: $${serverlessCostEstimate.toFixed(2)}/wk vs current $${m.weeklyCostDollars.toFixed(2)}/wk.`
           : "",
-      ].filter(Boolean).join("\n");
+      ]
+        .filter(Boolean)
+        .join("\n");
       estimatedNewWeeklyCost = serverlessCostEstimate ?? m.weeklyCostDollars;
     }
     // Rule 2: High spill + high capacity queue → upsize AND add clusters
@@ -414,7 +437,11 @@ export function generateRecommendations(
           `Recommend both a larger size for memory and more clusters for concurrency.`,
         ].join("\n");
         const sizeCost = estimateCostForSize(m.weeklyCostDollars, m.size, next);
-        estimatedNewWeeklyCost = estimateCostForClusters(sizeCost, m.maxClusters, targetMaxClusters);
+        estimatedNewWeeklyCost = estimateCostForClusters(
+          sizeCost,
+          m.maxClusters,
+          targetMaxClusters,
+        );
       } else if (canUpsize) {
         targetSize = next;
         action = "upsize";
@@ -436,7 +463,11 @@ export function generateRecommendations(
           `Queue: ${m.totalCapacityQueueMin.toFixed(1)} min capacity wait (${m.daysWithCapacityQueue}/7 days).`,
           `Already at max size — adding clusters improves concurrency. Consider query-level optimisation for spill.`,
         ].join("\n");
-        estimatedNewWeeklyCost = estimateCostForClusters(m.weeklyCostDollars, m.maxClusters, proposedClusters);
+        estimatedNewWeeklyCost = estimateCostForClusters(
+          m.weeklyCostDollars,
+          m.maxClusters,
+          proposedClusters,
+        );
       } else {
         // Already maxed out on both size and clusters
         action = "upsize_and_scale";
@@ -488,7 +519,11 @@ export function generateRecommendations(
           `Queries are waiting for available compute slots.`,
           `Adding clusters increases concurrency and reduces queue time.`,
         ].join("\n");
-        estimatedNewWeeklyCost = estimateCostForClusters(m.weeklyCostDollars, m.maxClusters, proposedClusters);
+        estimatedNewWeeklyCost = estimateCostForClusters(
+          m.weeklyCostDollars,
+          m.maxClusters,
+          proposedClusters,
+        );
       } else {
         // Already at max clusters
         action = "add_clusters";
@@ -510,16 +545,24 @@ export function generateRecommendations(
         action = "add_clusters";
         severity = "warning";
         const queueRatioPct = Math.round(
-          (m.totalCapacityQueueMin / (m.avgRuntimeSec * m.totalQueries / 60)) * 100
+          (m.totalCapacityQueueMin / ((m.avgRuntimeSec * m.totalQueries) / 60)) * 100,
         );
         headline = `Increase max clusters to ${proposedClusters}`;
         rationale = [
           `Queries spend ${queueRatioPct}% of their processing time waiting in queue.`,
           `Even though absolute queue time (${m.totalCapacityQueueMin.toFixed(1)} min) is moderate, the ratio to execution time indicates a concurrency bottleneck.`,
           `Adding clusters increases parallelism and reduces per-query queue wait.`,
-          m.isServerless ? "" : `Consider Serverless SQL for elastic scaling that auto-adjusts to demand.`,
-        ].filter(Boolean).join("\n");
-        estimatedNewWeeklyCost = estimateCostForClusters(m.weeklyCostDollars, m.maxClusters, proposedClusters);
+          m.isServerless
+            ? ""
+            : `Consider Serverless SQL for elastic scaling that auto-adjusts to demand.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        estimatedNewWeeklyCost = estimateCostForClusters(
+          m.weeklyCostDollars,
+          m.maxClusters,
+          proposedClusters,
+        );
       }
     }
     // Rule 5: Low pressure → downsize
@@ -544,9 +587,10 @@ export function generateRecommendations(
       severity = "warning";
       // Quantify the trade-off: extra idle cost vs cold start savings
       const extraIdleMinPerDay = targetAutoStop - m.autoStopMinutes;
-      const costPerMinute = m.weeklyCostDollars > 0 && m.totalQueries > 0
-        ? m.weeklyCostDollars / (m.activeDays * 24 * 60) // rough cost per minute
-        : 0;
+      const costPerMinute =
+        m.weeklyCostDollars > 0 && m.totalQueries > 0
+          ? m.weeklyCostDollars / (m.activeDays * 24 * 60) // rough cost per minute
+          : 0;
       const extraWeeklyCost = extraIdleMinPerDay * m.activeDays * costPerMinute;
       headline = `Increase auto-stop to ${targetAutoStop} min`;
       rationale = [
@@ -554,8 +598,12 @@ export function generateRecommendations(
         `Current auto-stop is ${m.autoStopMinutes} min — the warehouse stops frequently and users wait for it to restart.`,
         `Increasing auto-stop keeps it warm longer, reducing cold start impact.`,
         `Trade-off: ~$${extraWeeklyCost.toFixed(2)}/wk extra idle cost vs ${m.totalColdStartMin.toFixed(1)} min of cold start wait saved.`,
-        !m.isServerless ? `Alternative: Switch to Serverless SQL to eliminate cold starts entirely without idle cost.` : "",
-      ].filter(Boolean).join("\n");
+        !m.isServerless
+          ? `Alternative: Switch to Serverless SQL to eliminate cold starts entirely without idle cost.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
     }
     // Rule 7: Low pressure + high auto-stop → decrease auto-stop
     else if (lowPressure && m.autoStopMinutes > HIGH_AUTOSTOP_MIN) {
@@ -563,9 +611,10 @@ export function generateRecommendations(
       action = "decrease_autostop";
       severity = "info";
       const savedIdleMinPerDay = m.autoStopMinutes - targetAutoStop;
-      const costPerMinute = m.weeklyCostDollars > 0 && m.activeDays > 0
-        ? m.weeklyCostDollars / (m.activeDays * 24 * 60)
-        : 0;
+      const costPerMinute =
+        m.weeklyCostDollars > 0 && m.activeDays > 0
+          ? m.weeklyCostDollars / (m.activeDays * 24 * 60)
+          : 0;
       const savedWeeklyCost = savedIdleMinPerDay * m.activeDays * costPerMinute;
       headline = `Decrease auto-stop to ${targetAutoStop} min`;
       rationale = [
@@ -576,10 +625,7 @@ export function generateRecommendations(
     }
 
     const costDelta = estimatedNewWeeklyCost - m.weeklyCostDollars;
-    const costDeltaPercent =
-      m.weeklyCostDollars > 0
-        ? (costDelta / m.weeklyCostDollars) * 100
-        : 0;
+    const costDeltaPercent = m.weeklyCostDollars > 0 ? (costDelta / m.weeklyCostDollars) * 100 : 0;
 
     return {
       metrics: m,

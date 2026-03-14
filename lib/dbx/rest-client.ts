@@ -17,11 +17,7 @@ import { getOboToken } from "@/lib/dbx/obo";
 import { fingerprint as computeFingerprint } from "@/lib/domain/sql-fingerprint";
 import { fetchWithTimeout, TIMEOUTS } from "@/lib/dbx/fetch-with-timeout";
 import { validateIdentifier } from "@/lib/validation";
-import type {
-  WarehouseLiveStats,
-  EndpointMetric,
-  TimelineQuery,
-} from "@/lib/domain/types";
+import type { WarehouseLiveStats, EndpointMetric, TimelineQuery } from "@/lib/domain/types";
 
 // ── OAuth token cache (service principal) ──────────────────────────
 
@@ -61,24 +57,24 @@ async function getBearerToken(): Promise<string> {
     scope: "all-apis",
   });
 
-  const credentials = btoa(
-    `${config.auth.clientId}:${config.auth.clientSecret}`
-  );
+  const credentials = btoa(`${config.auth.clientId}:${config.auth.clientSecret}`);
 
-  const response = await fetchWithTimeout(tokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${credentials}`,
+  const response = await fetchWithTimeout(
+    tokenUrl,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${credentials}`,
+      },
+      body: body.toString(),
     },
-    body: body.toString(),
-  }, { timeoutMs: TIMEOUTS.AUTH });
+    { timeoutMs: TIMEOUTS.AUTH },
+  );
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(
-      `OAuth token exchange failed (${response.status}): ${text}`
-    );
+    throw new Error(`OAuth token exchange failed (${response.status}): ${text}`);
   }
 
   const data = (await response.json()) as {
@@ -90,9 +86,7 @@ async function getBearerToken(): Promise<string> {
   _cachedToken = data.access_token;
   _tokenExpiresAt = now + data.expires_in * 1000;
 
-  console.log(
-    `[rest-client] OAuth token acquired, expires in ${data.expires_in}s`
-  );
+  console.log(`[rest-client] OAuth token acquired, expires in ${data.expires_in}s`);
 
   return _cachedToken;
 }
@@ -119,11 +113,7 @@ async function dbxFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   return dbxFetchInner<T>(path, options, false);
 }
 
-async function dbxFetchInner<T>(
-  path: string,
-  options: FetchOptions,
-  isRetry: boolean
-): Promise<T> {
+async function dbxFetchInner<T>(path: string, options: FetchOptions, isRetry: boolean): Promise<T> {
   const config = getConfig();
   const token = await getBearerToken();
   const isObo = !!(await getOboToken());
@@ -143,12 +133,16 @@ async function dbxFetchInner<T>(
     "Content-Type": "application/json",
   };
 
-  const response = await fetchWithTimeout(url.toString(), {
-    method: options.method ?? "GET",
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    cache: "no-store",
-  }, { timeoutMs: TIMEOUTS.REST_API });
+  const response = await fetchWithTimeout(
+    url.toString(),
+    {
+      method: options.method ?? "GET",
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      cache: "no-store",
+    },
+    { timeoutMs: TIMEOUTS.REST_API },
+  );
 
   if (!response.ok) {
     const text = await response.text();
@@ -157,8 +151,7 @@ async function dbxFetchInner<T>(
     // PERMISSION_DENIED means the service principal genuinely lacks access —
     // retrying with a fresh token won't help.
     const isPermissionDenied =
-      text.includes("PERMISSION_DENIED") ||
-      text.includes("is not authorized");
+      text.includes("PERMISSION_DENIED") || text.includes("is not authorized");
 
     // Retry on 401/403 only for SP tokens (refreshing the SP cache).
     // OBO tokens are per-request from the proxy — retrying won't help.
@@ -168,16 +161,12 @@ async function dbxFetchInner<T>(
       !isPermissionDenied &&
       (response.status === 401 || response.status === 403)
     ) {
-      console.warn(
-        `[rest-client] Auth error (${response.status}), refreshing token and retrying`
-      );
+      console.warn(`[rest-client] Auth error (${response.status}), refreshing token and retrying`);
       resetToken();
       return dbxFetchInner<T>(path, options, true);
     }
 
-    throw new Error(
-      `Databricks REST API error (${response.status} ${path}): ${text}`
-    );
+    throw new Error(`Databricks REST API error (${response.status} ${path}): ${text}`);
   }
 
   return (await response.json()) as T;
@@ -297,9 +286,7 @@ export interface WarehouseInfo {
  * List all SQL warehouses with their current state.
  */
 export async function listWarehousesRest(): Promise<WarehouseInfo[]> {
-  const data = await dbxFetch<WarehouseListResponse>(
-    "/api/2.0/sql/warehouses"
-  );
+  const data = await dbxFetch<WarehouseListResponse>("/api/2.0/sql/warehouses");
 
   return (data.warehouses ?? []).map((w) => ({
     id: w.id,
@@ -320,13 +307,9 @@ export async function listWarehousesRest(): Promise<WarehouseInfo[]> {
 /**
  * Get a single warehouse by ID.
  */
-export async function getWarehouseDetail(
-  warehouseId: string
-): Promise<WarehouseInfo> {
+export async function getWarehouseDetail(warehouseId: string): Promise<WarehouseInfo> {
   const validId = validateIdentifier(warehouseId, "warehouseId");
-  const w = await dbxFetch<WarehouseApiResponse>(
-    `/api/2.0/sql/warehouses/${validId}`
-  );
+  const w = await dbxFetch<WarehouseApiResponse>(`/api/2.0/sql/warehouses/${validId}`);
 
   return {
     id: w.id,
@@ -347,13 +330,9 @@ export async function getWarehouseDetail(
 /**
  * Get live stats for a warehouse (real-time: running/queued commands, active clusters).
  */
-export async function getWarehouseLiveStats(
-  warehouseId: string
-): Promise<WarehouseLiveStats> {
+export async function getWarehouseLiveStats(warehouseId: string): Promise<WarehouseLiveStats> {
   const validId = validateIdentifier(warehouseId, "warehouseId");
-  const data = await dbxFetch<WarehouseStatsResponse>(
-    `/api/2.0/sql/warehouses/${validId}/stats`
-  );
+  const data = await dbxFetch<WarehouseStatsResponse>(`/api/2.0/sql/warehouses/${validId}/stats`);
 
   return {
     numActiveClusters: data.num_active_clusters ?? 0,
@@ -369,7 +348,7 @@ export async function getWarehouseLiveStats(
 export async function getEndpointMetrics(
   warehouseId: string,
   startTimeMs: number,
-  endTimeMs: number
+  endTimeMs: number,
 ): Promise<EndpointMetric[]> {
   // Databricks uses dotted query params: time_range.start_time_ms
   const data = await dbxFetch<EndpointMetricsListResponse>(
@@ -380,7 +359,7 @@ export async function getEndpointMetrics(
         "time_range.start_time_ms": startTimeMs,
         "time_range.end_time_ms": endTimeMs,
       },
-    }
+    },
   );
 
   const rawMetrics = data.metrics ?? data.endpoint_metrics ?? [];
@@ -389,22 +368,21 @@ export async function getEndpointMetrics(
       `[endpoint-metrics] ${rawMetrics.length} buckets, keys:`,
       Object.keys(rawMetrics[0]),
       "sample:",
-      JSON.stringify(rawMetrics[0])
+      JSON.stringify(rawMetrics[0]),
     );
   } else {
     console.warn("[endpoint-metrics] empty response, keys:", Object.keys(data));
   }
 
   const bucketCount = rawMetrics.length;
-  const intervalMs = bucketCount > 1 ? (endTimeMs - startTimeMs) / bucketCount : endTimeMs - startTimeMs;
+  const intervalMs =
+    bucketCount > 1 ? (endTimeMs - startTimeMs) / bucketCount : endTimeMs - startTimeMs;
 
   return rawMetrics.map((m, i) => {
     // Try multiple possible timestamp field names from the API
     const raw = m as Record<string, unknown>;
-    const resolvedStart =
-      Number(raw.start_time_ms ?? raw.startTimeMs ?? raw.start_time ?? 0) || 0;
-    const resolvedEnd =
-      Number(raw.end_time_ms ?? raw.endTimeMs ?? raw.end_time ?? 0) || 0;
+    const resolvedStart = Number(raw.start_time_ms ?? raw.startTimeMs ?? raw.start_time ?? 0) || 0;
+    const resolvedEnd = Number(raw.end_time_ms ?? raw.endTimeMs ?? raw.end_time ?? 0) || 0;
 
     // If API didn't return usable timestamps, interpolate from the request range
     const bucketStart = resolvedStart > 0 ? resolvedStart : startTimeMs + i * intervalMs;
@@ -414,9 +392,12 @@ export async function getEndpointMetrics(
       startTimeMs: bucketStart,
       endTimeMs: bucketEnd,
       maxRunningSlots:
-        Number(raw.max_running_slots ?? raw.max_num_active_sessions ?? raw.num_running_queries ?? 0) || 0,
+        Number(
+          raw.max_running_slots ?? raw.max_num_active_sessions ?? raw.num_running_queries ?? 0,
+        ) || 0,
       maxQueuedSlots:
-        Number(raw.max_queued_slots ?? raw.max_num_queries_queued ?? raw.num_queued_queries ?? 0) || 0,
+        Number(raw.max_queued_slots ?? raw.max_num_queries_queued ?? raw.num_queued_queries ?? 0) ||
+        0,
       throughput:
         Number(raw.throughput ?? raw.num_queries_completed ?? raw.num_queries_started ?? 0) || 0,
     };
@@ -432,7 +413,7 @@ export async function getWarehouseQueries(
   warehouseId: string,
   startTimeMs: number,
   endTimeMs: number,
-  options: { maxResults?: number; pageToken?: string } = {}
+  options: { maxResults?: number; pageToken?: string } = {},
 ): Promise<{ queries: TimelineQuery[]; nextPageToken?: string; hasNextPage: boolean }> {
   const { maxResults = 500, pageToken } = options;
 
@@ -445,10 +426,9 @@ export async function getWarehouseQueries(
     ...(pageToken ? { page_token: pageToken } : {}),
   };
 
-  const listData = await dbxFetch<QueryHistoryListResponse>(
-    "/api/2.0/sql/history/queries",
-    { params }
-  );
+  const listData = await dbxFetch<QueryHistoryListResponse>("/api/2.0/sql/history/queries", {
+    params,
+  });
 
   const queries = (listData.res ?? []).map(mapApiQueryToTimeline);
 
@@ -470,8 +450,7 @@ function mapApiQueryToTimeline(q: QueryHistoryApiQuery): TimelineQuery {
 
   // Compute read bytes: prefer read_bytes, fallback to components
   const readBytes =
-    metrics.read_bytes ??
-    ((metrics.read_files_bytes ?? 0) + (metrics.read_remote_bytes ?? 0));
+    metrics.read_bytes ?? (metrics.read_files_bytes ?? 0) + (metrics.read_remote_bytes ?? 0);
 
   // Cache hit percent
   let cacheHitPercent = 0;
@@ -484,22 +463,20 @@ function mapApiQueryToTimeline(q: QueryHistoryApiQuery): TimelineQuery {
   // Queue timestamps
   const startMs = q.query_start_time_ms;
   const endMs =
-    q.query_end_time_ms ??
-    q.execution_end_time_ms ??
-    startMs + (metrics.total_time_ms ?? 0);
+    q.query_end_time_ms ?? q.execution_end_time_ms ?? startMs + (metrics.total_time_ms ?? 0);
 
   let queuedStartTimeMs: number | null = null;
   let queuedEndTimeMs: number | null = null;
   if (metrics.overloading_queue_start_timestamp || metrics.provisioning_queue_start_timestamp) {
     queuedStartTimeMs = Math.min(
       metrics.overloading_queue_start_timestamp ?? Infinity,
-      metrics.provisioning_queue_start_timestamp ?? Infinity
+      metrics.provisioning_queue_start_timestamp ?? Infinity,
     );
     queuedEndTimeMs = metrics.query_compilation_start_timestamp ?? startMs;
   }
 
   // Duration
-  const durationMs = metrics.total_time_ms ?? (endMs - startMs);
+  const durationMs = metrics.total_time_ms ?? endMs - startMs;
 
   // Queue wait
   const queueWaitMs =
@@ -534,9 +511,7 @@ function mapApiQueryToTimeline(q: QueryHistoryApiQuery): TimelineQuery {
   };
 }
 
-function resolveSourceType(
-  source: QueryHistoryApiQuery["query_source"]
-): string {
+function resolveSourceType(source: QueryHistoryApiQuery["query_source"]): string {
   if (!source) return "unknown";
   if (source.alert_id) return "alert";
   if (source.dashboard_id) return "dashboard";
@@ -548,9 +523,7 @@ function resolveSourceType(
   return source.client_application ?? "unknown";
 }
 
-function resolveSourceLabel(
-  source: QueryHistoryApiQuery["query_source"]
-): string {
+function resolveSourceLabel(source: QueryHistoryApiQuery["query_source"]): string {
   if (!source) return "Unknown";
   if (source.alert_id) return "Alert";
   if (source.dashboard_id) return "Dashboard";

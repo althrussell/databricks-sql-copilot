@@ -18,9 +18,7 @@ function buildTriageUserPrompt(ctx: PromptBuildContext): string {
   const itemCount = items.length;
   const tableContextBlock = ctx.tableContextBlock ?? "";
 
-  const candidateLines = items
-    .map((item, i) => `[${i + 1}] ${item.summaryLine}`)
-    .join("\n\n");
+  const candidateLines = items.map((item, i) => `[${i + 1}] ${item.summaryLine}`).join("\n\n");
 
   return `Below are ${itemCount} slow query patterns from a SQL warehouse. For each one, provide:
 1. A concise 1-2 sentence insight explaining the root cause and what to do
@@ -56,7 +54,8 @@ ${candidateLines}${tableContextBlock}`;
 export const triageV1: PromptTemplate = {
   key: "triage",
   version: "v1",
-  description: "Unified triage prompt combining dashboard and monitor best practices, with SQL rules compact",
+  description:
+    "Unified triage prompt combining dashboard and monitor best practices, with SQL rules compact",
   build(ctx: PromptBuildContext): RenderedPrompt {
     const userPrompt = buildTriageUserPrompt(ctx);
     const estimatedTokens = Math.ceil((SYSTEM_PROMPT.length + userPrompt.length) / 4);

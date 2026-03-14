@@ -32,12 +32,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { WarehouseRecommendation, HourlyActivity } from "@/lib/domain/types";
 
 /* ── Formatters ── */
@@ -61,7 +56,7 @@ function HourlyActivityChart({ hourly }: { hourly: HourlyActivity[] }) {
   const maxQueries = Math.max(...hourly.map((h) => h.queries), 1);
   const maxPressure = Math.max(
     ...hourly.map((h) => h.capacityQueueMin + h.coldStartMin + h.spillGiB),
-    0.01
+    0.01,
   );
   const hasPressure = maxPressure > 0.1;
 
@@ -112,16 +107,17 @@ function HourlyActivityChart({ hourly }: { hourly: HourlyActivity[] }) {
                   {/* Query bar */}
                   <div
                     className={`w-full rounded-t-sm transition-all relative z-10 ${
-                      isPeak
-                        ? "bg-primary"
-                        : "bg-primary/50"
+                      isPeak ? "bg-primary" : "bg-primary/50"
                     }`}
                     style={{ height: `${Math.max(queryPct, 2)}%` }}
                   />
                 </div>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs space-y-0.5">
-                <p className="font-semibold">{String(h.hour).padStart(2, "0")}:00 {"\u2013"} {String(h.hour).padStart(2, "0")}:59</p>
+                <p className="font-semibold">
+                  {String(h.hour).padStart(2, "0")}:00 {"\u2013"} {String(h.hour).padStart(2, "0")}
+                  :59
+                </p>
                 <p>{h.queries.toLocaleString()} queries</p>
                 {h.capacityQueueMin > 0.1 && <p>Queue: {h.capacityQueueMin.toFixed(1)} min</p>}
                 {h.coldStartMin > 0.1 && <p>Cold start: {h.coldStartMin.toFixed(1)} min</p>}
@@ -192,12 +188,25 @@ function WarehouseHealthCard({
 
   const severityBadge =
     rec.severity === "critical"
-      ? { label: "CRITICAL", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" }
+      ? {
+          label: "CRITICAL",
+          className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+        }
       : rec.severity === "warning"
-        ? { label: "WARNING", className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" }
+        ? {
+            label: "WARNING",
+            className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+          }
         : rec.severity === "info"
-          ? { label: "INFO", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" }
-          : { label: "HEALTHY", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" };
+          ? {
+              label: "INFO",
+              className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+            }
+          : {
+              label: "HEALTHY",
+              className:
+                "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+            };
 
   const showServerless = serverlessCompareId === m.warehouseId;
   const warehouseLink = buildWarehouseLink(workspaceUrl, m.warehouseId);
@@ -205,12 +214,14 @@ function WarehouseHealthCard({
   // Sparkline normalisation
   const sparkMax = Math.max(
     ...m.dailyBreakdown.map((d) => d.spillGiB + d.capacityQueueMin + d.coldStartMin),
-    1
+    1,
   );
 
   const confidenceBadge =
     rec.confidence === "high"
-      ? { className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" }
+      ? {
+          className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+        }
       : rec.confidence === "medium"
         ? { className: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" }
         : { className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" };
@@ -224,47 +235,62 @@ function WarehouseHealthCard({
             {severityBadge.label}
           </Badge>
           {/* Trend indicator */}
-          {previousSeverity ? (() => {
-            const severityRank: Record<string, number> = { healthy: 0, info: 1, warning: 2, critical: 3 };
-            const prevRank = severityRank[previousSeverity.severity] ?? 0;
-            const curRank = severityRank[rec.severity] ?? 0;
-            if (curRank > prevRank) {
-              return (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex items-center gap-0.5 text-[10px] text-red-600 dark:text-red-400 font-medium cursor-help">
-                      <ArrowUp className="h-3 w-3" /> Worsened
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>Was {previousSeverity.severity} on {new Date(previousSeverity.snapshotAt).toLocaleDateString()}</TooltipContent>
-                </Tooltip>
-              );
-            } else if (curRank < prevRank) {
-              return (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium cursor-help">
-                      <ArrowDown className="h-3 w-3" /> Improved
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>Was {previousSeverity.severity} on {new Date(previousSeverity.snapshotAt).toLocaleDateString()}</TooltipContent>
-                </Tooltip>
-              );
-            } else {
-              return (
-                <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                  <Minus className="h-3 w-3" /> Unchanged
-                </span>
-              );
-            }
-          })() : (
+          {previousSeverity ? (
+            (() => {
+              const severityRank: Record<string, number> = {
+                healthy: 0,
+                info: 1,
+                warning: 2,
+                critical: 3,
+              };
+              const prevRank = severityRank[previousSeverity.severity] ?? 0;
+              const curRank = severityRank[rec.severity] ?? 0;
+              if (curRank > prevRank) {
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-0.5 text-[10px] text-red-600 dark:text-red-400 font-medium cursor-help">
+                        <ArrowUp className="h-3 w-3" /> Worsened
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Was {previousSeverity.severity} on{" "}
+                      {new Date(previousSeverity.snapshotAt).toLocaleDateString()}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              } else if (curRank < prevRank) {
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium cursor-help">
+                        <ArrowDown className="h-3 w-3" /> Improved
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Was {previousSeverity.severity} on{" "}
+                      {new Date(previousSeverity.snapshotAt).toLocaleDateString()}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              } else {
+                return (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                    <Minus className="h-3 w-3" /> Unchanged
+                  </span>
+                );
+              }
+            })()
+          ) : (
             <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
               <Sparkles className="h-3 w-3" /> First analysis
             </span>
           )}
           <span className="text-sm font-semibold">{m.warehouseName}</span>
           {m.isServerless && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0">Serverless</Badge>
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+              Serverless
+            </Badge>
           )}
         </div>
 
@@ -277,7 +303,9 @@ function WarehouseHealthCard({
           <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-2">
             <div className="flex items-center gap-1.5 mb-1">
               <Settings2 className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Current Configuration</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Current Configuration
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
               <div className="flex items-center gap-1.5">
@@ -293,26 +321,40 @@ function WarehouseHealthCard({
               <div className="flex items-center gap-1.5">
                 <Layers className="h-3 w-3 text-muted-foreground" />
                 <span className="text-muted-foreground">Clusters:</span>
-                <span className="font-semibold">{m.minClusters}&ndash;{m.maxClusters}</span>
+                <span className="font-semibold">
+                  {m.minClusters}&ndash;{m.maxClusters}
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <Clock className="h-3 w-3 text-muted-foreground" />
                 <span className="text-muted-foreground">Auto-stop:</span>
-                <span className="font-semibold">{m.autoStopMinutes > 0 ? `${m.autoStopMinutes} min` : "Disabled"}</span>
+                <span className="font-semibold">
+                  {m.autoStopMinutes > 0 ? `${m.autoStopMinutes} min` : "Disabled"}
+                </span>
               </div>
             </div>
             {rec.targetSize || rec.targetMaxClusters || rec.targetAutoStop ? (
               <div className="border-t border-border pt-1.5 mt-1.5">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">Recommended</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                  Recommended
+                </span>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mt-1">
                   {rec.targetSize && (
-                    <span>Size: <span className="font-bold text-primary">{rec.targetSize}</span></span>
+                    <span>
+                      Size: <span className="font-bold text-primary">{rec.targetSize}</span>
+                    </span>
                   )}
                   {rec.targetMaxClusters && (
-                    <span>Max clusters: <span className="font-bold text-primary">{rec.targetMaxClusters}</span></span>
+                    <span>
+                      Max clusters:{" "}
+                      <span className="font-bold text-primary">{rec.targetMaxClusters}</span>
+                    </span>
                   )}
                   {rec.targetAutoStop && (
-                    <span>Auto-stop: <span className="font-bold text-primary">{rec.targetAutoStop} min</span></span>
+                    <span>
+                      Auto-stop:{" "}
+                      <span className="font-bold text-primary">{rec.targetAutoStop} min</span>
+                    </span>
                   )}
                 </div>
               </div>
@@ -323,14 +365,18 @@ function WarehouseHealthCard({
           <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-2">
             <div className="flex items-center gap-1.5 mb-1">
               <Activity className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">7-Day Pressure</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                7-Day Pressure
+              </span>
             </div>
             <div className="space-y-1.5 text-xs">
               {m.totalSpillGiB > 0 && (
                 <div className="flex items-center gap-1.5">
                   <Flame className="h-3 w-3 text-red-500 shrink-0" />
                   <span className="text-muted-foreground">Spill:</span>
-                  <span className="font-semibold tabular-nums">{m.totalSpillGiB.toFixed(1)} GiB</span>
+                  <span className="font-semibold tabular-nums">
+                    {m.totalSpillGiB.toFixed(1)} GiB
+                  </span>
                   <span className="text-muted-foreground">({m.daysWithSpill}/7 days)</span>
                 </div>
               )}
@@ -338,7 +384,9 @@ function WarehouseHealthCard({
                 <div className="flex items-center gap-1.5">
                   <Hourglass className="h-3 w-3 text-amber-500 shrink-0" />
                   <span className="text-muted-foreground">Queue:</span>
-                  <span className="font-semibold tabular-nums">{m.totalCapacityQueueMin.toFixed(1)} min</span>
+                  <span className="font-semibold tabular-nums">
+                    {m.totalCapacityQueueMin.toFixed(1)} min
+                  </span>
                   <span className="text-muted-foreground">({m.daysWithCapacityQueue}/7 days)</span>
                 </div>
               )}
@@ -346,14 +394,26 @@ function WarehouseHealthCard({
                 <div className="flex items-center gap-1.5">
                   <Timer className="h-3 w-3 text-blue-500 shrink-0" />
                   <span className="text-muted-foreground">Cold start:</span>
-                  <span className="font-semibold tabular-nums">{m.totalColdStartMin.toFixed(1)} min</span>
+                  <span className="font-semibold tabular-nums">
+                    {m.totalColdStartMin.toFixed(1)} min
+                  </span>
                   <span className="text-muted-foreground">({m.daysWithColdStart}/7 days)</span>
                 </div>
               )}
               <div className="flex items-center gap-1.5 text-muted-foreground">
-                <span>Avg runtime: <span className="text-foreground font-semibold tabular-nums">{m.avgRuntimeSec.toFixed(1)}s</span></span>
+                <span>
+                  Avg runtime:{" "}
+                  <span className="text-foreground font-semibold tabular-nums">
+                    {m.avgRuntimeSec.toFixed(1)}s
+                  </span>
+                </span>
                 <span className="mx-1">{"\u00B7"}</span>
-                <span>p95: <span className="text-foreground font-semibold tabular-nums">{m.p95Sec.toFixed(1)}s</span></span>
+                <span>
+                  p95:{" "}
+                  <span className="text-foreground font-semibold tabular-nums">
+                    {m.p95Sec.toFixed(1)}s
+                  </span>
+                </span>
               </div>
             </div>
           </div>
@@ -369,21 +429,30 @@ function WarehouseHealthCard({
           <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-1.5">
             <div className="flex items-center gap-1.5 mb-1">
               <DollarSign className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Cost of Change</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Cost of Change
+              </span>
             </div>
             <div className="flex items-baseline gap-2 text-xs">
               <span className="text-muted-foreground">Current:</span>
-              <span className="font-semibold tabular-nums">{formatDollars(rec.currentWeeklyCost)}/wk</span>
+              <span className="font-semibold tabular-nums">
+                {formatDollars(rec.currentWeeklyCost)}/wk
+              </span>
             </div>
             <div className="flex items-baseline gap-2 text-xs">
               <span className="text-muted-foreground">After:</span>
-              <span className="font-semibold tabular-nums">~{formatDollars(rec.estimatedNewWeeklyCost)}/wk</span>
+              <span className="font-semibold tabular-nums">
+                ~{formatDollars(rec.estimatedNewWeeklyCost)}/wk
+              </span>
             </div>
             <div className="flex items-baseline gap-2 text-xs">
               <span className="text-muted-foreground">Delta:</span>
-              <span className={`font-bold tabular-nums ${rec.costDelta > 0 ? "text-red-600 dark:text-red-400" : rec.costDelta < 0 ? "text-emerald-600 dark:text-emerald-400" : ""}`}>
-                {rec.costDelta >= 0 ? "+" : ""}{formatDollars(Math.abs(rec.costDelta))}/wk
-                ({rec.costDelta >= 0 ? "+" : ""}{rec.costDeltaPercent.toFixed(0)}%)
+              <span
+                className={`font-bold tabular-nums ${rec.costDelta > 0 ? "text-red-600 dark:text-red-400" : rec.costDelta < 0 ? "text-emerald-600 dark:text-emerald-400" : ""}`}
+              >
+                {rec.costDelta >= 0 ? "+" : ""}
+                {formatDollars(Math.abs(rec.costDelta))}/wk ({rec.costDelta >= 0 ? "+" : ""}
+                {rec.costDeltaPercent.toFixed(0)}%)
               </span>
             </div>
           </div>
@@ -391,16 +460,22 @@ function WarehouseHealthCard({
           <div className="rounded-lg bg-muted/30 border border-border p-3 space-y-1.5">
             <div className="flex items-center gap-1.5 mb-1">
               <AlertTriangle className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Cost of Doing Nothing</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Cost of Doing Nothing
+              </span>
             </div>
             <div className="flex items-baseline gap-2 text-xs">
               <span className="text-muted-foreground">Queue wait:</span>
-              <span className="font-semibold tabular-nums">{rec.wastedQueueMinutes.toFixed(1)} min/wk</span>
+              <span className="font-semibold tabular-nums">
+                {rec.wastedQueueMinutes.toFixed(1)} min/wk
+              </span>
             </div>
             {rec.wastedQueueCostEstimate > 0 && (
               <div className="flex items-baseline gap-2 text-xs">
                 <span className="text-muted-foreground">Wasted compute:</span>
-                <span className="font-bold tabular-nums text-amber-600 dark:text-amber-400">~{formatDollars(rec.wastedQueueCostEstimate)}/wk</span>
+                <span className="font-bold tabular-nums text-amber-600 dark:text-amber-400">
+                  ~{formatDollars(rec.wastedQueueCostEstimate)}/wk
+                </span>
               </div>
             )}
             <div className="flex items-baseline gap-2 text-xs">
@@ -415,7 +490,9 @@ function WarehouseHealthCard({
           <div className="space-y-1">
             <div className="flex items-center gap-1.5">
               <Users className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Who&apos;s Affected</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Who&apos;s Affected
+              </span>
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
               {m.topUsers.length > 0 && (
@@ -436,7 +513,9 @@ function WarehouseHealthCard({
                   {m.topSources.slice(0, 2).map((s, i) => (
                     <span key={s.sourceId}>
                       {i > 0 && ", "}
-                      <Badge variant="outline" className="text-[10px] px-1 py-0 mr-0.5">{s.sourceType}</Badge>
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 mr-0.5">
+                        {s.sourceType}
+                      </Badge>
                       <span className="font-medium truncate">{s.sourceId.slice(0, 12)}</span>
                       <span className="text-muted-foreground"> ({s.queryCount})</span>
                     </span>
@@ -504,28 +583,39 @@ function WarehouseHealthCard({
           <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 space-y-1.5 text-xs">
             <div className="flex items-center gap-1.5 mb-1">
               <Server className="h-3 w-3 text-blue-600 dark:text-blue-400" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">Serverless Comparison</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">
+                Serverless Comparison
+              </span>
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-muted-foreground">Current cost:</span>
-              <span className="font-semibold tabular-nums">{formatDollars(rec.currentWeeklyCost)}/wk</span>
+              <span className="font-semibold tabular-nums">
+                {formatDollars(rec.currentWeeklyCost)}/wk
+              </span>
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-muted-foreground">Serverless est.:</span>
-              <span className="font-semibold tabular-nums">{formatDollars(rec.serverlessCostEstimate)}/wk</span>
+              <span className="font-semibold tabular-nums">
+                {formatDollars(rec.serverlessCostEstimate)}/wk
+              </span>
             </div>
             {rec.serverlessSavings != null && (
               <div className="flex items-baseline gap-2">
                 <span className="text-muted-foreground">Savings:</span>
-                <span className={`font-bold tabular-nums ${rec.serverlessSavings > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
-                  {rec.serverlessSavings > 0 ? "" : "+"}{formatDollars(Math.abs(rec.serverlessSavings))}/wk
+                <span
+                  className={`font-bold tabular-nums ${rec.serverlessSavings > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}
+                >
+                  {rec.serverlessSavings > 0 ? "" : "+"}
+                  {formatDollars(Math.abs(rec.serverlessSavings))}/wk
                 </span>
               </div>
             )}
             {rec.coldStartMinutesSaved != null && rec.coldStartMinutesSaved > 0 && (
               <div className="flex items-baseline gap-2">
                 <span className="text-muted-foreground">Cold starts eliminated:</span>
-                <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{rec.coldStartMinutesSaved.toFixed(1)} min/wk</span>
+                <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {rec.coldStartMinutesSaved.toFixed(1)} min/wk
+                </span>
               </div>
             )}
           </div>
@@ -574,7 +664,9 @@ function WarehouseHealthCard({
 
 export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }) {
   const [recommendations, setRecommendations] = useState<WarehouseRecommendation[] | null>(null);
-  const [previousSeverities, setPreviousSeverities] = useState<Record<string, { severity: string; snapshotAt: string } | null>>({});
+  const [previousSeverities, setPreviousSeverities] = useState<
+    Record<string, { severity: string; snapshotAt: string } | null>
+  >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
@@ -636,10 +728,16 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
           </div>
           <div className="flex items-center gap-3">
             {elapsed != null && !loading && (
-              <span className="text-xs text-muted-foreground">Completed in {(elapsed / 1000).toFixed(1)}s</span>
+              <span className="text-xs text-muted-foreground">
+                Completed in {(elapsed / 1000).toFixed(1)}s
+              </span>
             )}
             <Button onClick={fetchHealth} disabled={loading} className="gap-2">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Activity className="h-4 w-4" />
+              )}
               {recommendations ? "Re-analyse" : "Analyse"}
             </Button>
           </div>
@@ -666,10 +764,14 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
             <CardContent className="flex items-center gap-3 py-4">
               <XCircle className="h-5 w-5 text-red-500 shrink-0" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-red-600 dark:text-red-400">Analysis failed</p>
+                <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                  Analysis failed
+                </p>
                 <p className="text-xs text-muted-foreground mt-0.5">{error}</p>
               </div>
-              <Button variant="outline" size="sm" onClick={fetchHealth}>Retry</Button>
+              <Button variant="outline" size="sm" onClick={fetchHealth}>
+                Retry
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -710,7 +812,9 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
                     rec={rec}
                     workspaceUrl={workspaceUrl}
                     serverlessCompareId={serverlessCompareId}
-                    onToggleServerless={(id) => setServerlessCompareId((prev) => (prev === id ? null : id))}
+                    onToggleServerless={(id) =>
+                      setServerlessCompareId((prev) => (prev === id ? null : id))
+                    }
                     previousSeverity={previousSeverities[rec.metrics.warehouseId] ?? null}
                   />
                 ))}

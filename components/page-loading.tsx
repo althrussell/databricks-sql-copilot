@@ -22,9 +22,7 @@ export function PageLoading({ title = "Loading…" }: { title?: string }) {
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <div className="text-center space-y-1">
             <p className="text-sm font-medium">{title}</p>
-            <p className="text-xs text-muted-foreground">
-              Fetching data from Databricks…
-            </p>
+            <p className="text-xs text-muted-foreground">Fetching data from Databricks…</p>
           </div>
         </CardContent>
       </Card>

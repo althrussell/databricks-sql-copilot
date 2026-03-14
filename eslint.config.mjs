@@ -3,6 +3,7 @@ import tseslint from "typescript-eslint";
 import nextPlugin from "@next/eslint-plugin-next";
 import reactPlugin from "eslint-plugin-react";
 import hooksPlugin from "eslint-plugin-react-hooks";
+import prettierConfig from "eslint-config-prettier";
 
 export default tseslint.config(
   js.configs.recommended,
@@ -21,6 +22,22 @@ export default tseslint.config(
     },
   },
   {
-    ignores: [".next/", "node_modules/", "docs/"],
-  }
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        Buffer: "readonly",
+        fetch: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        AbortController: "readonly",
+        URLSearchParams: "readonly",
+        console: "readonly",
+      },
+    },
+  },
+  prettierConfig,
+  {
+    ignores: [".next/", "node_modules/", "docs/", "coverage/"],
+  },
 );

@@ -15,19 +15,12 @@
 import { executeQuery } from "@/lib/dbx/sql-client";
 import type { Candidate } from "@/lib/domain/types";
 import { normalizeSql } from "@/lib/domain/sql-fingerprint";
-import {
-  fetchTriageTableContext,
-  formatTriageTableContext,
-} from "@/lib/queries/table-metadata";
+import { fetchTriageTableContext, formatTriageTableContext } from "@/lib/queries/table-metadata";
 import { TriageItemSchema, validateLLMArray } from "@/lib/validation";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import { renderPrompt } from "@/lib/ai/prompts/registry";
 import { writePromptLog } from "@/lib/ai/prompt-logger";
-import {
-  computeFingerprintHash,
-  getCachedTriage,
-  cacheTriage,
-} from "@/lib/dbx/triage-store";
+import { computeFingerprintHash, getCachedTriage, cacheTriage } from "@/lib/dbx/triage-store";
 
 const TRIAGE_MODEL = "databricks-llama-4-maverick";
 const MAX_CANDIDATES = 15;
@@ -67,10 +60,7 @@ function fmtMs(ms: number): string {
  */
 function candidateSummary(c: Candidate): string {
   const ws = c.windowStats;
-  const sqlSnippet = normalizeSql(c.sampleQueryText)
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 200);
+  const sqlSnippet = normalizeSql(c.sampleQueryText).replace(/\s+/g, " ").trim().slice(0, 200);
 
   const flags = c.performanceFlags.map((f) => f.label).join(", ");
   const cost =
@@ -81,13 +71,9 @@ function candidateSummary(c: Candidate): string {
         : "n/a";
 
   const rowRatio =
-    ws.totalReadRows > 0
-      ? (ws.totalProducedRows / ws.totalReadRows).toFixed(1)
-      : "n/a";
+    ws.totalReadRows > 0 ? (ws.totalProducedRows / ws.totalReadRows).toFixed(1) : "n/a";
   const queuePct =
-    ws.avgExecutionMs > 0
-      ? Math.round((ws.avgQueueWaitMs / ws.avgExecutionMs) * 100)
-      : 0;
+    ws.avgExecutionMs > 0 ? Math.round((ws.avgQueueWaitMs / ws.avgExecutionMs) * 100) : 0;
 
   return [
     `ID: ${c.fingerprint}`,
@@ -109,9 +95,7 @@ function candidateSummary(c: Candidate): string {
  * Run AI triage on the top candidates. Returns a map of
  * fingerprint → TriageInsight. On failure, returns an empty object.
  */
-export async function triageCandidates(
-  candidates: Candidate[]
-): Promise<TriageMap> {
+export async function triageCandidates(candidates: Candidate[]): Promise<TriageMap> {
   if (candidates.length === 0) return {};
 
   // Take top N by impact score (already sorted)
@@ -132,9 +116,7 @@ export async function triageCandidates(
   // Fetch lightweight table metadata for context (parallel, cached, capped)
   let tableContextBlock = "";
   try {
-    const sqlTexts = top
-      .map((c) => c.sampleQueryText)
-      .filter((t) => t.length > 0);
+    const sqlTexts = top.map((c) => c.sampleQueryText).filter((t) => t.length > 0);
     const tableContext = await fetchTriageTableContext(sqlTexts);
     const formatted = formatTriageTableContext(tableContext);
     if (formatted) {
@@ -161,7 +143,9 @@ export async function triageCandidates(
 
   const t0 = Date.now();
   try {
-    console.log(`[ai-triage] calling ${TRIAGE_MODEL} for ${top.length} candidates${tableContextBlock ? ` (with table context)` : ""}`);
+    console.log(
+      `[ai-triage] calling ${TRIAGE_MODEL} for ${top.length} candidates${tableContextBlock ? ` (with table context)` : ""}`,
+    );
 
     // Use semaphore for concurrency control
     const result = await aiSemaphore.run(async () => {
@@ -170,8 +154,8 @@ export async function triageCandidates(
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error(`AI triage timed out after ${TRIAGE_TIMEOUT_MS / 1000}s`)),
-          TRIAGE_TIMEOUT_MS
-        )
+          TRIAGE_TIMEOUT_MS,
+        ),
       );
       return Promise.race([resultPromise, timeoutPromise]);
     });
@@ -213,7 +197,7 @@ export async function triageCandidates(
     });
 
     console.log(
-      `[ai-triage] got insights for ${insightCount}/${top.length} candidates in ${elapsed}s`
+      `[ai-triage] got insights for ${insightCount}/${top.length} candidates in ${elapsed}s`,
     );
 
     // Persist to cache (fire-and-forget)
@@ -245,10 +229,7 @@ export async function triageCandidates(
  * Parse the AI response into a TriageMap.
  * Uses Zod schema validation for graceful handling of partial/malformed responses.
  */
-function parseTriageResponse(
-  raw: string,
-  candidates: Candidate[]
-): TriageMap {
+function parseTriageResponse(raw: string, candidates: Candidate[]): TriageMap {
   let jsonStr = raw.trim();
 
   // Strip markdown code fences if present
@@ -280,10 +261,7 @@ function parseTriageResponse(
     }
     return result;
   } catch {
-    console.error(
-      "[ai-triage] JSON parse failed:",
-      jsonStr.slice(0, 500)
-    );
+    console.error("[ai-triage] JSON parse failed:", jsonStr.slice(0, 500));
     return {};
   }
 }

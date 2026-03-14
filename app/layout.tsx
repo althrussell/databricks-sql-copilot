@@ -36,12 +36,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen bg-background`}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
-        >
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           {/* ── Header — L1 surface on L0 canvas ── */}
           <header className="sticky top-0 z-40 bg-card border-b border-border shadow-sm">
             <div className="flex h-14 items-center px-6">

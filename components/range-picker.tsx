@@ -3,11 +3,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarDays } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay, setHours, setMinutes } from "date-fns";
 import type { DateRange } from "react-day-picker";
@@ -172,9 +168,7 @@ function CustomRangePopover({
 
           <div className="flex items-center gap-3">
             <div className="flex-1 space-y-1">
-              <label className="text-[10px] font-medium text-muted-foreground">
-                Start time
-              </label>
+              <label className="text-[10px] font-medium text-muted-foreground">Start time</label>
               <input
                 type="time"
                 value={startTime}
@@ -184,9 +178,7 @@ function CustomRangePopover({
             </div>
             <span className="text-muted-foreground mt-4">{"\u2013"}</span>
             <div className="flex-1 space-y-1">
-              <label className="text-[10px] font-medium text-muted-foreground">
-                End time
-              </label>
+              <label className="text-[10px] font-medium text-muted-foreground">End time</label>
               <input
                 type="time"
                 value={endTime}
@@ -203,20 +195,10 @@ function CustomRangePopover({
           )}
 
           <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs"
-              onClick={() => setOpen(false)}
-            >
+            <Button variant="ghost" size="sm" className="text-xs" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button
-              size="sm"
-              className="text-xs"
-              disabled={!dateRange?.from}
-              onClick={handleApply}
-            >
+            <Button size="sm" className="text-xs" disabled={!dateRange?.from} onClick={handleApply}>
               Apply range
             </Button>
           </div>

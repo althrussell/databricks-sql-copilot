@@ -45,7 +45,7 @@ export function WarehouseTable({ warehouses, activity, fetchError }: WarehouseTa
       sparkMap.set(a.warehouseId, counts);
       countMap.set(
         a.warehouseId,
-        a.buckets.reduce((sum, b) => sum + b.count, 0)
+        a.buckets.reduce((sum, b) => sum + b.count, 0),
       );
     }
     return { activityByWarehouse: sparkMap, queryCountByWarehouse: countMap };
@@ -56,15 +56,15 @@ export function WarehouseTable({ warehouses, activity, fetchError }: WarehouseTa
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
-        (wh) =>
-          wh.name.toLowerCase().includes(q) ||
-          wh.id.toLowerCase().includes(q)
+        (wh) => wh.name.toLowerCase().includes(q) || wh.id.toLowerCase().includes(q),
       );
     }
     // Running/starting warehouses first, then alphabetical
     return [...list].sort((a, b) => {
-      const aRunning = a.state.toUpperCase() === "RUNNING" || a.state.toUpperCase() === "STARTING" ? 0 : 1;
-      const bRunning = b.state.toUpperCase() === "RUNNING" || b.state.toUpperCase() === "STARTING" ? 0 : 1;
+      const aRunning =
+        a.state.toUpperCase() === "RUNNING" || a.state.toUpperCase() === "STARTING" ? 0 : 1;
+      const bRunning =
+        b.state.toUpperCase() === "RUNNING" || b.state.toUpperCase() === "STARTING" ? 0 : 1;
       if (aRunning !== bRunning) return aRunning - bRunning;
       return a.name.localeCompare(b.name);
     });
@@ -75,9 +75,7 @@ export function WarehouseTable({ warehouses, activity, fetchError }: WarehouseTa
       <Card>
         <CardContent className="py-12 text-center">
           <AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-3" />
-          <p className="text-sm font-medium text-destructive mb-1">
-            Failed to load warehouses
-          </p>
+          <p className="text-sm font-medium text-destructive mb-1">Failed to load warehouses</p>
           <p className="text-xs text-muted-foreground">{fetchError}</p>
         </CardContent>
       </Card>
@@ -90,8 +88,8 @@ export function WarehouseTable({ warehouses, activity, fetchError }: WarehouseTa
         <CardContent className="py-12 text-center">
           <Server className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">
-            No SQL warehouses found. Ensure the service principal has access to
-            at least one warehouse.
+            No SQL warehouses found. Ensure the service principal has access to at least one
+            warehouse.
           </p>
         </CardContent>
       </Card>
@@ -145,9 +143,7 @@ export function WarehouseTable({ warehouses, activity, fetchError }: WarehouseTa
                       className="flex items-center gap-2 hover:underline"
                     >
                       <StateDot state={wh.state} />
-                      <span className="font-medium text-foreground truncate">
-                        {wh.name}
-                      </span>
+                      <span className="font-medium text-foreground truncate">{wh.name}</span>
                     </Link>
                   </td>
                   <td className="px-3 py-2.5 text-muted-foreground">{wh.size}</td>

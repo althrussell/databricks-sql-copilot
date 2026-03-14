@@ -19,12 +19,7 @@ interface TimelineAxisProps {
  * Time axis with tick marks for the query timeline.
  * Renders formatted time labels at evenly spaced intervals.
  */
-export function TimelineAxis({
-  startMs,
-  endMs,
-  height = 24,
-  tickCount = 6,
-}: TimelineAxisProps) {
+export function TimelineAxis({ startMs, endMs, height = 24, tickCount = 6 }: TimelineAxisProps) {
   const ticks = useMemo(() => {
     const range = endMs - startMs;
     if (range <= 0) return [];
@@ -50,10 +45,7 @@ export function TimelineAxis({
   }, [startMs, endMs, tickCount]);
 
   return (
-    <div
-      className="relative w-full border-b border-border select-none"
-      style={{ height }}
-    >
+    <div className="relative w-full border-b border-border select-none" style={{ height }}>
       {ticks.map((tick) => (
         <div
           key={tick.timeMs}

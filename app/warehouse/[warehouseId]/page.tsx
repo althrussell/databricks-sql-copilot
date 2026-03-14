@@ -10,11 +10,7 @@ import {
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
 import { isPermissionError, extractPermissionDetails } from "@/lib/errors";
 import type { WarehouseInfo } from "@/lib/dbx/rest-client";
-import type {
-  EndpointMetric,
-  TimelineQuery,
-  WarehouseLiveStats,
-} from "@/lib/domain/types";
+import type { EndpointMetric, TimelineQuery, WarehouseLiveStats } from "@/lib/domain/types";
 
 /** Default time range: last 1 hour */
 const DEFAULT_RANGE_HOURS = 1;
@@ -49,27 +45,23 @@ async function WarehouseMonitorLoader({
   let initialHasNextPage = false;
 
   try {
-    const [warehouseResult, metricsResult, queriesResult, statsResult] =
-      await Promise.allSettled([
-        getWarehouseDetail(warehouseId),
-        getEndpointMetrics(warehouseId, startMs, endMs),
-        getWarehouseQueries(warehouseId, startMs, endMs, {
-          maxResults: 500,
-        }),
-        getWarehouseLiveStats(warehouseId),
-      ]);
+    const [warehouseResult, metricsResult, queriesResult, statsResult] = await Promise.allSettled([
+      getWarehouseDetail(warehouseId),
+      getEndpointMetrics(warehouseId, startMs, endMs),
+      getWarehouseQueries(warehouseId, startMs, endMs, {
+        maxResults: 500,
+      }),
+      getWarehouseLiveStats(warehouseId),
+    ]);
 
-    warehouse =
-      warehouseResult.status === "fulfilled" ? warehouseResult.value : null;
-    initialMetrics =
-      metricsResult.status === "fulfilled" ? metricsResult.value : [];
+    warehouse = warehouseResult.status === "fulfilled" ? warehouseResult.value : null;
+    initialMetrics = metricsResult.status === "fulfilled" ? metricsResult.value : [];
     if (queriesResult.status === "fulfilled") {
       initialQueries = queriesResult.value.queries;
       initialNextPageToken = queriesResult.value.nextPageToken;
       initialHasNextPage = queriesResult.value.hasNextPage;
     }
-    liveStats =
-      statsResult.status === "fulfilled" ? statsResult.value : null;
+    liveStats = statsResult.status === "fulfilled" ? statsResult.value : null;
 
     // Collect partial errors for sub-resources (non-fatal — page still renders)
     const permIssues: Array<{ label: string; message: string }> = [];
@@ -106,8 +98,7 @@ async function WarehouseMonitorLoader({
       partialErrors.unshift(details.summary);
     }
   } catch (err) {
-    fetchError =
-      err instanceof Error ? err.message : "Failed to load warehouse data";
+    fetchError = err instanceof Error ? err.message : "Failed to load warehouse data";
   }
 
   const workspaceUrl = getWorkspaceBaseUrl();
@@ -149,10 +140,7 @@ export default async function WarehouseMonitorPage({
 
   return (
     <Suspense fallback={<WarehouseMonitorLoading />}>
-      <WarehouseMonitorLoader
-        warehouseId={warehouseId}
-        rangeHours={rangeHours}
-      />
+      <WarehouseMonitorLoader warehouseId={warehouseId} rangeHours={rangeHours} />
     </Suspense>
   );
 }

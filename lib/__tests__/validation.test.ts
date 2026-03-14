@@ -149,18 +149,14 @@ describe("validateLLMArray", () => {
   });
 
   it("defaults action to 'investigate' when action is omitted", () => {
-    const items = [
-      { id: "fp1", insight: "Test" },
-    ];
+    const items = [{ id: "fp1", insight: "Test" }];
     const valid = validateLLMArray(items, TriageItemSchema, "test");
     expect(valid).toHaveLength(1);
     expect(valid[0].action).toBe("investigate");
   });
 
   it("rejects items with invalid action values", () => {
-    const items = [
-      { id: "fp1", insight: "Test", action: "invalid_action" },
-    ];
+    const items = [{ id: "fp1", insight: "Test", action: "invalid_action" }];
     const valid = validateLLMArray(items, TriageItemSchema, "test");
     expect(valid).toHaveLength(0);
   });

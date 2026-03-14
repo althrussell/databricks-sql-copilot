@@ -75,9 +75,7 @@ const MINIMAL_CANDIDATE_CTX: PromptBuildContext = {
 };
 
 const MINIMAL_TRIAGE_CTX: PromptBuildContext = {
-  triageItems: [
-    { id: "abc123", summaryLine: "SELECT * FROM orders — 10 runs, avg 5s" },
-  ],
+  triageItems: [{ id: "abc123", summaryLine: "SELECT * FROM orders — 10 runs, avg 5s" }],
 };
 
 describe("Prompt Registry", () => {
@@ -90,9 +88,7 @@ describe("Prompt Registry", () => {
     });
 
     it("throws for an unknown key", () => {
-      expect(() => getTemplate("nonexistent" as PromptKey)).toThrow(
-        /No active prompt template/
-      );
+      expect(() => getTemplate("nonexistent" as PromptKey)).toThrow(/No active prompt template/);
     });
   });
 

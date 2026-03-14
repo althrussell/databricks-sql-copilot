@@ -34,7 +34,7 @@ export async function getQueryActions(): Promise<Map<string, QueryAction>> {
           expiresAt: { gt: new Date() },
         },
         orderBy: { updatedAt: "desc" },
-      })
+      }),
     );
 
     for (const row of rows) {
@@ -63,7 +63,7 @@ export async function setQueryAction(
   fingerprint: string,
   action: QueryActionType,
   actedBy?: string,
-  note?: string
+  note?: string,
 ): Promise<void> {
   if (!isLakebaseEnabled()) return;
 
@@ -90,7 +90,7 @@ export async function setQueryAction(
           updatedAt: now,
           expiresAt,
         },
-      })
+      }),
     );
   } catch (err) {
     console.error("[actions-store] Failed to set query action:", err);
@@ -108,7 +108,7 @@ export async function removeQueryAction(fingerprint: string): Promise<void> {
     await withPrisma((p) =>
       p.queryAction.delete({
         where: { fingerprint },
-      })
+      }),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

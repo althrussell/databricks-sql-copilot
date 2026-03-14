@@ -20,7 +20,7 @@ export function computeUtilization(
   events: WarehouseEvent[],
   queryRuns: QueryRun[],
   windowStartMs: number,
-  windowEndMs: number
+  windowEndMs: number,
 ): WarehouseUtilization[] {
   const windowDurationMs = windowEndMs - windowStartMs;
   if (windowDurationMs <= 0) return [];
@@ -48,7 +48,7 @@ export function computeUtilization(
 
   for (const whId of allIds) {
     const whEvents = (eventsByWh.get(whId) ?? []).sort(
-      (a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime()
+      (a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime(),
     );
 
     // Compute ON-time from events
@@ -59,7 +59,11 @@ export function computeUtilization(
       const evTime = new Date(ev.eventTime).getTime();
       const clippedTime = Math.max(evTime, windowStartMs);
 
-      if (ev.eventType === "RUNNING" || ev.eventType === "STARTING" || ev.eventType === "SCALED_UP") {
+      if (
+        ev.eventType === "RUNNING" ||
+        ev.eventType === "STARTING" ||
+        ev.eventType === "SCALED_UP"
+      ) {
         if (lastOnTime === null) {
           lastOnTime = clippedTime;
         }
@@ -89,9 +93,7 @@ export function computeUtilization(
     const effectiveActiveMs = Math.min(activeTimeMs, onTimeMs);
     const idleMs = Math.max(0, onTimeMs - effectiveActiveMs);
 
-    const utilizationPct = onTimeMs > 0
-      ? Math.round((effectiveActiveMs / onTimeMs) * 100)
-      : 0;
+    const utilizationPct = onTimeMs > 0 ? Math.round((effectiveActiveMs / onTimeMs) * 100) : 0;
 
     results.push({
       warehouseId: whId,

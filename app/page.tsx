@@ -10,19 +10,9 @@ import { triageCandidates } from "@/lib/ai/triage";
 import { getQueryActions } from "@/lib/dbx/actions-store";
 import { getWarehouseActivityBuckets } from "@/lib/queries/warehouse-activity";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
-import {
-  fetchTriageTableContext,
-} from "@/lib/queries/table-metadata";
-import type {
-  Candidate,
-  WarehouseCost,
-  WarehouseActivity,
-  QueryRun,
-} from "@/lib/domain/types";
-import {
-  isPermissionError,
-  extractPermissionDetails,
-} from "@/lib/errors";
+import { fetchTriageTableContext } from "@/lib/queries/table-metadata";
+import type { Candidate, WarehouseCost, WarehouseActivity, QueryRun } from "@/lib/domain/types";
+import { isPermissionError, extractPermissionDetails } from "@/lib/errors";
 
 /**
  * Cache the page for 5 minutes. Since the data window is shifted back 6h
@@ -90,7 +80,7 @@ export interface DataSourceHealth {
 function catchAndLogTracked<T>(
   label: string,
   fallback: T,
-  target: DataSourceHealth[]
+  target: DataSourceHealth[],
 ): (err: unknown) => T {
   return (err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
@@ -128,11 +118,9 @@ async function CoreDashboardLoader({
 
   try {
     const [warehouseResult, queryResult] = await Promise.all([
-      listWarehouses().catch(
-        catchAndLogTracked("warehouses", [] as WarehouseOption[], coreFailed)
-      ),
+      listWarehouses().catch(catchAndLogTracked("warehouses", [] as WarehouseOption[], coreFailed)),
       listRecentQueries({ startTime: start, endTime: end, limit: 1000 }).catch(
-        catchAndLogTracked("query_history", [] as QueryRun[], coreFailed)
+        catchAndLogTracked("query_history", [] as QueryRun[], coreFailed),
       ),
     ]);
 
@@ -143,25 +131,20 @@ async function CoreDashboardLoader({
 
     coreHealth.push(
       { name: "warehouses", status: "ok", rowCount: warehouseResult.length },
-      { name: "query_history", status: "ok", rowCount: queryResult.length }
+      { name: "query_history", status: "ok", rowCount: queryResult.length },
     );
 
-    console.log(
-      `[phase1] warehouses=${warehouseResult.length} queries=${queryResult.length}`
-    );
+    console.log(`[phase1] warehouses=${warehouseResult.length} queries=${queryResult.length}`);
   } catch (err: unknown) {
-    fetchError =
-      err instanceof Error ? err.message : "Failed to load query data";
+    fetchError = err instanceof Error ? err.message : "Failed to load query data";
   }
 
   // When core data sources failed, surface a clear error to the user
   if (!fetchError && coreFailed.length > 0) {
-    const permErrors = coreFailed.filter((h) =>
-      h.error && isPermissionError(new Error(h.error))
-    );
+    const permErrors = coreFailed.filter((h) => h.error && isPermissionError(new Error(h.error)));
     if (permErrors.length > 0) {
       const details = extractPermissionDetails(
-        permErrors.map((h) => ({ label: h.name, message: h.error ?? "" }))
+        permErrors.map((h) => ({ label: h.name, message: h.error ?? "" })),
       );
       fetchError = details.summary;
     } else {
@@ -186,7 +169,15 @@ async function CoreDashboardLoader({
   }
 
   // Fetch query actions from Lakebase (non-blocking — empty map on failure)
-  const queryActionsObj: Record<string, { action: "dismiss" | "watch" | "applied"; note: string | null; actedBy: string | null; actedAt: string }> = {};
+  const queryActionsObj: Record<
+    string,
+    {
+      action: "dismiss" | "watch" | "applied";
+      note: string | null;
+      actedBy: string | null;
+      actedAt: string;
+    }
+  > = {};
   try {
     const actionsMap = await getQueryActions();
     for (const [fp, act] of actionsMap) {
@@ -224,25 +215,25 @@ async function CoreDashboardLoader({
       initialQueryActions={queryActionsObj}
     >
       {/* Phase 2 enrichment streams in via nested Suspense */}
-      <Suspense fallback={
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          Loading cost data…
-        </div>
-      }>
-        <EnrichmentLoader
-          start={start}
-          end={end}
-          queryRuns={queryRuns}
-        />
+      <Suspense
+        fallback={
+          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            Loading cost data…
+          </div>
+        }
+      >
+        <EnrichmentLoader start={start} end={end} queryRuns={queryRuns} />
       </Suspense>
       {/* Phase 3: AI triage insights (fast model, streams in last) */}
-      <Suspense fallback={
-        <div className="fixed bottom-14 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          Generating AI insights…
-        </div>
-      }>
+      <Suspense
+        fallback={
+          <div className="fixed bottom-14 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            Generating AI insights…
+          </div>
+        }
+      >
         <AiTriageLoader candidates={candidates} />
       </Suspense>
     </Dashboard>
@@ -255,7 +246,7 @@ function withTimeout<T>(
   timeoutMs: number,
   label: string,
   fallback: T,
-  target: DataSourceHealth[]
+  target: DataSourceHealth[],
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
@@ -298,17 +289,17 @@ async function EnrichmentLoader({
   const TIMEOUT_MS = 600_000; // 10 minutes per enrichment query
 
   // Enrichment: costs + table metadata in parallel
-  const sqlTexts = queryRuns.map(r => r.queryText).filter(t => t.length > 0);
+  const sqlTexts = queryRuns.map((r) => r.queryText).filter((t) => t.length > 0);
 
   const [costResult, tableContextMap] = await Promise.all([
     withTimeout(
       getWarehouseCosts({ startTime: start, endTime: end }).catch(
-        catchAndLogTracked("billing_costs", [] as WarehouseCost[], enrichFailed)
+        catchAndLogTracked("billing_costs", [] as WarehouseCost[], enrichFailed),
       ),
       TIMEOUT_MS,
       "billing_costs",
       [] as WarehouseCost[],
-      enrichFailed
+      enrichFailed,
     ),
     fetchTriageTableContext(sqlTexts).catch((err) => {
       console.warn("[phase2] table metadata fetch failed:", err);
@@ -316,9 +307,7 @@ async function EnrichmentLoader({
     }),
   ]);
 
-  enrichHealth.push(
-    { name: "billing_costs", status: "ok", rowCount: costResult.length }
-  );
+  enrichHealth.push({ name: "billing_costs", status: "ok", rowCount: costResult.length });
 
   // Merge failed and ok sources (ok overrides error)
   const enrichHealthMap = new Map<string, DataSourceHealth>();
@@ -356,11 +345,7 @@ async function EnrichmentLoader({
  * Phase 3: AI Triage — fast model insights for top candidates.
  * Streams in after the main dashboard is interactive.
  */
-async function AiTriageLoader({
-  candidates,
-}: {
-  candidates: Candidate[];
-}) {
+async function AiTriageLoader({ candidates }: { candidates: Candidate[] }) {
   const TRIAGE_TIMEOUT_MS = 60_000; // 60 seconds max
 
   let triageMap: Record<string, { insight: string; action: string }> = {};
@@ -371,7 +356,7 @@ async function AiTriageLoader({
       TRIAGE_TIMEOUT_MS,
       "ai_triage",
       {} as Record<string, { insight: string; action: string }>,
-      triageFailed
+      triageFailed,
     );
   } catch (err) {
     console.error("[ai-triage] loader failed:", err);

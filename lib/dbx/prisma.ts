@@ -114,8 +114,10 @@ async function getAutoProvisionedPrisma(): Promise<PrismaClient> {
     try {
       await globalForPrisma.__prisma.$disconnect();
     } catch (err) {
-      console.warn("[prisma] Failed to disconnect old client during rotation",
-        err instanceof Error ? err.message : String(err));
+      console.warn(
+        "[prisma] Failed to disconnect old client during rotation",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
@@ -127,8 +129,7 @@ async function getAutoProvisionedPrisma(): Promise<PrismaClient> {
   });
 
   pool.on("error", (err) => {
-    console.warn("[prisma] pg Pool background error — will recreate on next request",
-      err.message);
+    console.warn("[prisma] pg Pool background error — will recreate on next request", err.message);
     globalForPrisma.__prisma = undefined;
     globalForPrisma.__prismaTokenId = undefined;
     invalidateDbCredential();
@@ -167,21 +168,25 @@ function scheduleProactiveRefresh(): void {
   globalForPrisma.__refreshTimer = setTimeout(async () => {
     globalForPrisma.__refreshTimer = undefined;
     try {
-      console.log("[prisma] Proactive credential rotation starting",
-        "msBeforeExpiry:", expiresAt - Date.now());
+      console.log(
+        "[prisma] Proactive credential rotation starting",
+        "msBeforeExpiry:",
+        expiresAt - Date.now(),
+      );
       invalidateDbCredential();
       globalForPrisma.__prisma = undefined;
       globalForPrisma.__prismaTokenId = undefined;
       await getPrisma();
       console.log("[prisma] Proactive credential rotation complete");
     } catch (err) {
-      console.warn("[prisma] Proactive credential rotation failed — will retry on next request",
-        err instanceof Error ? err.message : String(err));
+      console.warn(
+        "[prisma] Proactive credential rotation failed — will retry on next request",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }, delay);
 
-  console.log("[prisma] Proactive refresh scheduled in",
-    Math.round(delay / 1_000), "seconds");
+  console.log("[prisma] Proactive refresh scheduled in", Math.round(delay / 1_000), "seconds");
 }
 
 // ---------------------------------------------------------------------------
@@ -193,14 +198,11 @@ async function getStaticPrisma(): Promise<PrismaClient> {
   if (!url) {
     throw new Error(
       "DATABASE_URL is not set and Lakebase auto-provisioning is not available. " +
-        "Set DATABASE_URL in .env for local dev, or deploy as a Databricks App."
+        "Set DATABASE_URL in .env for local dev, or deploy as a Databricks App.",
     );
   }
 
-  if (
-    globalForPrisma.__prisma &&
-    globalForPrisma.__prismaTokenId === "__static__"
-  ) {
+  if (globalForPrisma.__prisma && globalForPrisma.__prismaTokenId === "__static__") {
     return globalForPrisma.__prisma;
   }
 
@@ -211,8 +213,10 @@ async function getStaticPrisma(): Promise<PrismaClient> {
   const pool = new pg.Pool({ connectionString: url });
 
   pool.on("error", (err) => {
-    console.warn("[prisma] pg Pool background error (static) — will recreate on next request",
-      err.message);
+    console.warn(
+      "[prisma] pg Pool background error (static) — will recreate on next request",
+      err.message,
+    );
     globalForPrisma.__prisma = undefined;
     globalForPrisma.__prismaTokenId = undefined;
   });
@@ -237,22 +241,20 @@ async function getStaticPrisma(): Promise<PrismaClient> {
  *
  * Returns the no-op default when Lakebase is disabled.
  */
-export async function withPrisma<T>(
-  fn: (prisma: PrismaClient) => Promise<T>
-): Promise<T> {
+export async function withPrisma<T>(fn: (prisma: PrismaClient) => Promise<T>): Promise<T> {
   const prisma = await getPrisma();
   if (!prisma) {
-    throw new Error(
-      "withPrisma called but Lakebase is disabled (ENABLE_LAKEBASE is not true)"
-    );
+    throw new Error("withPrisma called but Lakebase is disabled (ENABLE_LAKEBASE is not true)");
   }
 
   try {
     return await fn(prisma);
   } catch (err) {
     if (isAuthError(err) && canAutoProvision()) {
-      console.warn("[prisma] Database auth error, rotating credentials and retrying",
-        err instanceof Error ? err.message : String(err));
+      console.warn(
+        "[prisma] Database auth error, rotating credentials and retrying",
+        err instanceof Error ? err.message : String(err),
+      );
       const freshPrisma = await rotatePrismaClient();
       return fn(freshPrisma);
     }

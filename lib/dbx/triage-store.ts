@@ -37,7 +37,7 @@ export async function getCachedTriage(fingerprintHash: string): Promise<TriageMa
           fingerprintHash,
           expiresAt: { gt: new Date() },
         },
-      })
+      }),
     );
 
     if (!row) return null;
@@ -54,10 +54,7 @@ export async function getCachedTriage(fingerprintHash: string): Promise<TriageMa
  * Cache AI triage insights by fingerprint set hash.
  * UPSERTs with a fresh 1-hour TTL.
  */
-export async function cacheTriage(
-  fingerprintHash: string,
-  insights: TriageMap
-): Promise<void> {
+export async function cacheTriage(fingerprintHash: string, insights: TriageMap): Promise<void> {
   if (!isLakebaseEnabled()) return;
 
   const now = new Date();
@@ -78,7 +75,7 @@ export async function cacheTriage(
           createdAt: now,
           expiresAt,
         },
-      })
+      }),
     );
   } catch (err) {
     console.error("[triage-store] Failed to cache triage:", err);

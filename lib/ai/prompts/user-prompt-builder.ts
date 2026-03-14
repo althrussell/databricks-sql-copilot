@@ -21,9 +21,7 @@ export function buildUserPromptSections(ctx: PromptBuildContext, mode: Mode): st
 
   const ws = candidate.windowStats;
 
-  const sql = includeRawSql
-    ? candidate.sampleQueryText
-    : normalizeSql(candidate.sampleQueryText);
+  const sql = includeRawSql ? candidate.sampleQueryText : normalizeSql(candidate.sampleQueryText);
 
   const timelineBlock = [
     `Total Duration (p95): ${fmtMs(ws.p95Ms)}`,
@@ -110,7 +108,9 @@ function renderTableMetadata(tables: TableMetadata[] | undefined): string | null
     if (t.detail) {
       const d = t.detail;
       lines.push(`Format: ${d.format ?? "unknown"}`);
-      lines.push(`Table Type: ${d.isManaged ? "MANAGED (Unity Catalog)" : `EXTERNAL (${d.location ?? "unknown location"})`}`);
+      lines.push(
+        `Table Type: ${d.isManaged ? "MANAGED (Unity Catalog)" : `EXTERNAL (${d.location ?? "unknown location"})`}`,
+      );
       if (d.sizeInBytes != null) {
         lines.push(`Size: ${fmtBytes(d.sizeInBytes)} (${d.numFiles ?? "?"} files)`);
       }
@@ -137,7 +137,9 @@ function renderTableMetadata(tables: TableMetadata[] | undefined): string | null
       } else if (d.format?.toLowerCase() === "delta" && d.isManaged) {
         lines.push("Predictive Optimization: NOT ENABLED — STRONGLY RECOMMEND ENABLING");
       } else if (d.format?.toLowerCase() === "delta" && !d.isManaged) {
-        lines.push("Predictive Optimization: NOT AVAILABLE (requires MANAGED table — convert from EXTERNAL first)");
+        lines.push(
+          "Predictive Optimization: NOT AVAILABLE (requires MANAGED table — convert from EXTERNAL first)",
+        );
       }
 
       const zorder = Object.entries(d.properties)
@@ -185,7 +187,9 @@ function renderTableMetadata(tables: TableMetadata[] | undefined): string | null
     } else {
       const fmt = t.detail?.format?.toLowerCase();
       if (fmt && fmt !== "delta") {
-        lines.push(`Maintenance History: NOT AVAILABLE — table format is ${fmt.toUpperCase()}, not Delta.`);
+        lines.push(
+          `Maintenance History: NOT AVAILABLE — table format is ${fmt.toUpperCase()}, not Delta.`,
+        );
       } else if (fmt === "delta") {
         lines.push("Maintenance History: unavailable (no permissions to run describe_history)");
       } else {

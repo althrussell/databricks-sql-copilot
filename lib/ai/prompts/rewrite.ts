@@ -51,7 +51,8 @@ Analyse the SQL query and metrics, then produce an optimised rewrite with IDENTI
 export const rewriteV1: PromptTemplate = {
   key: "rewrite",
   version: "v1",
-  description: "Initial rewrite prompt with semantic equivalence rules and 10 common rewrite patterns",
+  description:
+    "Initial rewrite prompt with semantic equivalence rules and 10 common rewrite patterns",
   build(ctx: PromptBuildContext): RenderedPrompt {
     const userPrompt = buildUserPromptSections(ctx, "rewrite");
     const estimatedTokens = Math.ceil((SYSTEM_PROMPT.length + userPrompt.length) / 4);

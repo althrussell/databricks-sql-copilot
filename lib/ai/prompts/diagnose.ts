@@ -37,7 +37,8 @@ Analyse the provided SQL query and its execution metrics. Identify root causes a
 export const diagnoseV1: PromptTemplate = {
   key: "diagnose",
   version: "v1",
-  description: "Initial diagnose prompt with three-pillar knowledge base and concise JSON output format",
+  description:
+    "Initial diagnose prompt with three-pillar knowledge base and concise JSON output format",
   build(ctx: PromptBuildContext): RenderedPrompt {
     const userPrompt = buildUserPromptSections(ctx, "diagnose");
     const estimatedTokens = Math.ceil((SYSTEM_PROMPT.length + userPrompt.length) / 4);

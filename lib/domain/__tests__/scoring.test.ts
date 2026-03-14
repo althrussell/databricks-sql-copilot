@@ -54,11 +54,9 @@ describe("scoreCandidate", () => {
 
   it("high spill ratio produces high waste score", () => {
     const spilly = scoreCandidate(
-      makeInput({ totalSpilledBytes: 500_000, totalReadBytes: 1_000_000 })
+      makeInput({ totalSpilledBytes: 500_000, totalReadBytes: 1_000_000 }),
     );
-    const clean = scoreCandidate(
-      makeInput({ totalSpilledBytes: 0, totalReadBytes: 1_000_000 })
-    );
+    const clean = scoreCandidate(makeInput({ totalSpilledBytes: 0, totalReadBytes: 1_000_000 }));
     expect(spilly.breakdown.waste).toBeGreaterThan(clean.breakdown.waste);
   });
 
@@ -83,7 +81,7 @@ describe("scoreCandidate", () => {
         totalReadBytes: 0,
         avgWaitingAtCapacityMs: 0,
         cacheHitRate: 1,
-      })
+      }),
     );
     expect(result.impactScore).toBe(0);
   });
@@ -100,7 +98,7 @@ describe("scoreCandidate", () => {
 
   it("adds 'high-spill' tag for high waste", () => {
     const result = scoreCandidate(
-      makeInput({ totalSpilledBytes: 600_000, totalReadBytes: 1_000_000 })
+      makeInput({ totalSpilledBytes: 600_000, totalReadBytes: 1_000_000 }),
     );
     expect(result.tags).toContain("high-spill");
   });
@@ -108,9 +106,7 @@ describe("scoreCandidate", () => {
 
 describe("explainScore", () => {
   it("returns reasons for high-scoring factors", () => {
-    const result = scoreCandidate(
-      makeInput({ p95Ms: 60_000, count: 200 })
-    );
+    const result = scoreCandidate(makeInput({ p95Ms: 60_000, count: 200 }));
     const reasons = explainScore(result.breakdown);
     expect(reasons.length).toBeGreaterThan(0);
     expect(reasons.length).toBeLessThanOrEqual(3);
@@ -130,7 +126,7 @@ describe("explainScore", () => {
         totalSpilledBytes: 0,
         avgWaitingAtCapacityMs: 0,
         cacheHitRate: 0.95,
-      })
+      }),
     );
     const reasons = explainScore(result.breakdown);
     expect(reasons.length).toBe(0);

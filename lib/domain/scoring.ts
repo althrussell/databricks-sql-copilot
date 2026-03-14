@@ -51,11 +51,11 @@ export interface ScoreResult {
 
 /** Weights must sum to 1.0 */
 const WEIGHTS = {
-  runtime: 0.30,
+  runtime: 0.3,
   frequency: 0.25,
-  waste: 0.20,
+  waste: 0.2,
   capacity: 0.15,
-  quickwin: 0.10,
+  quickwin: 0.1,
 } as const;
 
 /**
@@ -75,10 +75,10 @@ export function scoreCandidate(input: ScoreInput): ScoreResult {
 
   const impactScore = Math.round(
     breakdown.runtime * WEIGHTS.runtime +
-    breakdown.frequency * WEIGHTS.frequency +
-    breakdown.waste * WEIGHTS.waste +
-    breakdown.capacity * WEIGHTS.capacity +
-    breakdown.quickwin * WEIGHTS.quickwin
+      breakdown.frequency * WEIGHTS.frequency +
+      breakdown.waste * WEIGHTS.waste +
+      breakdown.capacity * WEIGHTS.capacity +
+      breakdown.quickwin * WEIGHTS.quickwin,
   );
 
   const tags = deriveTags(input, breakdown);
