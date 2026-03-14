@@ -20,7 +20,13 @@ export interface ActionItem {
   owner: string;
   impact: string;
   effort: "quick-win" | "medium" | "project";
-  category: "query-optimization" | "table-optimization" | "job-reliability" | "job-performance" | "cost-reduction" | "user-outreach";
+  category:
+    | "query-optimization"
+    | "table-optimization"
+    | "job-reliability"
+    | "job-performance"
+    | "cost-reduction"
+    | "user-outreach";
   command: string | null;
 }
 
@@ -34,12 +40,17 @@ function escapeForSql(text: string): string {
 }
 
 export async function generateActionsSummary(
-  ctx: ActionsContext
-): Promise<{ status: "success"; data: ActionsSummaryResult } | { status: "error"; message: string }> {
+  ctx: ActionsContext,
+): Promise<
+  { status: "success"; data: ActionsSummaryResult } | { status: "error"; message: string }
+> {
   const contextText = buildActionsContext(ctx);
 
   if (ctx.queries.length === 0 && ctx.jobs.length === 0 && ctx.tables.length === 0) {
-    return { status: "error", message: "No data available to generate actions. Try a wider time window." };
+    return {
+      status: "error",
+      message: "No data available to generate actions. Try a wider time window.",
+    };
   }
 
   const prompt = `You are a senior Databricks platform engineer creating a prioritised action list for a busy operations team.
@@ -86,7 +97,7 @@ Hard rules — violating any of these makes the output useless:
     const result = await aiSemaphore.run(async () => {
       const resultPromise = executeQuery<{ response: string }>(sql);
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Actions summary timed out after 90s")), TIMEOUT_MS)
+        setTimeout(() => reject(new Error("Actions summary timed out after 90s")), TIMEOUT_MS),
       );
       return Promise.race([resultPromise, timeoutPromise]);
     });
@@ -97,7 +108,10 @@ Hard rules — violating any of these makes the output useless:
 
     const parsed = parseResponse(result.rows[0].response);
     if (!parsed) {
-      return { status: "error", message: `Could not parse AI response (${result.rows[0].response.length} chars)` };
+      return {
+        status: "error",
+        message: `Could not parse AI response (${result.rows[0].response.length} chars)`,
+      };
     }
     return { status: "success", data: { items: parsed, generatedAt: new Date().toISOString() } };
   } catch (err) {
@@ -124,8 +138,12 @@ function parseResponse(raw: string): ActionItem[] | null {
 
   const VALID_EFFORTS = new Set(["quick-win", "medium", "project"]);
   const VALID_CATEGORIES = new Set([
-    "query-optimization", "table-optimization", "job-reliability",
-    "job-performance", "cost-reduction", "user-outreach",
+    "query-optimization",
+    "table-optimization",
+    "job-reliability",
+    "job-performance",
+    "cost-reduction",
+    "user-outreach",
   ]);
 
   try {
@@ -138,8 +156,12 @@ function parseResponse(raw: string): ActionItem[] | null {
       target: String(item.target ?? ""),
       owner: String(item.owner ?? ""),
       impact: String(item.impact ?? ""),
-      effort: VALID_EFFORTS.has(String(item.effort)) ? item.effort as ActionItem["effort"] : "medium",
-      category: VALID_CATEGORIES.has(String(item.category)) ? item.category as ActionItem["category"] : "query-optimization",
+      effort: VALID_EFFORTS.has(String(item.effort))
+        ? (item.effort as ActionItem["effort"])
+        : "medium",
+      category: VALID_CATEGORIES.has(String(item.category))
+        ? (item.category as ActionItem["category"])
+        : "query-optimization",
       command: item.command ? String(item.command) : null,
     }));
   } catch {

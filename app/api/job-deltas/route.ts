@@ -12,10 +12,7 @@ export async function POST(req: NextRequest) {
     };
 
     if (!startTime || !endTime) {
-      return NextResponse.json(
-        { error: "startTime and endTime are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "startTime and endTime are required" }, { status: 400 });
     }
 
     const deltas = await getJobDeltas({ startTime, endTime });

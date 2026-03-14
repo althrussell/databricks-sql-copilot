@@ -34,29 +34,25 @@ function formatDuration(s: number): string {
   return `${(s / 3600).toFixed(1)}h`;
 }
 
-function jobSummaryLine(
-  job: JobSummary,
-  flags: JobFlag[]
-): string {
-  const failRate =
-    job.totalRuns > 0
-      ? ((job.failedRuns + job.errorRuns) / job.totalRuns) * 100
-      : 0;
+function jobSummaryLine(job: JobSummary, flags: JobFlag[]): string {
+  const failRate = job.totalRuns > 0 ? ((job.failedRuns + job.errorRuns) / job.totalRuns) * 100 : 0;
   const flagLabels = flags.map((f) => f.code).join(", ");
   const costStr =
     job.totalDollars > 0
       ? `$${job.totalDollars.toFixed(2)}`
       : job.totalDBUs > 0
-      ? `${job.totalDBUs.toFixed(1)} DBU`
-      : "n/a";
+        ? `${job.totalDBUs.toFixed(1)} DBU`
+        : "n/a";
 
-  const p95ratio = job.avgDurationSeconds > 0 ? (job.p95DurationSeconds / job.avgDurationSeconds) : 0;
-  const setupPct = job.avgSetupSeconds && job.avgDurationSeconds > 0
-    ? Math.round((job.avgSetupSeconds / job.avgDurationSeconds) * 100)
-    : null;
-  const queuePct = job.avgQueueSeconds && job.avgDurationSeconds > 0
-    ? Math.round((job.avgQueueSeconds / job.avgDurationSeconds) * 100)
-    : null;
+  const p95ratio = job.avgDurationSeconds > 0 ? job.p95DurationSeconds / job.avgDurationSeconds : 0;
+  const setupPct =
+    job.avgSetupSeconds && job.avgDurationSeconds > 0
+      ? Math.round((job.avgSetupSeconds / job.avgDurationSeconds) * 100)
+      : null;
+  const queuePct =
+    job.avgQueueSeconds && job.avgDurationSeconds > 0
+      ? Math.round((job.avgQueueSeconds / job.avgDurationSeconds) * 100)
+      : null;
 
   return [
     `ID: ${job.jobId}`,
@@ -80,15 +76,11 @@ function jobSummaryLine(
  */
 export async function triageJobs(
   jobs: JobSummary[],
-  flagsByJobId: Record<string, JobFlag[]>
+  flagsByJobId: Record<string, JobFlag[]>,
 ): Promise<JobTriageMap> {
   // Only triage jobs that have failures or flags
   const candidates = jobs
-    .filter(
-      (j) =>
-        j.failedRuns + j.errorRuns > 0 ||
-        (flagsByJobId[j.jobId]?.length ?? 0) > 0
-    )
+    .filter((j) => j.failedRuns + j.errorRuns > 0 || (flagsByJobId[j.jobId]?.length ?? 0) > 0)
     .slice(0, MAX_JOBS);
 
   if (candidates.length === 0) return {};
@@ -132,8 +124,8 @@ Rules:
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error(`Job triage timed out after ${TRIAGE_TIMEOUT_MS / 1000}s`)),
-          TRIAGE_TIMEOUT_MS
-        )
+          TRIAGE_TIMEOUT_MS,
+        ),
       );
       return Promise.race([resultPromise, timeoutPromise]);
     });
@@ -162,9 +154,7 @@ function parseTriageResponse(raw: string, candidates: JobSummary[]): JobTriageMa
   }
 
   const validIds = new Set(candidates.map((j) => j.jobId));
-  const VALID_ACTIONS = new Set([
-    "investigate", "resize", "reschedule", "fix_code", "optimize",
-  ]);
+  const VALID_ACTIONS = new Set(["investigate", "resize", "reschedule", "fix_code", "optimize"]);
 
   try {
     const arr = JSON.parse(jsonStr);

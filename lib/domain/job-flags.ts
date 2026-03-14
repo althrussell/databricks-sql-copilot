@@ -21,9 +21,7 @@ export interface JobFlag {
  */
 export function evaluateJobFlags(job: JobSummary): JobFlag[] {
   const flags: JobFlag[] = [];
-  const failureRate = job.totalRuns > 0
-    ? (job.failedRuns + job.errorRuns) / job.totalRuns
-    : 0;
+  const failureRate = job.totalRuns > 0 ? (job.failedRuns + job.errorRuns) / job.totalRuns : 0;
 
   // HIGH_FAILURE_RATE — >20% of runs failed/errored
   if (failureRate > 0.2 && job.totalRuns >= 5) {
@@ -78,8 +76,7 @@ export function evaluateJobFlags(job: JobSummary): JobFlag[] {
   }
 
   // FREQUENT_RETRIES — high run volume from a scheduled job (CRON/PERIODIC) with failures
-  const isScheduled =
-    job.triggerTypes.includes("CRON") || job.triggerTypes.includes("PERIODIC");
+  const isScheduled = job.triggerTypes.includes("CRON") || job.triggerTypes.includes("PERIODIC");
   if (isScheduled && failureRate > 0.1 && job.totalRuns > 10) {
     flags.push({
       code: "RETRY_PRESSURE",
@@ -102,11 +99,7 @@ export function evaluateJobFlags(job: JobSummary): JobFlag[] {
   }
 
   // STALE — last run was a failure and it was >24h ago (may be abandoned)
-  if (
-    job.lastResultState &&
-    job.lastResultState !== "SUCCEEDED" &&
-    job.lastRunAt
-  ) {
+  if (job.lastResultState && job.lastResultState !== "SUCCEEDED" && job.lastRunAt) {
     const ageHours = (Date.now() - new Date(job.lastRunAt).getTime()) / 3_600_000;
     if (ageHours > 24) {
       flags.push({
@@ -155,7 +148,7 @@ export function evaluateJobFlags(job: JobSummary): JobFlag[] {
  */
 export function evaluateDurationRegressionFlag(
   job: JobSummary,
-  priorP95Seconds: number
+  priorP95Seconds: number,
 ): JobFlag | null {
   if (priorP95Seconds <= 0 || job.p95DurationSeconds <= 0) return null;
   const changePct = ((job.p95DurationSeconds - priorP95Seconds) / priorP95Seconds) * 100;
@@ -177,14 +170,8 @@ function formatDuration(s: number): string {
 }
 
 /** Aggregate estimated wasted dollars across all flagged jobs */
-export function totalWastedDollars(
-  jobs: Array<{ flags: JobFlag[] }>
-): number {
-  return jobs.reduce(
-    (sum, j) =>
-      sum + j.flags.reduce((s, f) => s + (f.wastedDollars ?? 0), 0),
-    0
-  );
+export function totalWastedDollars(jobs: Array<{ flags: JobFlag[] }>): number {
+  return jobs.reduce((sum, j) => sum + j.flags.reduce((s, f) => s + (f.wastedDollars ?? 0), 0), 0);
 }
 
 export const FLAG_SEVERITY_ORDER: Record<JobFlagSeverity, number> = {

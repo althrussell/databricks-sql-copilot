@@ -708,7 +708,6 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
   const warningCount = actionable.filter((r) => r.severity === "warning").length;
   const infoCount = actionable.filter((r) => r.severity === "info").length;
 
-
   return (
     <TooltipProvider>
       <div className="space-y-6">
@@ -849,7 +848,6 @@ export function WarehouseHealthReport({ workspaceUrl }: { workspaceUrl: string }
             )}
           </>
         )}
-
       </div>
     </TooltipProvider>
   );

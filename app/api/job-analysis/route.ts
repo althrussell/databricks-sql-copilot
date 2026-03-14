@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getJobRunStats, getJobRunHistory, getJobTaskBreakdown, computePhaseStats } from "@/lib/queries/jobs";
+import {
+  getJobRunStats,
+  getJobRunHistory,
+  getJobTaskBreakdown,
+  computePhaseStats,
+} from "@/lib/queries/jobs";
 import { evaluateJobFlags } from "@/lib/domain/job-flags";
 import { analyseJob } from "@/lib/ai/job-analysis";
 
@@ -15,7 +20,10 @@ export async function POST(req: NextRequest) {
     };
 
     if (!jobId || !startTime || !endTime) {
-      return NextResponse.json({ error: "jobId, startTime, endTime are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "jobId, startTime, endTime are required" },
+        { status: 400 },
+      );
     }
 
     // Fetch all data in parallel
@@ -26,7 +34,10 @@ export async function POST(req: NextRequest) {
     ]);
 
     if (!stats) {
-      return NextResponse.json({ error: "Job not found or no runs in the specified window" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Job not found or no runs in the specified window" },
+        { status: 404 },
+      );
     }
 
     const phase = computePhaseStats(runs);

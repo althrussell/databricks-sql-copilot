@@ -4,7 +4,12 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { ShieldAlert, Wrench, AlertTriangle, XCircle } from "lucide-react";
 
@@ -70,17 +75,29 @@ function RichText({ text }: { text: string }) {
     const line = lines[i];
 
     if (line.startsWith("### ")) {
-      elements.push(<h4 key={i} className="text-sm font-semibold mt-3 mb-1">{renderInline(line.slice(4))}</h4>);
+      elements.push(
+        <h4 key={i} className="text-sm font-semibold mt-3 mb-1">
+          {renderInline(line.slice(4))}
+        </h4>,
+      );
     } else if (line.startsWith("## ")) {
-      elements.push(<h3 key={i} className="text-base font-semibold mt-3 mb-1.5">{renderInline(line.slice(3))}</h3>);
+      elements.push(
+        <h3 key={i} className="text-base font-semibold mt-3 mb-1.5">
+          {renderInline(line.slice(3))}
+        </h3>,
+      );
     } else if (line.startsWith("# ")) {
-      elements.push(<h2 key={i} className="text-lg font-bold mt-3 mb-2 border-b border-border/30 pb-1">{renderInline(line.slice(2))}</h2>);
+      elements.push(
+        <h2 key={i} className="text-lg font-bold mt-3 mb-2 border-b border-border/30 pb-1">
+          {renderInline(line.slice(2))}
+        </h2>,
+      );
     } else if (line.startsWith("- ") || line.startsWith("* ")) {
       elements.push(
         <div key={i} className="flex gap-2 ml-2 text-sm leading-relaxed">
           <span className="text-muted-foreground shrink-0">•</span>
           <span>{renderInline(line.slice(2))}</span>
-        </div>
+        </div>,
       );
     } else if (/^\d+\.\s/.test(line)) {
       const match = line.match(/^(\d+)\.\s(.*)/);
@@ -89,13 +106,17 @@ function RichText({ text }: { text: string }) {
           <div key={i} className="flex gap-2 ml-2 text-sm leading-relaxed">
             <span className="text-muted-foreground shrink-0 tabular-nums">{match[1]}.</span>
             <span>{renderInline(match[2])}</span>
-          </div>
+          </div>,
         );
       }
     } else if (line.trim() === "") {
       elements.push(<div key={i} className="h-1.5" />);
     } else {
-      elements.push(<p key={i} className="text-sm leading-relaxed">{renderInline(line)}</p>);
+      elements.push(
+        <p key={i} className="text-sm leading-relaxed">
+          {renderInline(line)}
+        </p>,
+      );
     }
   }
 
@@ -106,10 +127,21 @@ function renderInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*.*?\*\*|`[^`]+`)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+      return (
+        <strong key={i} className="font-semibold text-foreground">
+          {part.slice(2, -2)}
+        </strong>
+      );
     }
     if (part.startsWith("`") && part.endsWith("`")) {
-      return <code key={i} className="bg-background/60 border border-border/30 rounded px-1 py-0.5 text-xs font-mono">{part.slice(1, -1)}</code>;
+      return (
+        <code
+          key={i}
+          className="bg-background/60 border border-border/30 rounded px-1 py-0.5 text-xs font-mono"
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
     }
     return <span key={i}>{part}</span>;
   });
@@ -139,7 +171,11 @@ export default function SparkGeniePage() {
       });
       const pollData = await pollRes.json();
       if (pollData.error) {
-        const genieErr: GenieErrorInfo = { error: pollData.error, code: pollData.code, fixSteps: pollData.fixSteps };
+        const genieErr: GenieErrorInfo = {
+          error: pollData.error,
+          code: pollData.code,
+          fixSteps: pollData.fixSteps,
+        };
         throw Object.assign(new Error(pollData.error), { genieError: genieErr });
       }
 
@@ -151,12 +187,18 @@ export default function SparkGeniePage() {
             const qrRes = await fetch("/api/spark-genie", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "query-result", conversationId: convId, messageId: msgId }),
+              body: JSON.stringify({
+                action: "query-result",
+                conversationId: convId,
+                messageId: msgId,
+              }),
             });
             const qr = await qrRes.json();
             sqlColumns = qr.columns ?? [];
             sqlRows = qr.rows ?? [];
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
         return { content: pollData.content, sql: pollData.sql, sqlColumns, sqlRows };
       }
@@ -176,73 +218,89 @@ export default function SparkGeniePage() {
     throw new Error("Genie response timed out");
   }, []);
 
-  const sendMessage = useCallback(async (question: string) => {
-    if (!question.trim() || loading) return;
-    setError(null);
-    setLoading(true);
+  const sendMessage = useCallback(
+    async (question: string) => {
+      if (!question.trim() || loading) return;
+      setError(null);
+      setLoading(true);
 
-    const userMsg: Message = { id: `u-${Date.now()}`, role: "user", content: question };
-    const thinkingMsg: Message = { id: `a-${Date.now()}`, role: "assistant", content: "Analyzing your data...", status: "thinking" };
-    setMessages((prev) => [...prev, userMsg, thinkingMsg]);
-    setInput("");
+      const userMsg: Message = { id: `u-${Date.now()}`, role: "user", content: question };
+      const thinkingMsg: Message = {
+        id: `a-${Date.now()}`,
+        role: "assistant",
+        content: "Analyzing your data...",
+        status: "thinking",
+      };
+      setMessages((prev) => [...prev, userMsg, thinkingMsg]);
+      setInput("");
 
-    try {
-      let convId = conversationId;
-      let msgId: string;
+      try {
+        let convId = conversationId;
+        let msgId: string;
 
-      if (!convId) {
-        const res = await fetch("/api/spark-genie", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "ask", question }),
-        });
-        const data = await res.json();
-        if (data.error) {
-          const genieErr: GenieErrorInfo = { error: data.error, code: data.code, fixSteps: data.fixSteps };
-          throw Object.assign(new Error(data.error), { genieError: genieErr });
+        if (!convId) {
+          const res = await fetch("/api/spark-genie", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "ask", question }),
+          });
+          const data = await res.json();
+          if (data.error) {
+            const genieErr: GenieErrorInfo = {
+              error: data.error,
+              code: data.code,
+              fixSteps: data.fixSteps,
+            };
+            throw Object.assign(new Error(data.error), { genieError: genieErr });
+          }
+          convId = data.conversationId;
+          msgId = data.messageId;
+          setConversationId(convId);
+        } else {
+          const res = await fetch("/api/spark-genie", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "continue", conversationId: convId, question }),
+          });
+          const data = await res.json();
+          if (data.error) {
+            const genieErr: GenieErrorInfo = {
+              error: data.error,
+              code: data.code,
+              fixSteps: data.fixSteps,
+            };
+            throw Object.assign(new Error(data.error), { genieError: genieErr });
+          }
+          msgId = data.messageId;
         }
-        convId = data.conversationId;
-        msgId = data.messageId;
-        setConversationId(convId);
-      } else {
-        const res = await fetch("/api/spark-genie", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "continue", conversationId: convId, question }),
-        });
-        const data = await res.json();
-        if (data.error) {
-          const genieErr: GenieErrorInfo = { error: data.error, code: data.code, fixSteps: data.fixSteps };
-          throw Object.assign(new Error(data.error), { genieError: genieErr });
+
+        const result = await pollForResponse(convId!, msgId);
+
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          {
+            id: `a-${Date.now()}`,
+            role: "assistant",
+            content: result.content,
+            sql: result.sql,
+            sqlColumns: result.sqlColumns,
+            sqlRows: result.sqlRows,
+          },
+        ]);
+      } catch (err: unknown) {
+        const e = err as { genieError?: GenieErrorInfo; message?: string };
+        if (e.genieError) {
+          setError(e.genieError);
+        } else {
+          setError({ error: e.message ?? String(err) });
         }
-        msgId = data.messageId;
+        setMessages((prev) => prev.filter((m) => m.status !== "thinking"));
+      } finally {
+        setLoading(false);
       }
-
-      const result = await pollForResponse(convId!, msgId);
-
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
-        {
-          id: `a-${Date.now()}`,
-          role: "assistant",
-          content: result.content,
-          sql: result.sql,
-          sqlColumns: result.sqlColumns,
-          sqlRows: result.sqlRows,
-        },
-      ]);
-    } catch (err: unknown) {
-      const e = err as { genieError?: GenieErrorInfo; message?: string };
-      if (e.genieError) {
-        setError(e.genieError);
-      } else {
-        setError({ error: e.message ?? String(err) });
-      }
-      setMessages((prev) => prev.filter((m) => m.status !== "thinking"));
-    } finally {
-      setLoading(false);
-    }
-  }, [loading, conversationId, pollForResponse]);
+    },
+    [loading, conversationId, pollForResponse],
+  );
 
   const hasResults = (msg: Message) =>
     msg.sqlColumns && msg.sqlColumns.length > 0 && msg.sqlRows && msg.sqlRows.length > 0;
@@ -252,13 +310,16 @@ export default function SparkGeniePage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">SQL Observability & Monitoring Genie</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Ask natural language questions over query history, warehouse health, cluster inventory, and billing system tables.
+          Ask natural language questions over query history, warehouse health, cluster inventory,
+          and billing system tables.
         </p>
       </div>
 
       {messages.length === 0 && (
         <Card>
-          <CardHeader><CardTitle className="text-base">Sample Questions</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-base">Sample Questions</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {SAMPLE_QUESTIONS.map((q) => (
@@ -278,7 +339,10 @@ export default function SparkGeniePage() {
 
       <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+          <div
+            key={msg.id}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          >
             {msg.role === "user" ? (
               <div className="max-w-[75%] rounded-lg px-4 py-2.5 bg-primary text-primary-foreground">
                 <p className="text-sm">{msg.content}</p>
@@ -288,9 +352,18 @@ export default function SparkGeniePage() {
                 <CardContent className="py-3 px-4">
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <span className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      <span
+                        className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce"
+                        style={{ animationDelay: "0ms" }}
+                      />
+                      <span
+                        className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce"
+                        style={{ animationDelay: "150ms" }}
+                      />
+                      <span
+                        className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce"
+                        style={{ animationDelay: "300ms" }}
+                      />
                     </div>
                     <span className="text-xs text-muted-foreground">{msg.content}</span>
                   </div>
@@ -330,7 +403,10 @@ export default function SparkGeniePage() {
                           <TableHeader>
                             <TableRow className="bg-muted/30 hover:bg-muted/30">
                               {msg.sqlColumns!.map((col) => (
-                                <TableHead key={col} className="text-xs font-semibold whitespace-nowrap px-3 py-2">
+                                <TableHead
+                                  key={col}
+                                  className="text-xs font-semibold whitespace-nowrap px-3 py-2"
+                                >
                                   {col.replace(/_/g, " ")}
                                 </TableHead>
                               ))}
@@ -340,7 +416,10 @@ export default function SparkGeniePage() {
                             {msg.sqlRows!.slice(0, 25).map((row, ri) => (
                               <TableRow key={ri} className="hover:bg-muted/20">
                                 {(row as unknown[]).map((cell, ci) => (
-                                  <TableCell key={ci} className="text-xs px-3 py-1.5 whitespace-nowrap tabular-nums">
+                                  <TableCell
+                                    key={ci}
+                                    className="text-xs px-3 py-1.5 whitespace-nowrap tabular-nums"
+                                  >
                                     {formatCellValue(cell)}
                                   </TableCell>
                                 ))}
@@ -371,7 +450,9 @@ export default function SparkGeniePage() {
               <div className="rounded-full bg-red-100 dark:bg-red-900/30 p-2 mt-0.5 shrink-0">
                 {error.code === "GENIE_SPACE_NOT_FOUND" ? (
                   <AlertTriangle className="h-4 w-4 text-destructive" />
-                ) : error.code === "WAREHOUSE_PERMISSION_DENIED" || error.code === "PERMISSION_DENIED" || error.code === "MISSING_OAUTH_SCOPE" ? (
+                ) : error.code === "WAREHOUSE_PERMISSION_DENIED" ||
+                  error.code === "PERMISSION_DENIED" ||
+                  error.code === "MISSING_OAUTH_SCOPE" ? (
                   <ShieldAlert className="h-4 w-4 text-destructive" />
                 ) : (
                   <XCircle className="h-4 w-4 text-destructive" />
@@ -380,7 +461,12 @@ export default function SparkGeniePage() {
               <div className="space-y-2 min-w-0">
                 <div>
                   {error.code && (
-                    <Badge variant="outline" className="text-[10px] mb-1 text-destructive border-destructive/30">{error.code}</Badge>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] mb-1 text-destructive border-destructive/30"
+                    >
+                      {error.code}
+                    </Badge>
                   )}
                   <p className="text-sm font-medium text-destructive">{error.error}</p>
                 </div>
@@ -392,7 +478,9 @@ export default function SparkGeniePage() {
                     </div>
                     <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
                       {error.fixSteps.map((step, i) => (
-                        <li key={i} className="leading-relaxed">{step}</li>
+                        <li key={i} className="leading-relaxed">
+                          {step}
+                        </li>
                       ))}
                     </ol>
                   </div>
@@ -428,7 +516,11 @@ export default function SparkGeniePage() {
         {conversationId && (
           <button
             className="h-10 px-3 rounded-md border text-sm hover:bg-muted/50"
-            onClick={() => { setConversationId(null); setMessages([]); setError(null); }}
+            onClick={() => {
+              setConversationId(null);
+              setMessages([]);
+              setError(null);
+            }}
           >
             New Chat
           </button>

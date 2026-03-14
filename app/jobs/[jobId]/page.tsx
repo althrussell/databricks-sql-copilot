@@ -98,12 +98,7 @@ export default async function JobDetailPage({
   return (
     <div className="px-6 py-8">
       <Suspense fallback={<DetailSkeleton />}>
-        <JobDetailLoader
-          jobId={jobId}
-          startTime={startTime}
-          endTime={endTime}
-          preset={preset}
-        />
+        <JobDetailLoader jobId={jobId} startTime={startTime} endTime={endTime} preset={preset} />
       </Suspense>
     </div>
   );

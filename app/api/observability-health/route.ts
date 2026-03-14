@@ -22,7 +22,7 @@ export async function GET(): Promise<NextResponse> {
           status: "degraded",
           reason: "Unified observability scorecard unavailable",
         },
-        { status: 503 }
+        { status: 503 },
       );
     }
 
@@ -62,9 +62,6 @@ export async function GET(): Promise<NextResponse> {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { status: "degraded", reason: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ status: "degraded", reason: message }, { status: 500 });
   }
 }

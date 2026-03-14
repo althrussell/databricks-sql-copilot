@@ -365,7 +365,7 @@ function parseAiJson(raw: string, mode: AiMode): DiagnoseResponse | RewriteRespo
 
 function tryParseAndValidate(
   jsonStr: string,
-  schema: typeof DiagnoseResponseSchema | typeof RewriteResponseSchema
+  schema: typeof DiagnoseResponseSchema | typeof RewriteResponseSchema,
 ): DiagnoseResponse | RewriteResponse | null {
   try {
     const parsed = JSON.parse(jsonStr);
@@ -404,9 +404,18 @@ function sanitizeJsonString(json: string): string {
       continue;
     }
     if (inString) {
-      if (ch === "\n") { result += "\\n"; continue; }
-      if (ch === "\r") { result += "\\r"; continue; }
-      if (ch === "\t") { result += "\\t"; continue; }
+      if (ch === "\n") {
+        result += "\\n";
+        continue;
+      }
+      if (ch === "\r") {
+        result += "\\r";
+        continue;
+      }
+      if (ch === "\t") {
+        result += "\\t";
+        continue;
+      }
     }
     result += ch;
   }
@@ -419,7 +428,7 @@ function sanitizeJsonString(json: string): string {
  */
 function extractFieldsFromBrokenJson(
   raw: string,
-  mode: AiMode
+  mode: AiMode,
 ): DiagnoseResponse | RewriteResponse | null {
   const extractArray = (key: string): string[] => {
     const m = raw.match(new RegExp(`"${key}"\\s*:\\s*\\[([^\\]]*?)\\]`, "s"));
@@ -447,7 +456,8 @@ function extractFieldsFromBrokenJson(
   return {
     summary,
     rootCauses: [],
-    rewrittenSql: extractString("rewrittenSql") || "(Could not extract rewritten SQL from AI response)",
+    rewrittenSql:
+      extractString("rewrittenSql") || "(Could not extract rewritten SQL from AI response)",
     rationale: extractString("rationale"),
     risks: [],
     validationPlan: extractArray("validationPlan"),
