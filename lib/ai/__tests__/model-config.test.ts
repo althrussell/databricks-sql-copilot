@@ -91,10 +91,19 @@ describe("model-config", () => {
       expect(sql.toLowerCase()).not.toContain("temperature");
     });
 
-    it("escapes single quotes and backslashes safely", () => {
-      expect(escapeSqlLiteral("WHERE name = 'O''Brien' AND path = 'C:\\temp'")).toBe(
-        "WHERE name = ''O''''Brien'' AND path = ''C:\\\\temp''",
+    it("backslash-escapes quotes and backslashes for Databricks string literals", () => {
+      expect(escapeSqlLiteral("WHERE name = 'O\\'Brien' AND path = 'C:\\temp'")).toBe(
+        "WHERE name = \\'O\\\\\\'Brien\\' AND path = \\'C:\\\\temp\\'",
       );
+    });
+
+    it("keeps prompt quotes intact inside the generated ai_query literal", () => {
+      const sql = buildAiQuerySql({
+        model: AI_MODELS.GPT_6_1_SOL,
+        prompt: "WHERE region = 'EMEA'",
+        maxTokens: 4096,
+      });
+      expect(sql).toContain("'WHERE region = \\'EMEA\\''");
     });
 
     it("exposes supported model options for UI selectors", () => {
