@@ -11,6 +11,7 @@
 
 import type { Candidate } from "@/lib/domain/types";
 import type { TableSummaryForTriage } from "@/lib/queries/table-metadata";
+import { extractTableNames } from "@/lib/domain/sql-table-names";
 
 export type PerformanceFlag =
   | "LongRunning"
@@ -112,14 +113,25 @@ export function computeFlags(
     ws.avgExecutionMs +
     ws.avgFetchMs;
 
-  // Gather table metadata for enrichment
-  const tables = tableContext?.tables;
-  const hasClusteredTable = tables
-    ? [...tables.values()].some((t) => t.clusteringColumns.length > 0)
-    : false;
-  const hasPredOptEnabled = tables
-    ? [...tables.values()].some((t) => t.predictiveOptEnabled)
-    : false;
+  // Gather table metadata scoped to tables actually referenced by this candidate's SQL
+  // (falling back to all provided tables if SQL table extraction yields none, e.g. in unit tests)
+  const rawTables = tableContext?.tables;
+  let candidateTables: TableSummaryForTriage[] = [];
+  if (rawTables && rawTables.size > 0) {
+    const referencedNames = new Set(
+      extractTableNames(candidate.sampleQueryText).map((n) => n.replace(/`/g, "").toLowerCase()),
+    );
+    if (referencedNames.size > 0) {
+      candidateTables = [...rawTables.values()].filter((t) =>
+        referencedNames.has(t.tableName.replace(/`/g, "").toLowerCase()),
+      );
+    } else {
+      candidateTables = [...rawTables.values()];
+    }
+  }
+  const hasCandidateTables = candidateTables.length > 0;
+  const hasClusteredTable = candidateTables.some((t) => t.clusteringColumns.length > 0);
+  const hasPredOptEnabled = candidateTables.some((t) => t.predictiveOptEnabled);
 
   if (ws.p95Ms > thresholds.longRunningMs) {
     flags.push({
@@ -141,8 +153,8 @@ export function computeFlags(
         : undefined;
     let spillDetail = `${formatSize(ws.totalSpilledBytes)} spilled to disk`;
     // Enrich with table size context
-    if (tables) {
-      const tableSizes = [...tables.values()]
+    if (hasCandidateTables) {
+      const tableSizes = candidateTables
         .filter((t) => t.sizeInBytes != null)
         .map((t) => ({ name: t.tableName, size: t.sizeInBytes! }));
       if (tableSizes.length > 0) {
@@ -189,7 +201,7 @@ export function computeFlags(
     // Enrich: suppress noise if tables already have clustering matching query filters
     if (hasClusteredTable) {
       pruneDetail += `. Tables have clustering — verify clustering columns match WHERE/JOIN filters`;
-    } else if (tables && tables.size > 0) {
+    } else if (hasCandidateTables) {
       pruneDetail += `. Recommend: ALTER TABLE ... CLUSTER BY (filter_columns)`;
     }
 
@@ -343,7 +355,7 @@ export function computeFlags(
     let coldDetail = `Result cache ${(ws.cacheHitRate * 100).toFixed(0)}%, IO cache ${ws.avgIoCachePercent.toFixed(0)}% — query never benefits from caching. Table may need OPTIMIZE or Liquid Clustering`;
 
     // Enrich with Predictive Optimization recommendation
-    if (!hasPredOptEnabled && tables && tables.size > 0) {
+    if (!hasPredOptEnabled && hasCandidateTables) {
       coldDetail += `. Enable Predictive Optimization to automate OPTIMIZE, VACUUM, and ANALYZE`;
     }
 
@@ -407,10 +419,9 @@ export function computeFlags(
   // MissingDeletionVectors: DML (MERGE/UPDATE/DELETE) on tables without deletion vectors enabled
   if (
     ["MERGE", "UPDATE", "DELETE"].includes(candidate.statementType.toUpperCase()) &&
-    tables &&
-    tables.size > 0
+    hasCandidateTables
   ) {
-    const missingDvTables = [...tables.values()].filter(
+    const missingDvTables = candidateTables.filter(
       (t) => t.format?.toLowerCase() === "delta" && t.deletionVectorsEnabled === false,
     );
     if (missingDvTables.length > 0) {
@@ -426,8 +437,8 @@ export function computeFlags(
   }
 
   // ClusterByAutoCandidate: unclustered managed Delta tables scanned heavily
-  if (tables && tables.size > 0 && ws.totalReadBytes > 50 * 1024 * 1024) {
-    const unclusteredManaged = [...tables.values()].filter(
+  if (hasCandidateTables && ws.totalReadBytes > 50 * 1024 * 1024) {
+    const unclusteredManaged = candidateTables.filter(
       (t) => t.isManaged && t.clusteringColumns.length === 0 && t.partitionColumns.length === 0,
     );
     if (unclusteredManaged.length > 0) {
