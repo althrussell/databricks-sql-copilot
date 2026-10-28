@@ -22,6 +22,18 @@ env:
     valueFrom: sql-warehouse
   - name: AUTH_MODE
     value: "obo"
+  - name: ENABLE_LAKEBASE
+    value: "true"
+  - name: AI_MODEL_TRIAGE
+    value: "databricks-gemini-4-argon"
+  - name: AI_MODEL_REWRITE
+    value: "databricks-gpt-6-1-sol"
+  - name: AI_MODEL_ACTIONS
+    value: "databricks-gpt-6-1-sol"
+  - name: AI_MODEL_DIAGNOSE
+    value: "databricks-claude-opus-5-5"
+  - name: AI_MODEL_JOB_ANALYSIS
+    value: "databricks-claude-opus-5-5"
   - name: UNIFIED_OBSERVABILITY_CATALOG
     value: "main"
   - name: UNIFIED_OBSERVABILITY_SCHEMA

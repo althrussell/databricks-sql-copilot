@@ -6,18 +6,20 @@
 #   ./scripts/deploy.sh --profile <cli-profile> [options]
 #
 # Options:
-#   --profile, -p    Databricks CLI profile name (required)
-#   --warehouse, -w  SQL warehouse ID (auto-detected if omitted)
-#   --app-name, -n   App name (default: sql-obs-genie)
-#   --auth-mode, -a  Auth mode: obo or sp (default: obo)
-#   --genie-space    Genie Space ID (optional, leave blank to skip)
-#   --create-genie   Auto-provision Genie Space from genie-space-config.json
-#   --create         Create the app if it doesn't exist
-#   --help, -h       Show this help message
+#   --profile, -p         Databricks CLI profile name (required)
+#   --warehouse, -w       SQL warehouse ID (auto-detected if omitted)
+#   --app-name, -n        App name (default: sql-obs-genie)
+#   --auth-mode, -a       Auth mode: obo or sp (default: obo)
+#   --enable-lakebase     Enable Lakebase persistence: true or false (default: true)
+#   --genie-space         Genie Space ID (optional, leave blank to skip)
+#   --create-genie        Auto-provision Genie Space from genie-space-config.json
+#   --init-observability  Bootstrap unified observability SQL views & UC functions
+#   --create              Create the app if it doesn't exist
+#   --help, -h            Show this help message
 #
 # Examples:
 #   # First deploy — auto-detects warehouse and creates Genie Space
-#   ./scripts/deploy.sh -p my-workspace --create --create-genie
+#   ./scripts/deploy.sh -p my-workspace --create --create-genie --init-observability
 #
 #   # Deploy with explicit warehouse
 #   ./scripts/deploy.sh -p my-workspace -w abc123def456
@@ -31,27 +33,40 @@ PROFILE=""
 WAREHOUSE_ID=""
 APP_NAME="sql-obs-genie"
 AUTH_MODE="obo"
+ENABLE_LAKEBASE="true"
 GENIE_SPACE_ID=""
 CREATE_APP=false
 CREATE_GENIE=false
+INIT_OBSERVABILITY=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+BACKUP="$PROJECT_DIR/app.yaml.bak"
+
+# Always restore app.yaml on exit or interruption so the working tree stays clean
+cleanup() {
+  if [[ -f "$BACKUP" ]]; then
+    mv "$BACKUP" "$PROJECT_DIR/app.yaml"
+  fi
+}
+trap cleanup EXIT ERR INT TERM
 
 usage() {
-  head -29 "$0" | tail -27
+  head -30 "$0" | tail -28
   exit 0
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -p|--profile)    PROFILE="$2"; shift 2 ;;
-    -w|--warehouse)  WAREHOUSE_ID="$2"; shift 2 ;;
-    -n|--app-name)   APP_NAME="$2"; shift 2 ;;
-    -a|--auth-mode)  AUTH_MODE="$2"; shift 2 ;;
-    --genie-space)   GENIE_SPACE_ID="$2"; shift 2 ;;
-    --create-genie)  CREATE_GENIE=true; shift ;;
-    --create)        CREATE_APP=true; shift ;;
-    -h|--help)       usage ;;
+    -p|--profile)          PROFILE="$2"; shift 2 ;;
+    -w|--warehouse)        WAREHOUSE_ID="$2"; shift 2 ;;
+    -n|--app-name)         APP_NAME="$2"; shift 2 ;;
+    -a|--auth-mode)        AUTH_MODE="$2"; shift 2 ;;
+    --enable-lakebase)     ENABLE_LAKEBASE="$2"; shift 2 ;;
+    --genie-space)         GENIE_SPACE_ID="$2"; shift 2 ;;
+    --create-genie)        CREATE_GENIE=true; shift ;;
+    --init-observability)  INIT_OBSERVABILITY=true; shift ;;
+    --create)              CREATE_APP=true; shift ;;
+    -h|--help)             usage ;;
     *) echo "Unknown option: $1"; usage ;;
   esac
 done
@@ -106,12 +121,22 @@ fi
 
 echo ""
 echo "=== SQL Observability Genie Deployer ==="
-echo "  Profile:      $PROFILE"
-echo "  Warehouse:    $WAREHOUSE_ID"
-echo "  App name:     $APP_NAME"
-echo "  Auth mode:    $AUTH_MODE"
-echo "  Genie space:  ${GENIE_SPACE_ID:-<none>}"
+echo "  Profile:        $PROFILE"
+echo "  Warehouse:      $WAREHOUSE_ID"
+echo "  App name:       $APP_NAME"
+echo "  Auth mode:      $AUTH_MODE"
+echo "  Lakebase:       $ENABLE_LAKEBASE"
+echo "  Genie space:    ${GENIE_SPACE_ID:-<none>}"
 echo ""
+
+# Bootstrap unified observability views & UC functions if requested
+if $INIT_OBSERVABILITY; then
+  echo "→ Bootstrapping unified observability UC functions and views..."
+  if [[ -f "$PROJECT_DIR/observability/deploy/deploy_uc_functions.py" ]]; then
+    DATABRICKS_CONFIG_PROFILE="$PROFILE" python3 "$PROJECT_DIR/observability/deploy/deploy_uc_functions.py" \
+      --warehouse-id "$WAREHOUSE_ID" || echo "  ⚠ UC function deployment reported warnings (continuing)"
+  fi
+fi
 
 # Provision Genie Space if requested and no space ID provided
 if $CREATE_GENIE && [[ -z "$GENIE_SPACE_ID" ]]; then
@@ -181,48 +206,36 @@ fi
 # Generate target-specific app.yaml
 echo ""
 echo "→ Generating app.yaml for this deployment..."
-BACKUP="$PROJECT_DIR/app.yaml.bak"
 cp "$PROJECT_DIR/app.yaml" "$BACKUP"
 
 if $RESOURCE_BOUND; then
-  # Resource binding succeeded — use valueFrom
-  cat > "$PROJECT_DIR/app.yaml" <<YAML
-command:
-  - "sh"
-  - "scripts/start.sh"
-
-env:
-  - name: DATABRICKS_WAREHOUSE_ID
-    valueFrom: sql-warehouse
-  - name: AUTH_MODE
-    value: "$AUTH_MODE"
-  - name: UNIFIED_OBSERVABILITY_CATALOG
-    value: "main"
-  - name: UNIFIED_OBSERVABILITY_SCHEMA
-    value: "unified_observability"
-  - name: SPARK_HOTSPOT_LIMIT
-    value: "25"
-  - name: SQL_FRESHNESS_SLO_MINUTES
-    value: "30"
-  - name: SPARK_FRESHNESS_SLO_MINUTES
-    value: "120"
-  - name: PHOTON_FRESHNESS_SLO_MINUTES
-    value: "1440"
-  - name: GENIE_SPACE_ID
-    value: "$GENIE_SPACE_ID"
-YAML
+  WH_ENV_LINE="    valueFrom: sql-warehouse"
 else
-  # Fallback — hardcode the warehouse ID
-  cat > "$PROJECT_DIR/app.yaml" <<YAML
+  WH_ENV_LINE="    value: \"$WAREHOUSE_ID\""
+fi
+
+cat > "$PROJECT_DIR/app.yaml" <<YAML
 command:
   - "sh"
   - "scripts/start.sh"
 
 env:
   - name: DATABRICKS_WAREHOUSE_ID
-    value: "$WAREHOUSE_ID"
+$WH_ENV_LINE
   - name: AUTH_MODE
     value: "$AUTH_MODE"
+  - name: ENABLE_LAKEBASE
+    value: "$ENABLE_LAKEBASE"
+  - name: AI_MODEL_TRIAGE
+    value: "${AI_MODEL_TRIAGE:-databricks-gemini-4-argon}"
+  - name: AI_MODEL_REWRITE
+    value: "${AI_MODEL_REWRITE:-databricks-gpt-6-1-sol}"
+  - name: AI_MODEL_ACTIONS
+    value: "${AI_MODEL_ACTIONS:-databricks-gpt-6-1-sol}"
+  - name: AI_MODEL_DIAGNOSE
+    value: "${AI_MODEL_DIAGNOSE:-databricks-claude-opus-5-5}"
+  - name: AI_MODEL_JOB_ANALYSIS
+    value: "${AI_MODEL_JOB_ANALYSIS:-databricks-claude-opus-5-5}"
   - name: UNIFIED_OBSERVABILITY_CATALOG
     value: "main"
   - name: UNIFIED_OBSERVABILITY_SCHEMA
@@ -238,7 +251,6 @@ env:
   - name: GENIE_SPACE_ID
     value: "$GENIE_SPACE_ID"
 YAML
-fi
 echo "  ✓ app.yaml generated"
 
 # Sync source code
@@ -270,7 +282,7 @@ if [[ "$AUTH_MODE" == "obo" ]]; then
 fi
 
 # Restore original app.yaml
-mv "$BACKUP" "$PROJECT_DIR/app.yaml"
+cleanup
 
 echo ""
 echo "=== Deployment Summary ==="
@@ -280,7 +292,8 @@ DEPLOYED_SP_ID=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output j
 echo "  App URL:        $APP_URL"
 echo "  SP ID:          $DEPLOYED_SP_ID"
 echo "  Warehouse:      $WAREHOUSE_ID"
-echo "  Resource bound:  $RESOURCE_BOUND"
+echo "  Resource bound: $RESOURCE_BOUND"
+echo "  Lakebase:       $ENABLE_LAKEBASE"
 echo "  Genie Space:    ${GENIE_SPACE_ID:-<none>}"
 echo ""
 

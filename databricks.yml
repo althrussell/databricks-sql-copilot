@@ -11,9 +11,27 @@ variables:
   auth_mode:
     description: "Authentication mode: 'obo' (on-behalf-of user) or 'sp' (service principal)"
     default: "obo"
+  enable_lakebase:
+    description: "Enable Lakebase Autoscale persistence for query actions, caches, and snapshots"
+    default: "true"
   genie_space_id:
     description: "Genie Space ID (create one per workspace, leave empty to disable)"
     default: ""
+  ai_model_triage:
+    description: "Foundation Model endpoint for fast batch triage"
+    default: "databricks-gemini-4-argon"
+  ai_model_rewrite:
+    description: "Foundation Model endpoint for SQL query rewrites"
+    default: "databricks-gpt-6-1-sol"
+  ai_model_actions:
+    description: "Foundation Model endpoint for operator actions summary"
+    default: "databricks-gpt-6-1-sol"
+  ai_model_diagnose:
+    description: "Foundation Model endpoint for deep query diagnosis"
+    default: "databricks-claude-opus-5-5"
+  ai_model_job_analysis:
+    description: "Foundation Model endpoint for deep job analysis"
+    default: "databricks-claude-opus-5-5"
 
 targets:
   dev:
@@ -24,4 +42,15 @@ targets:
     variables:
       warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
       auth_mode: "sp"
+      enable_lakebase: "true"
+      genie_space_id: ${GENIE_SPACE_ID}
+
+  prod:
+    mode: production
+    workspace:
+      profile: DEFAULT
+    variables:
+      warehouse_id: ${DATABRICKS_WAREHOUSE_ID}
+      auth_mode: "obo"
+      enable_lakebase: "true"
       genie_space_id: ${GENIE_SPACE_ID}

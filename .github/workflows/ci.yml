@@ -20,13 +20,15 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Security audit
+        run: npm audit --audit-level=high
       - name: Check formatting
         run: npm run format:check
       - name: Lint
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
-      - name: Test
-        run: npm run test
+      - name: Test with coverage gate
+        run: npm run test:coverage
       - name: Build
         run: npm run build
