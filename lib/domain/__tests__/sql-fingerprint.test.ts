@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createHash } from "crypto";
 import { normalizeSql, fingerprint } from "../sql-fingerprint";
 
 describe("normalizeSql", () => {
@@ -84,6 +85,12 @@ describe("fingerprint", () => {
   it("returns a hex string", () => {
     const fp = fingerprint("SELECT 1");
     expect(fp).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("matches SUBSTRING(sha2(normalized_sql, 256), 1, 16) used by the SQL ingest and regressions", () => {
+    const sql = "SELECT * FROM main.sales.orders WHERE id IN (1, 2, 3);";
+    const expected = createHash("sha256").update(normalizeSql(sql)).digest("hex").slice(0, 16);
+    expect(fingerprint(sql)).toBe(expected);
   });
 
   it("same logical query produces same fingerprint", () => {

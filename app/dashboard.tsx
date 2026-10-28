@@ -1991,7 +1991,7 @@ export function Dashboard({
                             Spill
                           </TableHead>
                           <TableHead className="text-xs font-semibold px-3 py-2 text-right">
-                            DBU·h
+                            DBUs
                           </TableHead>
                         </TableRow>
                       </TableHeader>
@@ -2035,7 +2035,7 @@ export function Dashboard({
                               )}
                             </TableCell>
                             <TableCell className="text-xs px-3 py-1.5 text-right tabular-nums">
-                              {u.estimatedCostDbu}
+                              {u.estimatedCostDbu != null ? u.estimatedCostDbu : "—"}
                             </TableCell>
                           </TableRow>
                         ))}

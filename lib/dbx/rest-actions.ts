@@ -75,6 +75,7 @@ interface MonitorQuerySlim {
   queryText?: string;
   statementType: string;
   durationMs: number;
+  executionTimeMs?: number;
   bytesScanned: number;
   spillBytes: number;
   cacheHitPercent: number;
@@ -99,6 +100,7 @@ export async function fetchMonitorInsights(
     queryText: q.queryText,
     statementType: q.statementType,
     durationMs: q.durationMs,
+    executionTimeMs: q.executionTimeMs ?? Math.max(0, q.durationMs - (q.queueWaitMs ?? 0)),
     bytesScanned: q.bytesScanned,
     spillBytes: q.spillBytes,
     cacheHitPercent: q.cacheHitPercent,
@@ -116,7 +118,6 @@ export async function fetchMonitorInsights(
     sourceName: "",
     filesRead: 0,
     compilationTimeMs: 0,
-    executionTimeMs: 0,
     fetchTimeMs: 0,
   }));
 

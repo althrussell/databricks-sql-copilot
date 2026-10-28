@@ -37,25 +37,51 @@ export interface RegressionEntry {
 }
 
 /**
- * SQL-side normalization expression mirroring `normalizeSql` so that SQL-grouped
- * query patterns align with application-side `fingerprint(statement_text)` links.
+ * SQL-side normalization expression mirroring all steps of `normalizeSql`
+ * (comment stripping, string/numeric literal masking, IN-list collapsing,
+ * pipe `|>` spacing, lowercasing, trailing semicolon removal, whitespace collapse)
+ * so SQL-grouped patterns match `fingerprint(statement_text)` 1-to-1.
  */
 const SQL_NORMALIZED_EXPR = `
-  LOWER(
-    TRIM(
+  TRIM(
+    REGEXP_REPLACE(
       REGEXP_REPLACE(
-        REGEXP_REPLACE(
+        LOWER(
           REGEXP_REPLACE(
             REGEXP_REPLACE(
-              REGEXP_REPLACE(statement_text, '/\\\\*(?!\\\\+)[\\\\s\\\\S]*?\\\\*/', ' '),
-              '''(?:[^''\\\\\\\\]|\\\\\\\\.)*''', '''?'''
+              REGEXP_REPLACE(
+                REGEXP_REPLACE(
+                  REGEXP_REPLACE(
+                    REGEXP_REPLACE(
+                      REGEXP_REPLACE(
+                        statement_text,
+                        '/\\\\*(?!\\\\+)[\\\\s\\\\S]*?\\\\*/',
+                        ' '
+                      ),
+                      '''(?:[^''\\\\\\\\]|\\\\\\\\.)*''',
+                      '''?'''
+                    ),
+                    '--[^\\\\r\\\\n]*',
+                    ' '
+                  ),
+                  '(?<![a-zA-Z_])\\\\b\\\\d+(\\\\.\\\\d+)?\\\\b',
+                  '?'
+                ),
+                '(?i)\\\\bIN\\\\s*\\\\(\\\\s*\\\\?\\\\s*(?:,\\\\s*\\\\?\\\\s*)*\\\\)',
+                'IN (?)'
+              ),
+              '(?i)\\\\bIN\\\\s*\\\\(\\\\s*''\\\\?''\\\\s*(?:,\\\\s*''\\\\?''\\\\s*)*\\\\)',
+              'IN (?)'
             ),
-            '--[^\\\\r\\\\n]*', ' '
-          ),
-          '(?<![a-zA-Z_])\\\\b\\\\d+(\\\\.\\\\d+)?\\\\b', '?'
+            '\\\\s*\\\\|>\\\\s*',
+            ' |> '
+          )
         ),
-        '\\\\s+', ' '
-      )
+        ';\\\\s*$',
+        ''
+      ),
+      '\\\\s+',
+      ' '
     )
   )
 `;
@@ -77,7 +103,7 @@ export async function getQueryRegressions(
   const sql = `
     WITH current_window AS (
       SELECT
-        ${SQL_NORMALIZED_EXPR} AS norm_key,
+        SUBSTRING(sha2(${SQL_NORMALIZED_EXPR}, 256), 1, 16) AS fingerprint,
         MAX(statement_text) AS sample_sql,
         SUBSTRING(MAX(statement_text), 1, 200) AS query_snippet,
         MAX(compute.warehouse_id) AS warehouse_id,
@@ -89,12 +115,12 @@ export async function getQueryRegressions(
       WHERE start_time BETWEEN '${validStart}' AND '${validEnd}'
         AND statement_type NOT IN ('SET', 'USE', 'SHOW', 'DESCRIBE')
         AND total_duration_ms > 0
-      GROUP BY ${SQL_NORMALIZED_EXPR}
+      GROUP BY SUBSTRING(sha2(${SQL_NORMALIZED_EXPR}, 256), 1, 16)
       HAVING COUNT(*) >= 3
     ),
     baseline AS (
       SELECT
-        ${SQL_NORMALIZED_EXPR} AS norm_key,
+        SUBSTRING(sha2(${SQL_NORMALIZED_EXPR}, 256), 1, 16) AS fingerprint,
         PERCENTILE_APPROX(total_duration_ms, 0.95) AS p95_ms,
         AVG(total_duration_ms) AS avg_ms,
         COUNT(*) AS runs
@@ -102,10 +128,11 @@ export async function getQueryRegressions(
       WHERE start_time BETWEEN '${baselineStart}' AND '${validStart}'
         AND statement_type NOT IN ('SET', 'USE', 'SHOW', 'DESCRIBE')
         AND total_duration_ms > 0
-      GROUP BY ${SQL_NORMALIZED_EXPR}
+      GROUP BY SUBSTRING(sha2(${SQL_NORMALIZED_EXPR}, 256), 1, 16)
       HAVING COUNT(*) >= 3
     )
     SELECT
+      c.fingerprint,
       c.sample_sql AS sampleSql,
       c.query_snippet AS querySnippet,
       c.warehouse_id AS warehouseId,
@@ -119,7 +146,7 @@ export async function getQueryRegressions(
       c.runs AS currentRuns,
       b.runs AS baselineRuns
     FROM current_window c
-    JOIN baseline b ON c.norm_key = b.norm_key
+    JOIN baseline b ON c.fingerprint = b.fingerprint
     LEFT JOIN system.compute.warehouses w ON c.warehouse_id = w.warehouse_id
     WHERE c.p95_ms > b.p95_ms * 1.5
       AND c.p95_ms > 2000
@@ -130,7 +157,7 @@ export async function getQueryRegressions(
   return result.rows.map((r) => {
     const rawSql = r.sampleSql ?? r.querySnippet ?? "";
     return {
-      fingerprint: fingerprint(rawSql),
+      fingerprint: rawSql ? fingerprint(rawSql) : r.fingerprint,
       querySnippet: normalizeSql(r.querySnippet ?? rawSql).slice(0, 120),
       warehouseId: r.warehouseId,
       warehouseName: r.warehouseName,
@@ -156,8 +183,8 @@ export interface UserLeaderboardEntry {
   totalReadGiB: number;
   totalSpillGiB: number;
   warehouseCount: number;
-  /** Allocated warehouse DBUs based on user's share of warehouse query duration */
-  estimatedCostDbu: number;
+  /** Allocated warehouse DBUs based on user's share of warehouse query duration (null if billing unavailable) */
+  estimatedCostDbu: number | null;
   /** Total CPU task execution hours across executors */
   totalTaskHours?: number;
 }
@@ -248,7 +275,7 @@ export async function getUserLeaderboard(
       s.totalReadGiB,
       s.totalSpillGiB,
       s.warehouseCount,
-      ROUND(COALESCE(NULLIF(d.allocated_dbus, 0), s.totalTaskHours), 2) AS estimatedCostDbu,
+      CASE WHEN d.allocated_dbus > 0 THEN ROUND(d.allocated_dbus, 2) END AS estimatedCostDbu,
       s.totalTaskHours
     FROM user_stats s
     LEFT JOIN user_allocated_dbus d ON s.executed_by = d.executed_by

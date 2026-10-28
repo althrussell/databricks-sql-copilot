@@ -39,13 +39,13 @@ export async function GET() {
 
 /**
  * POST /api/query-actions
- * Body: { fingerprint, action, note?, actedBy? }
- * Upserts a per-user query action with 30-day TTL.
+ * Body: { fingerprint, action, note? }
+ * Upserts a query action with 30-day TTL, scoped to the proxy-authenticated user.
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { fingerprint, action, note, actedBy } = body;
+    const { fingerprint, action, note } = body;
 
     if (!fingerprint || typeof fingerprint !== "string") {
       return NextResponse.json({ error: "fingerprint is required" }, { status: 400 });
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await setQueryAction(fingerprint, action, actedBy, note);
+    const result = await setQueryAction(fingerprint, action, note);
     if (!result.persisted) {
       return NextResponse.json(
         {
@@ -79,18 +79,18 @@ export async function POST(request: Request) {
 /**
  * DELETE /api/query-actions
  * Body: { fingerprint }
- * Removes a query action for the current user.
+ * Removes the query action visible to the current user.
  */
 export async function DELETE(request: Request) {
   try {
     const body = await request.json();
-    const { fingerprint, actedBy } = body;
+    const { fingerprint } = body;
 
     if (!fingerprint || typeof fingerprint !== "string") {
       return NextResponse.json({ error: "fingerprint is required" }, { status: 400 });
     }
 
-    const result = await removeQueryAction(fingerprint, actedBy);
+    const result = await removeQueryAction(fingerprint);
     if (!result.persisted) {
       return NextResponse.json(
         {

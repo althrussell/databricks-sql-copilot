@@ -1,7 +1,7 @@
 -- Incremental ingestion for real DBSQL query history into canonical table.
 -- Safe to run repeatedly; deduplicates on statement_id.
--- Uses normalized SQL text (stripping comments, masking literals, collapsing whitespace)
--- so query_fingerprint groups identical logical queries consistently with the app.
+-- Uses normalized SQL text + SUBSTRING(sha2(..., 256), 1, 16) matching lib/domain/sql-fingerprint.ts
+-- so query_fingerprint is identical across query_runs_v1 and the Next.js app.
 
 INSERT INTO main.unified_observability.query_runs_v1 (
   workspace_id,
@@ -27,29 +27,45 @@ SELECT
   CAST(h.statement_id AS STRING) AS statement_id,
   SUBSTRING(
     sha2(
-      LOWER(
-        TRIM(
+      TRIM(
+        REGEXP_REPLACE(
           REGEXP_REPLACE(
-            REGEXP_REPLACE(
+            LOWER(
               REGEXP_REPLACE(
                 REGEXP_REPLACE(
                   REGEXP_REPLACE(
-                    COALESCE(h.statement_text, h.statement_id),
-                    '/\\*(?!\\+)[\\s\\S]*?\\*/',
-                    ' '
+                    REGEXP_REPLACE(
+                      REGEXP_REPLACE(
+                        REGEXP_REPLACE(
+                          REGEXP_REPLACE(
+                            COALESCE(h.statement_text, h.statement_id),
+                            '/\\*(?!\\+)[\\s\\S]*?\\*/',
+                            ' '
+                          ),
+                          '''(?:[^''\\\\]|\\\\.)*''',
+                          '''?'''
+                        ),
+                        '--[^\\r\\n]*',
+                        ' '
+                      ),
+                      '(?<![a-zA-Z_])\\b\\d+(\\.\\d+)?\\b',
+                      '?'
+                    ),
+                    '(?i)\\bIN\\s*\\(\\s*\\?\\s*(?:,\\s*\\?\\s*)*\\)',
+                    'IN (?)'
                   ),
-                  '''(?:[^''\\\\]|\\\\.)*''',
-                  '''?'''
+                  '(?i)\\bIN\\s*\\(\\s*''\\?''\\s*(?:,\\s*''\\?''\\s*)*\\)',
+                  'IN (?)'
                 ),
-                '--[^\\r\\n]*',
-                ' '
-              ),
-              '(?<![a-zA-Z_])\\b\\d+(\\.\\d+)?\\b',
-              '?'
+                '\\s*\\|>\\s*',
+                ' |> '
+              )
             ),
-            '\\s+',
-            ' '
-          )
+            ';\\s*$',
+            ''
+          ),
+          '\\s+',
+          ' '
         )
       ),
       256
