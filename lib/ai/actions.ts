@@ -19,6 +19,7 @@ import { fetchAllTableMetadata } from "@/lib/queries/table-metadata";
 import { listWarehouses } from "@/lib/queries/warehouses";
 import { getCachedRewrite, cacheRewrite } from "@/lib/dbx/rewrite-store";
 import { validateWithExplain } from "./explain-validator";
+import { resolveModelForTask } from "./model-config";
 
 export type { AiResult } from "./aiClient";
 
@@ -56,12 +57,18 @@ export async function rewriteQuery(
   forceRefresh = false,
   overrideModel?: string,
 ): Promise<AiResultWithCache> {
-  // Check Lakebase cache first (unless force refresh or custom model override)
-  if (!forceRefresh && !overrideModel) {
+  const defaultRewriteModel = resolveModelForTask("rewrite");
+  const targetModel = resolveModelForTask("rewrite", overrideModel);
+  const isDefaultModel = targetModel === defaultRewriteModel;
+
+  // Check Lakebase cache first when running on the default rewrite model (unless force refresh)
+  if (!forceRefresh && isDefaultModel) {
     try {
       const cached = await getCachedRewrite(candidate.fingerprint);
-      if (cached) {
-        console.log(`[ai-actions] rewrite: cache hit for ${candidate.fingerprint}`);
+      if (cached && cached.modelUsed === targetModel) {
+        console.log(
+          `[ai-actions] rewrite: cache hit for ${candidate.fingerprint} (${targetModel})`,
+        );
         return {
           status: "success",
           mode: "rewrite",
@@ -138,8 +145,9 @@ export async function rewriteQuery(
     }
   }
 
-  // Cache the result in Lakebase for future lookups
-  if (result.status === "success" && result.mode === "rewrite") {
+  // Cache the result in Lakebase only when running the default rewrite model
+  // so one-off model experiments do not overwrite shared default-model cache entries.
+  if (result.status === "success" && result.mode === "rewrite" && isDefaultModel) {
     try {
       await cacheRewrite(candidate.fingerprint, {
         diagnosis: {

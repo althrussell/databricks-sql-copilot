@@ -31,6 +31,7 @@ interface PatternSummary {
   runCount: number;
   totalDurationMs: number;
   avgDurationMs: number;
+  avgExecutionMs: number;
   maxDurationMs: number;
   totalBytesScanned: number;
   totalRowsProduced: number;
@@ -66,6 +67,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
       sqlSnippet: string;
       statementType: string;
       durations: number[];
+      executionTimes: number[];
       bytesScanned: number[];
       rowsProduced: number[];
       spillBytes: number[];
@@ -81,9 +83,12 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
 
     const fp = computeFingerprint(q.queryText);
     const existing = groups.get(fp);
+    const execMs =
+      q.executionTimeMs > 0 ? q.executionTimeMs : Math.max(0, q.durationMs - q.queueWaitMs);
 
     if (existing) {
       existing.durations.push(q.durationMs);
+      existing.executionTimes.push(execMs);
       existing.bytesScanned.push(q.bytesScanned);
       existing.rowsProduced.push(q.rowsProduced);
       existing.spillBytes.push(q.spillBytes);
@@ -97,6 +102,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
         sqlSnippet: normalizeSql(q.queryText).replace(/\s+/g, " ").trim().slice(0, 150),
         statementType: q.statementType,
         durations: [q.durationMs],
+        executionTimes: [execMs],
         bytesScanned: [q.bytesScanned],
         rowsProduced: [q.rowsProduced],
         spillBytes: [q.spillBytes],
@@ -112,6 +118,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
   for (const g of groups.values()) {
     const totalDurationMs = g.durations.reduce((a, b) => a + b, 0);
     const avgDurationMs = totalDurationMs / g.durations.length;
+    const avgExecutionMs = g.executionTimes.reduce((a, b) => a + b, 0) / g.executionTimes.length;
     const maxDurationMs = Math.max(...g.durations);
     const totalBytesScanned = g.bytesScanned.reduce((a, b) => a + b, 0);
     const totalRowsProduced = g.rowsProduced.reduce((a, b) => a + b, 0);
@@ -126,6 +133,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
       runCount: g.durations.length,
       totalDurationMs,
       avgDurationMs,
+      avgExecutionMs,
       maxDurationMs,
       totalBytesScanned,
       totalRowsProduced,
@@ -144,7 +152,8 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
 }
 
 function patternSummaryLine(p: PatternSummary): string {
-  const queuePct = p.avgDurationMs > 0 ? Math.round((p.avgQueueWaitMs / p.avgDurationMs) * 100) : 0;
+  const execBase = p.avgExecutionMs > 0 ? p.avgExecutionMs : p.avgDurationMs;
+  const queuePct = execBase > 0 ? Math.round((p.avgQueueWaitMs / execBase) * 100) : 0;
 
   return [
     `ID: ${p.fingerprint}`,
@@ -153,7 +162,7 @@ function patternSummaryLine(p: PatternSummary): string {
     `Runs: ${p.runCount}, avg: ${fmtMs(p.avgDurationMs)}, max: ${fmtMs(p.maxDurationMs)}`,
     `Read: ${fmtBytes(p.totalBytesScanned)}, produced: ${p.totalRowsProduced.toLocaleString()} rows`,
     `Spill: ${fmtBytes(p.totalSpillBytes)}, cache: ${Math.round(p.avgCacheHitPercent)}%`,
-    `Queue: ${fmtMs(p.avgQueueWaitMs)} avg (${queuePct}% of duration)`,
+    `Queue: ${fmtMs(p.avgQueueWaitMs)} avg (${queuePct}% of exec time)`,
     p.clientApplications.length > 0 ? `App: ${p.clientApplications.join(", ")}` : "",
     `Users: ${p.users.join(", ")}`,
   ]
