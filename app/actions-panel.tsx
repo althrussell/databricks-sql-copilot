@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { ActionItem, ActionsSummaryResult } from "@/lib/ai/actions-summary";
-import { AI_MODELS, SUPPORTED_MODEL_OPTIONS, type AiModelSlug } from "@/lib/ai/model-config";
+import { AUTO_MODEL, ModelSelect } from "@/components/model-select";
 
 const CATEGORY_CONFIG: Record<string, { label: string; cls: string; icon: typeof Wrench }> = {
   "query-optimization": {
@@ -199,7 +199,7 @@ export function ActionsPanel({ startTime, endTime }: ActionsPanelProps) {
   const [result, setResult] = useState<ActionsSummaryResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
-  const [selectedModel, setSelectedModel] = useState<AiModelSlug>(AI_MODELS.GPT_6_1_SOL);
+  const [selectedModel, setSelectedModel] = useState<string>(AUTO_MODEL);
 
   async function generate() {
     setState("loading");
@@ -208,7 +208,7 @@ export function ActionsPanel({ startTime, endTime }: ActionsPanelProps) {
       const res = await fetch("/api/actions-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startTime, endTime, model: selectedModel }),
+        body: JSON.stringify({ startTime, endTime, model: selectedModel || undefined }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -240,18 +240,7 @@ export function ActionsPanel({ startTime, endTime }: ActionsPanelProps) {
             </p>
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <select
-              aria-label="Select AI Model"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value as AiModelSlug)}
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-            >
-              {SUPPORTED_MODEL_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            <ModelSelect value={selectedModel} onChange={setSelectedModel} />
             <Button onClick={generate} size="sm" className="gap-2">
               <Bot className="h-3.5 w-3.5" />
               Generate Action Items

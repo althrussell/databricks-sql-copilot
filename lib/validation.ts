@@ -129,13 +129,11 @@ export const SparkGenieBodySchema = z.object({
 export const QueryActionPostSchema = z.object({
   fingerprint: z.string().min(1, "fingerprint is required"),
   action: z.enum(["dismiss", "watch", "applied"]),
-  note: z.string().nullable().optional(),
-  actedBy: z.string().nullable().optional(),
+  note: z.string().max(2000).nullable().optional(),
 });
 
 export const QueryActionDeleteSchema = z.object({
   fingerprint: z.string().min(1, "fingerprint is required"),
-  actedBy: z.string().nullable().optional(),
 });
 
 /**

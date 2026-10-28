@@ -89,16 +89,32 @@ const DEFAULT_TASK_MAX_TOKENS: Record<AiTaskKey, number> = {
 };
 
 /**
+ * Runtime overrides come from clients, so only the supported models and the
+ * endpoints the deployment itself configures via AI_MODEL_* may be selected.
+ */
+function isAllowedOverride(model: string): boolean {
+  if (SUPPORTED_MODEL_OPTIONS.some((opt) => opt.id === model)) return true;
+  const configured = [...new Set(Object.values(TASK_ENV_VARS)), "AI_MODEL_OVERRIDE"].map((key) =>
+    process.env[key]?.trim(),
+  );
+  return configured.includes(model);
+}
+
+/**
  * Resolve the target Databricks FMAPI model endpoint for a given AI task.
  * Precedence:
- *   1. Explicit runtime override (e.g. from UI model selector), if valid non-empty string
+ *   1. Explicit runtime override (e.g. from UI model selector), if allowlisted
  *   2. Task-specific environment variable (`AI_MODEL_TRIAGE`, `AI_MODEL_REWRITE`, etc.)
  *   3. Global environment variable override (`AI_MODEL_OVERRIDE`)
  *   4. Tiered default for the task
  */
 export function resolveModelForTask(task: AiTaskKey, overrideModel?: string | null): AiModelSlug {
   const trimmedOverride = overrideModel?.trim();
-  if (trimmedOverride && /^[a-zA-Z0-9._-]+$/.test(trimmedOverride)) {
+  if (
+    trimmedOverride &&
+    /^[a-zA-Z0-9._-]+$/.test(trimmedOverride) &&
+    isAllowedOverride(trimmedOverride)
+  ) {
     return trimmedOverride;
   }
 

@@ -51,7 +51,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { explainScore } from "@/lib/domain/scoring";
 import { diagnoseQuery, rewriteQuery, type AiResultWithCache } from "@/lib/ai/actions";
-import { AI_MODELS, SUPPORTED_MODEL_OPTIONS, type AiModelSlug } from "@/lib/ai/model-config";
+import { AUTO_MODEL, ModelSelect } from "@/components/model-select";
 import type { Candidate, QueryOrigin } from "@/lib/domain/types";
 import type { DiagnoseResponse, RewriteResponse } from "@/lib/ai/promptBuilder";
 // AiResult imported via aiClient for AiResultsPanel type compat
@@ -408,7 +408,7 @@ export function QueryDetailClient({
   const [analysing, startAnalyse] = useTransition();
   const [aiResult, setAiResult] = useState<AiResultWithCache | null>(null);
   const [activeAiTab, setActiveAiTab] = useState("summary");
-  const [selectedModel, setSelectedModel] = useState<AiModelSlug>(AI_MODELS.GPT_6_1_SOL);
+  const [selectedModel, setSelectedModel] = useState<string>(AUTO_MODEL);
   const autoTriggered = useRef(false);
   const ws = candidate.windowStats;
   const reasons = explainScore(candidate.scoreBreakdown);
@@ -469,8 +469,8 @@ export function QueryDetailClient({
       try {
         const result =
           mode === "diagnose"
-            ? await diagnoseQuery(candidate, selectedModel)
-            : await rewriteQuery(candidate, forceRefresh, selectedModel);
+            ? await diagnoseQuery(candidate, selectedModel || undefined)
+            : await rewriteQuery(candidate, forceRefresh, selectedModel || undefined);
         setAiResult(result);
         setActiveAiTab("summary");
       } catch (err) {
@@ -534,19 +534,11 @@ export function QueryDetailClient({
 
               {/* Right: Model Selector + CTA */}
               <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                <select
-                  aria-label="Select AI Model"
+                <ModelSelect
                   value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value as AiModelSlug)}
+                  onChange={setSelectedModel}
                   disabled={analysing}
-                  className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-                >
-                  {SUPPORTED_MODEL_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                />
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

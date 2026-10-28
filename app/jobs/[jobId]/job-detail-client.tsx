@@ -45,7 +45,7 @@ import type {
 import type { JobFlag } from "@/lib/domain/job-flags";
 import { FLAG_SEVERITY_ORDER } from "@/lib/domain/job-flags";
 import type { JobAnalysisResult } from "@/lib/ai/job-analysis";
-import { AI_MODELS, SUPPORTED_MODEL_OPTIONS, type AiModelSlug } from "@/lib/ai/model-config";
+import { AUTO_MODEL, ModelSelect } from "@/components/model-select";
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 
@@ -701,7 +701,7 @@ function AiAnalysisPanel({
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [result, setResult] = useState<JobAnalysisResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
-  const [selectedModel, setSelectedModel] = useState<AiModelSlug>(AI_MODELS.CLAUDE_OPUS_5_5);
+  const [selectedModel, setSelectedModel] = useState<string>(AUTO_MODEL);
 
   async function runAnalysis() {
     setState("loading");
@@ -710,7 +710,12 @@ function AiAnalysisPanel({
       const res = await fetch("/api/job-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId: stats.jobId, startTime, endTime, model: selectedModel }),
+        body: JSON.stringify({
+          jobId: stats.jobId,
+          startTime,
+          endTime,
+          model: selectedModel || undefined,
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -738,18 +743,7 @@ function AiAnalysisPanel({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <select
-              aria-label="Select AI Model"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value as AiModelSlug)}
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-            >
-              {SUPPORTED_MODEL_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            <ModelSelect value={selectedModel} onChange={setSelectedModel} />
             <Button onClick={runAnalysis} size="sm" className="gap-2">
               <Sparkles className="h-3.5 w-3.5" />
               Analyse Job
