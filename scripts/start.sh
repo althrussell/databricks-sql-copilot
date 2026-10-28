@@ -69,9 +69,11 @@ if [ -x "$PRISMA_BIN" ] && [ -n "$SCHEMA_URL" ]; then
       .catch(err => { console.warn('[startup] Schema rename skipped:', err.message); client.end(); });
   " "$SCHEMA_URL" 2>&1 || true
 
-  echo "[startup] Syncing database schema..."
-  if DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" db push 2>&1; then
-    echo "[startup] Schema sync complete."
+  echo "[startup] Applying Prisma migrations (with db push fallback)..."
+  if DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" migrate deploy 2>&1; then
+    echo "[startup] Prisma migrations applied."
+  elif DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" db push 2>&1; then
+    echo "[startup] Schema sync complete via db push."
   else
     echo "[startup] WARNING: Schema sync failed — tables may already be up to date."
   fi

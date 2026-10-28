@@ -9,7 +9,6 @@ import type { WarehouseActivity } from "@/lib/domain/types";
 import { isPermissionError, extractPermissionDetails } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 60;
 
 function LoadingSkeleton() {
   return (
