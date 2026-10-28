@@ -96,9 +96,13 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
 
   // Take top N by impact score (already sorted)
   const top = candidates.slice(0, MAX_CANDIDATES);
+  const triageModel = resolveModelForTask("triage");
 
-  // Check triage cache before calling the LLM
-  const fpHash = computeFingerprintHash(top.map((c) => c.fingerprint));
+  // Check triage cache before calling the LLM (scoped by model + fingerprints)
+  const fpHash = computeFingerprintHash(
+    top.map((c) => c.fingerprint),
+    triageModel,
+  );
   try {
     const cached = await getCachedTriage(fpHash);
     if (cached && Object.keys(cached).length > 0) {
@@ -133,7 +137,6 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
   });
 
   const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
-  const triageModel = resolveModelForTask("triage");
   const sql = buildAiQuerySql({
     model: triageModel,
     prompt: combinedPrompt,

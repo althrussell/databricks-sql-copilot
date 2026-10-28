@@ -288,6 +288,39 @@ describe("computeFlags", () => {
     expect(flags.some((f) => f.flag === "MissingDeletionVectors")).toBe(true);
   });
 
+  it("ignores tables in the shared context that the candidate SQL does not reference", () => {
+    const c = makeCandidate({
+      statementType: "MERGE",
+      sampleQueryText:
+        "MERGE INTO catalog.schema.customers t USING staging s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *",
+      windowStats: {
+        ...makeCandidate().windowStats,
+        totalReadBytes: 200 * 1024 * 1024,
+      },
+    });
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            deletionVectorsEnabled: false,
+            format: "delta",
+            sizeInBytes: 5e9,
+            numFiles: 200,
+          },
+        ],
+      ]),
+    };
+    const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
+    expect(flags.some((f) => f.flag === "ClusterByAutoCandidate")).toBe(false);
+    expect(flags.some((f) => f.flag === "MissingDeletionVectors")).toBe(false);
+  });
+
   it("flags ClusterByAutoCandidate on unclustered managed tables with high scan bytes", () => {
     const c = makeCandidate({
       windowStats: {
