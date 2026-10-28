@@ -124,10 +124,12 @@ export function getMaxTokensForTask(task: AiTaskKey): number {
 }
 
 /**
- * Escape single quotes and backslashes for safe embedding in a SQL string literal.
+ * Escape text for embedding in a Databricks SQL single-quoted string literal.
+ * Databricks has no `''` escape (adjacent literals are chained, silently dropping
+ * the quote), so quotes are backslash-escaped after backslashes themselves.
  */
 export function escapeSqlLiteral(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
+  return text.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 /**
