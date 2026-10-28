@@ -104,6 +104,40 @@ export const TriageItemSchema = z.object({
     .default("investigate"),
 });
 
+/* ── API Request Body Validation Schemas ── */
+
+export const TimeRangeBodySchema = z.object({
+  startTime: z.string().min(1, "startTime is required"),
+  endTime: z.string().min(1, "endTime is required"),
+  model: z.string().optional(),
+});
+
+export const JobAnalysisBodySchema = z.object({
+  jobId: z.string().min(1, "jobId is required"),
+  startTime: z.string().min(1, "startTime is required"),
+  endTime: z.string().min(1, "endTime is required"),
+  model: z.string().optional(),
+});
+
+export const SparkGenieBodySchema = z.object({
+  action: z.enum(["ask", "continue", "poll", "query-result"]),
+  question: z.string().optional(),
+  conversationId: z.string().optional(),
+  messageId: z.string().optional(),
+});
+
+export const QueryActionPostSchema = z.object({
+  fingerprint: z.string().min(1, "fingerprint is required"),
+  action: z.enum(["dismiss", "watch", "applied"]),
+  note: z.string().nullable().optional(),
+  actedBy: z.string().nullable().optional(),
+});
+
+export const QueryActionDeleteSchema = z.object({
+  fingerprint: z.string().min(1, "fingerprint is required"),
+  actedBy: z.string().nullable().optional(),
+});
+
 /**
  * Validate an array of LLM outputs against a Zod schema.
  * Gracefully skips invalid items and logs warnings.

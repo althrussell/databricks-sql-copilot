@@ -6,6 +6,7 @@ import {
   getGenieQueryResult,
   GenieApiError,
 } from "@/lib/queries/genie-client";
+import { SparkGenieBodySchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +14,12 @@ const GENIE_SPACE_ID = process.env.GENIE_SPACE_ID ?? "";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { action, question, conversationId, messageId } = body as {
-      action: "ask" | "continue" | "poll" | "query-result";
-      question?: string;
-      conversationId?: string;
-      messageId?: string;
-    };
+    const rawBody = await request.json();
+    const parsed = SparkGenieBodySchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
+    }
+    const { action, question, conversationId, messageId } = parsed.data;
 
     const sid = GENIE_SPACE_ID;
     if (!sid) {
@@ -73,18 +73,25 @@ export async function POST(request: NextRequest) {
         const qr = await getGenieQueryResult(sid, conversationId, messageId);
         return NextResponse.json(qr);
       }
-      default:
-        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
     }
   } catch (err) {
     if (err instanceof GenieApiError) {
+      const code = err.genieError.code;
+      const status =
+        code === "GENIE_SPACE_NOT_FOUND"
+          ? 404
+          : code === "PERMISSION_DENIED" ||
+              code === "WAREHOUSE_PERMISSION_DENIED" ||
+              code === "MISSING_OAUTH_SCOPE"
+            ? 403
+            : 502;
       return NextResponse.json(
         {
           error: err.genieError.message,
           code: err.genieError.code,
           fixSteps: err.genieError.fixSteps,
         },
-        { status: 200 },
+        { status },
       );
     }
     return NextResponse.json(

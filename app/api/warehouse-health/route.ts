@@ -14,6 +14,8 @@ import {
 import { saveHealthSnapshot, getLastSnapshots } from "@/lib/dbx/health-store";
 import type { WarehouseRecommendation } from "@/lib/domain/types";
 
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/warehouse-health
  *

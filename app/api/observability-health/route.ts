@@ -6,6 +6,8 @@ import {
   getPhotonFreshnessSloMinutes,
 } from "@/lib/config";
 
+export const dynamic = "force-dynamic";
+
 function ageMinutes(iso: string | null): number | null {
   if (!iso) return null;
   const ts = Date.parse(iso);
