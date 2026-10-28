@@ -268,6 +268,9 @@ export function WarehouseMonitor({
         spillBytes: q.spillBytes,
         cacheHitPercent: q.cacheHitPercent,
         userName: q.userName,
+        queueWaitMs: q.queueWaitMs,
+        rowsProduced: q.rowsProduced,
+        clientApplication: q.clientApplication,
       }));
       console.log(
         `[warehouse-monitor] requesting insights for ${slim.length} queries with SQL text`,

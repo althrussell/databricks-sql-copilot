@@ -51,11 +51,11 @@ Respond with ONLY a valid JSON array (no markdown, no explanation outside JSON):
 ${candidateLines}${tableContextBlock}`;
 }
 
-export const triageV1: PromptTemplate = {
+export const triageV2: PromptTemplate = {
   key: "triage",
-  version: "v1",
+  version: "v2",
   description:
-    "Unified triage prompt combining dashboard and monitor best practices, with SQL rules compact",
+    "Unified DBR 17+ triage prompt with Liquid Clustering (CLUSTER BY AUTO), Predictive Optimization, and Collation rules",
   build(ctx: PromptBuildContext): RenderedPrompt {
     const userPrompt = buildTriageUserPrompt(ctx);
     const estimatedTokens = Math.ceil((SYSTEM_PROMPT.length + userPrompt.length) / 4);
@@ -64,8 +64,10 @@ export const triageV1: PromptTemplate = {
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
       promptKey: "triage",
-      version: "v1",
+      version: "v2",
       estimatedTokens,
     };
   },
 };
+
+export const triageV1 = triageV2;

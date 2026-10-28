@@ -15,8 +15,15 @@ import type {
   JobRunPhaseStats,
 } from "@/lib/queries/jobs";
 import type { JobFlag } from "@/lib/domain/job-flags";
+import {
+  buildAiQuerySql,
+  getMaxTokensForTask,
+  resolveModelForTask,
+  type AiModelSlug,
+} from "@/lib/ai/model-config";
+import { renderPrompt } from "@/lib/ai/prompts/registry";
+import { writePromptLog } from "@/lib/ai/prompt-logger";
 
-const ANALYSIS_MODEL = "databricks-claude-sonnet-4-5";
 const ANALYSIS_TIMEOUT_MS = 90_000;
 
 export interface JobAnalysisResult {
@@ -33,10 +40,7 @@ export interface JobAnalysisResult {
     category: "cluster" | "code" | "scheduling" | "cost" | "reliability";
   }>;
   estimatedSavings: string | null;
-}
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
+  modelUsed?: string;
 }
 
 function formatDuration(s: number): string {
@@ -235,49 +239,21 @@ export async function analyseJob(
     avgQueueSeconds: 0,
     avgExecSeconds: 0,
   },
+  overrideModel?: AiModelSlug,
 ): Promise<{ status: "success"; data: JobAnalysisResult } | { status: "error"; message: string }> {
   const context = buildContext(stats, runs, flags, tasks, phase);
+  const rendered = renderPrompt("job-analysis", {
+    jobAnalysisContext: context,
+  });
+  const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
+  const model = resolveModelForTask("job-analysis", overrideModel);
+  const sql = buildAiQuerySql({
+    model,
+    prompt: combinedPrompt,
+    maxTokens: getMaxTokensForTask("job-analysis"),
+  });
 
-  const prompt = `You are an expert Databricks platform engineer performing a deep diagnostic analysis of a production job.
-
-Analyse the data below and return a structured JSON diagnosis. Your analysis MUST be data-backed and specific — reference actual numbers from the data (durations, rates, counts). Do NOT give generic advice.
-
-${context}
-
-Return ONLY a JSON object with this exact structure:
-{
-  "summary": "<2-3 sentences. Cite the exact failure rate, p95 duration, and top termination code. State clearly if the job is healthy or has critical issues.>",
-  "rootCauses": [
-    {
-      "title": "<specific title referencing the actual symptom observed>",
-      "detail": "<cite the exact metric that proves this is a root cause, e.g. '37% of runs fail with DRIVER_OOM — the p95 vs p50 ratio of 4.2x confirms this is not constant-rate but spike-driven'>",
-      "severity": "critical|warning|info"
-    }
-  ],
-  "recommendations": [
-    {
-      "title": "<actionable title>",
-      "detail": "<specific steps. For cluster: mention worker counts, autoscaling ranges, instance types. For code: mention checkpointing, repartitioning. For scheduling: mention time windows. Always quantify the expected outcome e.g. 'expected to cut p95 by 40%'.>",
-      "effort": "low|medium|high",
-      "category": "cluster|code|scheduling|cost|reliability"
-    }
-  ],
-  "estimatedSavings": "<quantified savings e.g. '$12/run * 8 avg failures/week = ~$96/week' or null>"
-}
-
-Hard rules:
-1. Every root cause must cite at least one number from the data.
-2. Every recommendation must name a concrete action (not "consider optimising").
-3. If phase breakdown shows queue > 15%: recommend instance pools with specific pool size.
-4. If phase breakdown shows setup > 20%: recommend cluster policy or pool attachment.
-5. If p95/p50 ratio > 2.5: diagnose data skew or conditional slow path.
-6. If there are task failures: name the failing task key and its top termination code.
-7. If job is healthy (>98% success, stable durations): say so and provide 1-2 proactive cost/efficiency tips.
-8. Do NOT include markdown in the JSON string values — no ** or # formatting.`;
-
-  const escapedPrompt = escapeForSql(prompt);
-  const sql = `SELECT ai_query('${ANALYSIS_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 8192, 'temperature', 0.0)) AS response`;
-
+  const t0 = Date.now();
   try {
     const result = await aiSemaphore.run(async () => {
       const resultPromise = executeQuery<{ response: string }>(sql);
@@ -290,22 +266,64 @@ Hard rules:
       return Promise.race([resultPromise, timeoutPromise]);
     });
 
+    const durationMs = Date.now() - t0;
+
     if (!result.rows.length || !result.rows[0].response) {
+      writePromptLog({
+        timestamp: new Date().toISOString(),
+        promptKey: "job-analysis",
+        promptVersion: rendered.version,
+        model,
+        estimatedInputTokens: rendered.estimatedTokens,
+        outputChars: 0,
+        durationMs,
+        success: false,
+        errorMessage: "Empty response",
+      });
       return { status: "error", message: "AI returned an empty response" };
     }
 
-    const parsed = parseAnalysisResponse(result.rows[0].response);
+    const raw = result.rows[0].response;
+    const parsed = parseAnalysisResponse(raw);
+
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "job-analysis",
+      promptVersion: rendered.version,
+      model,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: raw.length,
+      durationMs,
+      success: !!parsed,
+      errorMessage: parsed ? undefined : "Failed to parse job analysis response",
+      renderedPrompt: combinedPrompt,
+      rawResponse: raw,
+    });
+
     if (!parsed) {
       return {
         status: "error",
-        message: `Could not parse AI response (${String(result.rows[0].response).length} chars) — try again`,
+        message: `Could not parse AI response (${String(raw).length} chars) — try again`,
       };
     }
-    return { status: "success", data: parsed };
+    return { status: "success", data: { ...parsed, modelUsed: model } };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error during AI analysis";
+    const durationMs = Date.now() - t0;
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "job-analysis",
+      promptVersion: rendered.version,
+      model,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: 0,
+      durationMs,
+      success: false,
+      errorMessage: msg,
+    });
     return {
       status: "error",
-      message: err instanceof Error ? err.message : "Unknown error during AI analysis",
+      message: msg,
     };
   }
 }

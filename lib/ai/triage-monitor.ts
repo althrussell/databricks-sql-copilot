@@ -8,14 +8,15 @@
  */
 
 import { executeQuery } from "@/lib/dbx/sql-client";
-import { fingerprint as computeFingerprint } from "@/lib/domain/sql-fingerprint";
+import { fingerprint as computeFingerprint, normalizeSql } from "@/lib/domain/sql-fingerprint";
 import type { TimelineQuery } from "@/lib/domain/types";
 import type { TriageInsight } from "@/lib/ai/triage";
 import { fetchTriageTableContext, formatTriageTableContext } from "@/lib/queries/table-metadata";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import { renderPrompt } from "@/lib/ai/prompts/registry";
+import { writePromptLog } from "@/lib/ai/prompt-logger";
+import { buildAiQuerySql, getMaxTokensForTask, resolveModelForTask } from "@/lib/ai/model-config";
 
-const TRIAGE_MODEL = "databricks-claude-sonnet-4-5";
 const MAX_PATTERNS = 15;
 const TRIAGE_TIMEOUT_MS = 60_000; // 60s max for AI call
 
@@ -38,10 +39,6 @@ interface PatternSummary {
   avgQueueWaitMs: number;
   users: string[];
   clientApplications: string[];
-}
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
 }
 
 function fmtBytes(bytes: number): string {
@@ -97,7 +94,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
     } else {
       groups.set(fp, {
         fingerprint: fp,
-        sqlSnippet: q.queryText.replace(/\s+/g, " ").trim().slice(0, 150),
+        sqlSnippet: normalizeSql(q.queryText).replace(/\s+/g, " ").trim().slice(0, 150),
         statementType: q.statementType,
         durations: [q.durationMs],
         bytesScanned: [q.bytesScanned],
@@ -199,13 +196,17 @@ export async function triageMonitorQueries(queries: TimelineQuery[]): Promise<Mo
   });
 
   const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
-  const escapedPrompt = escapeForSql(combinedPrompt);
-  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 4096, 'temperature', 0.0)) AS response`;
+  const triageModel = resolveModelForTask("triage-monitor");
+  const sql = buildAiQuerySql({
+    model: triageModel,
+    prompt: combinedPrompt,
+    maxTokens: getMaxTokensForTask("triage-monitor"),
+  });
 
+  const t0 = Date.now();
   try {
-    const t0 = Date.now();
     console.log(
-      `[ai-triage-monitor] calling ${TRIAGE_MODEL} for ${top.length} patterns (prompt ~${escapedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`,
+      `[ai-triage-monitor] calling ${triageModel} for ${top.length} patterns (prompt ~${combinedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`,
     );
 
     // Use semaphore for concurrency control
@@ -219,22 +220,61 @@ export async function triageMonitorQueries(queries: TimelineQuery[]): Promise<Mo
       );
       return Promise.race([resultPromise, timeoutPromise]);
     });
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    const durationMs = Date.now() - t0;
+    const elapsed = (durationMs / 1000).toFixed(1);
 
     if (!result.rows.length || !result.rows[0].response) {
       console.warn(`[ai-triage-monitor] empty response (${elapsed}s)`);
+      writePromptLog({
+        timestamp: new Date().toISOString(),
+        promptKey: "triage",
+        promptVersion: rendered.version,
+        model: triageModel,
+        estimatedInputTokens: rendered.estimatedTokens,
+        outputChars: 0,
+        durationMs,
+        success: false,
+        errorMessage: "Empty response",
+      });
       return {};
     }
 
     const raw = result.rows[0].response;
     const parsed = parseMonitorTriageResponse(raw, top);
+    const insightCount = Object.keys(parsed).length;
+
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "triage",
+      promptVersion: rendered.version,
+      model: triageModel,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: raw.length,
+      durationMs,
+      success: insightCount > 0,
+      renderedPrompt: combinedPrompt,
+      rawResponse: raw,
+    });
+
     console.log(
-      `[ai-triage-monitor] got insights for ${Object.keys(parsed).length}/${top.length} patterns in ${elapsed}s`,
+      `[ai-triage-monitor] got insights for ${insightCount}/${top.length} patterns in ${elapsed}s`,
     );
     return parsed;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    const durationMs = Date.now() - t0;
     console.error("[ai-triage-monitor] failed:", msg);
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "triage",
+      promptVersion: rendered.version,
+      model: triageModel,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: 0,
+      durationMs,
+      success: false,
+      errorMessage: msg,
+    });
     return {};
   }
 }

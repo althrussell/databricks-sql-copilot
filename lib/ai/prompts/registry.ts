@@ -13,14 +13,20 @@
  */
 
 import type { PromptKey, PromptTemplate, RenderedPrompt, PromptBuildContext } from "./types";
-import { diagnoseV1 } from "./diagnose";
-import { rewriteV1 } from "./rewrite";
-import { triageV1 } from "./triage";
+import { diagnoseV2 } from "./diagnose";
+import { rewriteV2 } from "./rewrite";
+import { triageV2 } from "./triage";
+import { jobTriageV2 } from "./job-triage";
+import { jobAnalysisV2 } from "./job-analysis";
+import { actionsSummaryV2 } from "./actions-summary";
 
 const ACTIVE_TEMPLATES: Record<PromptKey, PromptTemplate> = {
-  diagnose: diagnoseV1,
-  rewrite: rewriteV1,
-  triage: triageV1,
+  diagnose: diagnoseV2,
+  rewrite: rewriteV2,
+  triage: triageV2,
+  "job-triage": jobTriageV2,
+  "job-analysis": jobAnalysisV2,
+  "actions-summary": actionsSummaryV2,
 };
 
 /**

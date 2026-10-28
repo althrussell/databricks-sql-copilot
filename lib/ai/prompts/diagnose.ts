@@ -34,11 +34,11 @@ Analyse the provided SQL query and its execution metrics. Identify root causes a
 - Recommendations: WHAT + WHERE + WHY in one sentence
 - Include Managed Table / Liquid Clustering / Predictive Optimization commands where applicable`;
 
-export const diagnoseV1: PromptTemplate = {
+export const diagnoseV2: PromptTemplate = {
   key: "diagnose",
-  version: "v1",
+  version: "v2",
   description:
-    "Initial diagnose prompt with three-pillar knowledge base and concise JSON output format",
+    "DBR 17+ diagnose prompt with CLUSTER BY AUTO, Predictive Optimization, Collation, and RELY constraints",
   build(ctx: PromptBuildContext): RenderedPrompt {
     const userPrompt = buildUserPromptSections(ctx, "diagnose");
     const estimatedTokens = Math.ceil((SYSTEM_PROMPT.length + userPrompt.length) / 4);
@@ -47,8 +47,10 @@ export const diagnoseV1: PromptTemplate = {
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
       promptKey: "diagnose",
-      version: "v1",
+      version: "v2",
       estimatedTokens,
     };
   },
 };
+
+export const diagnoseV1 = diagnoseV2;

@@ -11,8 +11,10 @@ import { executeQuery } from "@/lib/dbx/sql-client";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import type { JobSummary } from "@/lib/queries/jobs";
 import type { JobFlag } from "@/lib/domain/job-flags";
+import { buildAiQuerySql, getMaxTokensForTask, resolveModelForTask } from "@/lib/ai/model-config";
+import { renderPrompt } from "@/lib/ai/prompts/registry";
+import { writePromptLog } from "@/lib/ai/prompt-logger";
 
-const TRIAGE_MODEL = "databricks-claude-sonnet-4-5";
 const MAX_JOBS = 10;
 const TRIAGE_TIMEOUT_MS = 60_000;
 
@@ -22,10 +24,6 @@ export interface JobTriageInsight {
 }
 
 export type JobTriageMap = Record<string, JobTriageInsight>;
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
-}
 
 function formatDuration(s: number): string {
   if (s <= 0) return "0s";
@@ -90,34 +88,18 @@ export async function triageJobs(
     .map((line, i) => `${i + 1}. ${line}`)
     .join("\n");
 
-  const prompt = `You are a Databricks platform engineer triaging job health issues.
+  const rendered = renderPrompt("job-triage", {
+    jobSummaryLines: summaryLines,
+  });
+  const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
+  const model = resolveModelForTask("job-triage");
+  const sql = buildAiQuerySql({
+    model,
+    prompt: combinedPrompt,
+    maxTokens: getMaxTokensForTask("job-triage"),
+  });
 
-For each of the following Databricks jobs, provide a concise 1-2 sentence insight identifying the most likely root cause and a concrete action to take.
-
-JOBS:
-${summaryLines}
-
-Return ONLY a JSON array with one object per job:
-[
-  {
-    "id": "<job_id>",
-    "insight": "<1-2 sentence root cause + action>",
-    "action": "<one of: investigate | resize | reschedule | fix_code | optimize>"
-  }
-]
-
-Rules:
-- Reference the exact failure rate, p95/avg ratio, or phase % in your insight (e.g. "37% failure rate with DRIVER_OOM").
-- If queueWait > 15%: insight must mention cluster contention and action = resize.
-- If setup > 20%: mention cold-start overhead and recommend pools.
-- If p95/avg ratio > 2.5: diagnose data skew or conditional slow path.
-- If flag is HIGH_COST: quantify wasted spend if possible.
-- Do NOT give generic advice like "check logs" or "monitor performance".
-- Do not include preamble or explanation outside the JSON array.`;
-
-  const escapedPrompt = escapeForSql(prompt);
-  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 4096, 'temperature', 0.0)) AS response`;
-
+  const t0 = Date.now();
   try {
     const result = await aiSemaphore.run(async () => {
       const resultPromise = executeQuery<{ response: string }>(sql);
@@ -130,12 +112,55 @@ Rules:
       return Promise.race([resultPromise, timeoutPromise]);
     });
 
-    if (!result.rows.length || !result.rows[0].response) return {};
+    const durationMs = Date.now() - t0;
+
+    if (!result.rows.length || !result.rows[0].response) {
+      writePromptLog({
+        timestamp: new Date().toISOString(),
+        promptKey: "job-triage",
+        promptVersion: rendered.version,
+        model,
+        estimatedInputTokens: rendered.estimatedTokens,
+        outputChars: 0,
+        durationMs,
+        success: false,
+        errorMessage: "Empty response",
+      });
+      return {};
+    }
 
     const raw = result.rows[0].response;
-    return parseTriageResponse(raw, candidates);
+    const parsed = parseTriageResponse(raw, candidates);
+
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "job-triage",
+      promptVersion: rendered.version,
+      model,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: raw.length,
+      durationMs,
+      success: Object.keys(parsed).length > 0,
+      renderedPrompt: combinedPrompt,
+      rawResponse: raw,
+    });
+
+    return parsed;
   } catch (err) {
-    console.error("[job-triage] failed:", err instanceof Error ? err.message : err);
+    const msg = err instanceof Error ? err.message : String(err);
+    const durationMs = Date.now() - t0;
+    console.error("[job-triage] failed:", msg);
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "job-triage",
+      promptVersion: rendered.version,
+      model,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: 0,
+      durationMs,
+      success: false,
+      errorMessage: msg,
+    });
     return {};
   }
 }

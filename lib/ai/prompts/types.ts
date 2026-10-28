@@ -6,7 +6,13 @@
  * the version string — this flows into prompt logs for traceability.
  */
 
-export type PromptKey = "diagnose" | "rewrite" | "triage";
+export type PromptKey =
+  | "diagnose"
+  | "rewrite"
+  | "triage"
+  | "job-triage"
+  | "job-analysis"
+  | "actions-summary";
 
 export interface RenderedPrompt {
   systemPrompt: string;
@@ -27,6 +33,7 @@ export interface PromptTemplate {
  * Unified context for all prompt types.
  * Diagnose/rewrite use `candidate` + optional enrichment.
  * Triage uses `triageItems` + optional table context.
+ * Job triage/analysis and actions summary use their respective formatted contexts.
  */
 export interface PromptBuildContext {
   /** For diagnose/rewrite: the query candidate */
@@ -43,4 +50,13 @@ export interface PromptBuildContext {
   /** For triage: compact summary lines + optional table context block */
   triageItems?: Array<{ id: string; summaryLine: string }>;
   tableContextBlock?: string;
+
+  /** For job-triage: formatted numbered job summary lines */
+  jobSummaryLines?: string;
+
+  /** For job-analysis: formatted deep job diagnostic context */
+  jobAnalysisContext?: string;
+
+  /** For actions-summary: cross-cutting SQL/jobs/table hotspot context */
+  actionsContextText?: string;
 }
