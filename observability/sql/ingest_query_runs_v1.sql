@@ -2,6 +2,8 @@
 -- Safe to run repeatedly; deduplicates on statement_id.
 -- Uses normalized SQL text + SUBSTRING(sha2(..., 256), 1, 16) matching lib/domain/sql-fingerprint.ts
 -- so query_fingerprint is identical across query_runs_v1 and the Next.js app.
+-- Keep the normalization in sync with SQL_NORMALIZED_EXPR in lib/queries/sql-insights.ts.
+-- Databricks has no '' escape, so regexes are raw r'...' literals and the two containing a quote use \'.
 
 INSERT INTO main.unified_observability.query_runs_v1 (
   workspace_id,
@@ -39,32 +41,32 @@ SELECT
                         REGEXP_REPLACE(
                           REGEXP_REPLACE(
                             COALESCE(h.statement_text, h.statement_id),
-                            '/\\*(?!\\+)[\\s\\S]*?\\*/',
+                            r'/\*(?!\+)[\s\S]*?\*/',
                             ' '
                           ),
-                          '''(?:[^''\\\\]|\\\\.)*''',
-                          '''?'''
+                          '\'(?:[^\'\\\\]|\\\\.)*\'',
+                          '\'?\''
                         ),
-                        '--[^\\r\\n]*',
+                        r'--[^\r\n]*',
                         ' '
                       ),
-                      '(?<![a-zA-Z_])\\b\\d+(\\.\\d+)?\\b',
+                      r'(?<![a-zA-Z_])\b\d+(\.\d+)?\b',
                       '?'
                     ),
-                    '(?i)\\bIN\\s*\\(\\s*\\?\\s*(?:,\\s*\\?\\s*)*\\)',
+                    r'(?i)\bIN\s*\(\s*\?\s*(?:,\s*\?\s*)*\)',
                     'IN (?)'
                   ),
-                  '(?i)\\bIN\\s*\\(\\s*''\\?''\\s*(?:,\\s*''\\?''\\s*)*\\)',
+                  '(?i)\\bIN\\s*\\(\\s*\'\\?\'\\s*(?:,\\s*\'\\?\'\\s*)*\\)',
                   'IN (?)'
                 ),
-                '\\s*\\|>\\s*',
+                r'\s*\|>\s*',
                 ' |> '
               )
             ),
-            ';\\s*$',
+            r';\s*$',
             ''
           ),
-          '\\s+',
+          r'\s+',
           ' '
         )
       ),

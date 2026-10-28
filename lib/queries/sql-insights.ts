@@ -41,8 +41,10 @@ export interface RegressionEntry {
  * (comment stripping, string/numeric literal masking, IN-list collapsing,
  * pipe `|>` spacing, lowercasing, trailing semicolon removal, whitespace collapse)
  * so SQL-grouped patterns match `fingerprint(statement_text)` 1-to-1.
+ * Databricks has no `''` escape, so regexes are raw `r'…'` literals and the two
+ * that contain a quote use `\'`. Keep in sync with observability/sql/ingest_query_runs_v1.sql.
  */
-const SQL_NORMALIZED_EXPR = `
+const SQL_NORMALIZED_EXPR = String.raw`
   TRIM(
     REGEXP_REPLACE(
       REGEXP_REPLACE(
@@ -53,34 +55,30 @@ const SQL_NORMALIZED_EXPR = `
                 REGEXP_REPLACE(
                   REGEXP_REPLACE(
                     REGEXP_REPLACE(
-                      REGEXP_REPLACE(
-                        statement_text,
-                        '/\\\\*(?!\\\\+)[\\\\s\\\\S]*?\\\\*/',
-                        ' '
-                      ),
-                      '''(?:[^''\\\\\\\\]|\\\\\\\\.)*''',
-                      '''?'''
+                      REGEXP_REPLACE(statement_text, r'/\*(?!\+)[\s\S]*?\*/', ' '),
+                      '\'(?:[^\'\\\\]|\\\\.)*\'',
+                      '\'?\''
                     ),
-                    '--[^\\\\r\\\\n]*',
+                    r'--[^\r\n]*',
                     ' '
                   ),
-                  '(?<![a-zA-Z_])\\\\b\\\\d+(\\\\.\\\\d+)?\\\\b',
+                  r'(?<![a-zA-Z_])\b\d+(\.\d+)?\b',
                   '?'
                 ),
-                '(?i)\\\\bIN\\\\s*\\\\(\\\\s*\\\\?\\\\s*(?:,\\\\s*\\\\?\\\\s*)*\\\\)',
+                r'(?i)\bIN\s*\(\s*\?\s*(?:,\s*\?\s*)*\)',
                 'IN (?)'
               ),
-              '(?i)\\\\bIN\\\\s*\\\\(\\\\s*''\\\\?''\\\\s*(?:,\\\\s*''\\\\?''\\\\s*)*\\\\)',
+              '(?i)\\bIN\\s*\\(\\s*\'\\?\'\\s*(?:,\\s*\'\\?\'\\s*)*\\)',
               'IN (?)'
             ),
-            '\\\\s*\\\\|>\\\\s*',
+            r'\s*\|>\s*',
             ' |> '
           )
         ),
-        ';\\\\s*$',
+        r';\s*$',
         ''
       ),
-      '\\\\s+',
+      r'\s+',
       ' '
     )
   )
