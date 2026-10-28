@@ -13,7 +13,8 @@
 #   --enable-lakebase     Enable Lakebase persistence: true or false (default: true)
 #   --genie-space         Genie Space ID (optional, leave blank to skip)
 #   --create-genie        Auto-provision Genie Space from genie-space-config.json
-#   --init-observability  Bootstrap unified observability SQL views & UC functions
+#   --init-observability  Create unified observability tables + views and run the
+#                         first query-history ingest (fails the deploy on error)
 #   --create              Create the app if it doesn't exist
 #   --help, -h            Show this help message
 #
@@ -51,7 +52,7 @@ cleanup() {
 trap cleanup EXIT ERR INT TERM
 
 usage() {
-  head -30 "$0" | tail -28
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
   exit 0
 }
 
@@ -129,13 +130,21 @@ echo "  Lakebase:       $ENABLE_LAKEBASE"
 echo "  Genie space:    ${GENIE_SPACE_ID:-<none>}"
 echo ""
 
-# Bootstrap unified observability views & UC functions if requested
+# Bootstrap unified observability tables, views, and the first query-history ingest
 if $INIT_OBSERVABILITY; then
-  echo "→ Bootstrapping unified observability UC functions and views..."
-  if [[ -f "$PROJECT_DIR/observability/deploy/deploy_uc_functions.py" ]]; then
-    DATABRICKS_CONFIG_PROFILE="$PROFILE" python3 "$PROJECT_DIR/observability/deploy/deploy_uc_functions.py" \
-      --warehouse-id "$WAREHOUSE_ID" || echo "  ⚠ UC function deployment reported warnings (continuing)"
+  echo "→ Bootstrapping unified observability on warehouse $WAREHOUSE_ID..."
+  if ! python3 "$SCRIPT_DIR/init-observability.py" \
+      --profile "$PROFILE" \
+      --warehouse "$WAREHOUSE_ID" \
+      --catalog main \
+      "$PROJECT_DIR/observability/sql/create_canonical_tables.sql" \
+      "$PROJECT_DIR/observability/sql/unified_views.sql" \
+      "$PROJECT_DIR/observability/sql/ingest_query_runs_v1.sql"; then
+    echo "ERROR: Observability bootstrap failed (see above). Fix it or re-run without --init-observability."
+    exit 1
   fi
+  echo "  ✓ Unified observability tables and views ready"
+  echo ""
 fi
 
 # Provision Genie Space if requested and no space ID provided
@@ -322,6 +331,10 @@ if [[ -n "$GENIE_SPACE_ID" ]]; then
 fi
 if [[ "$AUTH_MODE" == "obo" ]]; then
   echo "  3. Verify OBO scopes include 'dashboards.genie' in the app settings UI"
+fi
+if $INIT_OBSERVABILITY; then
+  echo "  4. Run the notebook $WORKSPACE_PATH/observability/deploy/deploy_uc_functions on a cluster"
+  echo "     with the 'shscreds' secret scope to create the Spark tuning agent UC functions"
 fi
 if $RESOURCE_BOUND; then
   echo "  ✓ No manual steps needed — warehouse is bound as a resource"

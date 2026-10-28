@@ -4,8 +4,9 @@
 # The platform runs `npm install` + `npm run build` before this script.
 # After build, .next/standalone/ contains the self-contained server.
 #
-# 1. Auto-provisions Lakebase Autoscale (if ENABLE_LAKEBASE=true on a Databricks App).
-# 2. Pushes the Prisma schema to Lakebase (best-effort).
+# 1. Auto-provisions Lakebase Autoscale (if ENABLE_LAKEBASE=true on a Databricks App);
+#    on failure the app starts without persistence instead of exiting.
+# 2. Applies Prisma migrations, baselining schemas created by `db push` (best-effort).
 # 3. Starts the Next.js standalone server.
 
 set -e
@@ -26,13 +27,14 @@ if [ "$ENABLE_LAKEBASE" = "true" ] || [ "$ENABLE_LAKEBASE" = "1" ]; then
   if [ -n "$DATABRICKS_CLIENT_ID" ] && [ -z "$DATABASE_URL" ]; then
     echo "[startup] Auto-provisioning Lakebase Autoscale..."
 
-    LAKEBASE_STARTUP_URL=$(node scripts/provision-lakebase.mjs)
+    LAKEBASE_STARTUP_URL=$(node scripts/provision-lakebase.mjs) || LAKEBASE_STARTUP_URL=""
 
     if [ -n "$LAKEBASE_STARTUP_URL" ]; then
       echo "[startup] Lakebase connection established."
     else
-      echo "[startup] ERROR: Lakebase provisioning returned empty URL."
-      exit 1
+      # Persistence is optional; start in degraded mode rather than failing the app.
+      echo "[startup] WARNING: Lakebase provisioning failed — starting without persistence."
+      export ENABLE_LAKEBASE=false
     fi
   fi
 fi
