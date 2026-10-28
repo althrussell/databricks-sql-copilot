@@ -3,7 +3,7 @@ Spark Tuning Agent — MLflow ResponsesAgent for interactive Spark performance a
 
 Deploy this agent to a Databricks Model Serving endpoint. It uses UC functions
 (sqlmetrics, photonmetrics, getslowestjobs, getsloweststages) for live SHS data
-and Claude Sonnet 4.5 for analysis.
+and Claude Opus 5.5 for analysis.
 
 Usage:
   1. Set environment variables: USER_PAT_OVERRIDE, USER_CP_URL_OVERRIDE
@@ -32,8 +32,8 @@ from pydantic import BaseModel
 from databricks.sdk import WorkspaceClient
 from unitycatalog.ai.core.databricks import DatabricksFunctionClient
 
-LLM_ENDPOINT = "databricks-claude-sonnet-4-5"
-MAX_TOKENS = 125000
+LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "databricks-claude-opus-5-5")
+MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "16384"))
 CATALOG = os.getenv("UC_CATALOG", "main")
 SCHEMA = os.getenv("UC_SCHEMA", "unified_observability")
 

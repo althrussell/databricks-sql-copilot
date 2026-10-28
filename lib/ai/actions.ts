@@ -25,7 +25,10 @@ export type { AiResult } from "./aiClient";
 /** Extended result type that includes cache info */
 export type AiResultWithCache = AiResult & { cached?: boolean };
 
-export async function diagnoseQuery(candidate: Candidate): Promise<AiResult> {
+export async function diagnoseQuery(
+  candidate: Candidate,
+  overrideModel?: string,
+): Promise<AiResult> {
   // Fetch table metadata to enrich the AI prompt
   let tableMetadata;
   try {
@@ -45,15 +48,16 @@ export async function diagnoseQuery(candidate: Candidate): Promise<AiResult> {
     tableMetadata,
     warehouseConfig,
   };
-  return callAi("diagnose", context);
+  return callAi("diagnose", context, overrideModel);
 }
 
 export async function rewriteQuery(
   candidate: Candidate,
   forceRefresh = false,
+  overrideModel?: string,
 ): Promise<AiResultWithCache> {
-  // Check Lakebase cache first (unless force refresh)
-  if (!forceRefresh) {
+  // Check Lakebase cache first (unless force refresh or custom model override)
+  if (!forceRefresh && !overrideModel) {
     try {
       const cached = await getCachedRewrite(candidate.fingerprint);
       if (cached) {
@@ -74,6 +78,7 @@ export async function rewriteQuery(
             risks: (cached.diagnosis?.risks as Array<{ risk: string; mitigation: string }>) ?? [],
             validationPlan: (cached.diagnosis?.validationPlan as string[]) ?? [],
           },
+          modelUsed: cached.modelUsed,
           cached: true,
         };
       }
@@ -102,7 +107,7 @@ export async function rewriteQuery(
     tableMetadata,
     warehouseConfig,
   };
-  const result = await callAi("rewrite", context);
+  const result = await callAi("rewrite", context, overrideModel);
 
   // Validate the rewritten SQL via EXPLAIN before presenting to user
   if (result.status === "success" && result.mode === "rewrite") {
@@ -147,7 +152,7 @@ export async function rewriteQuery(
         rationale: result.data.rationale,
         risks: JSON.stringify(result.data.risks),
         validationPlan: JSON.stringify(result.data.validationPlan),
-        modelUsed: "databricks-claude-sonnet-4-5",
+        modelUsed: result.modelUsed,
       });
       console.log(`[ai-actions] rewrite: cached result for ${candidate.fingerprint}`);
     } catch (err) {

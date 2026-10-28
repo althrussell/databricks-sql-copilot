@@ -22,14 +22,14 @@ import {
 import { DiagnoseResponseSchema, RewriteResponseSchema } from "@/lib/validation";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import { writePromptLog } from "@/lib/ai/prompt-logger";
+import {
+  buildAiQuerySql,
+  getMaxTokensForTask,
+  resolveModelForTask,
+  type AiModelSlug,
+} from "@/lib/ai/model-config";
 
-/** Model selection based on task complexity */
-const MODELS = {
-  diagnose: "databricks-claude-sonnet-4-5",
-  rewrite: "databricks-claude-sonnet-4-5",
-} as const;
-
-/** Max input tokens per mode (guardrail — Claude Sonnet 4.5 has 200K ITPM) */
+/** Max input tokens per mode (guardrail) */
 const MAX_INPUT_TOKENS = {
   diagnose: 30_000,
   rewrite: 50_000,
@@ -38,46 +38,39 @@ const MAX_INPUT_TOKENS = {
 const AI_TIMEOUT_MS = 90_000;
 
 export type AiResult =
-  | { status: "success"; mode: "diagnose"; data: DiagnoseResponse }
-  | { status: "success"; mode: "rewrite"; data: RewriteResponse }
-  | { status: "error"; message: string }
-  | { status: "guardrail"; message: string };
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
-}
+  | { status: "success"; mode: "diagnose"; data: DiagnoseResponse; modelUsed: string }
+  | { status: "success"; mode: "rewrite"; data: RewriteResponse; modelUsed: string }
+  | { status: "error"; message: string; modelUsed?: string }
+  | { status: "guardrail"; message: string; modelUsed?: string };
 
 /**
  * Call the Databricks AI model via ai_query() SQL function.
- * Uses semaphore for concurrency control.
+ * Uses semaphore for concurrency control and tiered model routing (no temperature).
  */
-export async function callAi(mode: AiMode, context: PromptContext): Promise<AiResult> {
+export async function callAi(
+  mode: AiMode,
+  context: PromptContext,
+  overrideModel?: AiModelSlug,
+): Promise<AiResult> {
   // Build prompt
   const prompt = buildPrompt(mode, context);
+  const model = resolveModelForTask(mode, overrideModel);
 
   // Guardrail: check estimated tokens
   if (prompt.estimatedTokens > MAX_INPUT_TOKENS[mode]) {
     return {
       status: "guardrail",
       message: `Query too large for AI analysis (est. ${prompt.estimatedTokens} tokens, limit ${MAX_INPUT_TOKENS[mode]}). Try a simpler query or enable raw SQL masking.`,
+      modelUsed: model,
     };
   }
 
-  const model = MODELS[mode];
-
   const combinedPrompt = `${prompt.systemPrompt}\n\n${prompt.userPrompt}`;
-  const escapedPrompt = escapeForSql(combinedPrompt);
-
-  // Claude models ignore returnType and wrap responses in markdown fences,
-  // so we omit it and rely on prompt-instructed JSON + robust parsing.
-  // Claude Sonnet defaults to only 1,000 output tokens — raise to 8192.
-  const sql = `
-    SELECT ai_query(
-      '${model}',
-      '${escapedPrompt}',
-      modelParameters => named_struct('max_tokens', 8192, 'temperature', 0.0)
-    ) AS response
-  `;
+  const sql = buildAiQuerySql({
+    model,
+    prompt: combinedPrompt,
+    maxTokens: getMaxTokensForTask(mode),
+  });
 
   console.log(`[ai] calling ${model} mode=${mode}, prompt ~${prompt.estimatedTokens} input tokens`);
 
@@ -107,7 +100,7 @@ export async function callAi(mode: AiMode, context: PromptContext): Promise<AiRe
         success: false,
         errorMessage: "Empty response",
       });
-      return { status: "error", message: "AI returned an empty response" };
+      return { status: "error", message: "AI returned an empty response", modelUsed: model };
     }
 
     const rawResponse = result.rows[0].response;
@@ -134,10 +127,11 @@ export async function callAi(mode: AiMode, context: PromptContext): Promise<AiRe
       return {
         status: "error",
         message: `AI response was not valid (${rawResponse.length.toLocaleString()} chars received). The response may have been truncated.`,
+        modelUsed: model,
       };
     }
 
-    return { status: "success", mode, data: parsed } as AiResult;
+    return { status: "success", mode, data: parsed, modelUsed: model } as AiResult;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     const durationMs = Date.now() - t0;
@@ -155,117 +149,18 @@ export async function callAi(mode: AiMode, context: PromptContext): Promise<AiRe
     });
 
     if (msg.includes("timed out")) {
-      return { status: "error", message: msg };
-    }
-    if (msg.includes("RESOURCE_DOES_NOT_EXIST") || msg.includes("not found")) {
-      console.warn("[ai] returnType not supported, falling back to unstructured call");
-      return callAiUnstructured(mode, context);
+      return { status: "error", message: msg, modelUsed: model };
     }
     if (msg.includes("PERMISSION_DENIED") || msg.includes("permission")) {
       return {
         status: "error",
         message:
           "Insufficient permissions to call ai_query(). The service principal needs access to Foundation Model APIs.",
+        modelUsed: model,
       };
     }
 
-    return { status: "error", message: `AI query failed: ${msg}` };
-  }
-}
-
-/**
- * Fallback: call ai_query() without returnType for environments that don't support it.
- */
-async function callAiUnstructured(mode: AiMode, context: PromptContext): Promise<AiResult> {
-  const prompt = buildPrompt(mode, context);
-  const model = MODELS[mode];
-
-  const combinedPrompt = `${prompt.systemPrompt}\n\n${prompt.userPrompt}`;
-  const escapedPrompt = escapeForSql(combinedPrompt);
-
-  const sql = `
-    SELECT ai_query(
-      '${model}',
-      '${escapedPrompt}',
-      modelParameters => named_struct('max_tokens', 8192, 'temperature', 0.0)
-    ) AS response
-  `;
-
-  const version = prompt.promptVersion ?? "unknown";
-  const t0 = Date.now();
-
-  try {
-    const aiPromise = aiSemaphore.run(() => executeQuery<{ response: string }>(sql));
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`AI ${mode} call timed out after ${AI_TIMEOUT_MS / 1000}s`)),
-        AI_TIMEOUT_MS,
-      ),
-    );
-    const result = await Promise.race([aiPromise, timeoutPromise]);
-
-    const durationMs = Date.now() - t0;
-
-    if (!result.rows.length || !result.rows[0].response) {
-      writePromptLog({
-        timestamp: new Date().toISOString(),
-        promptKey: mode,
-        promptVersion: version,
-        model,
-        estimatedInputTokens: prompt.estimatedTokens,
-        outputChars: 0,
-        durationMs,
-        success: false,
-        errorMessage: "Empty response (unstructured fallback)",
-      });
-      return { status: "error", message: "AI returned an empty response" };
-    }
-
-    const rawResponse = result.rows[0].response;
-    const responseChars = rawResponse.length;
-    console.log(`[ai] ${mode} unstructured response: ${responseChars.toLocaleString()} chars`);
-
-    const parsed = parseAiJson(rawResponse, mode);
-
-    writePromptLog({
-      timestamp: new Date().toISOString(),
-      promptKey: mode,
-      promptVersion: version,
-      model,
-      estimatedInputTokens: prompt.estimatedTokens,
-      outputChars: responseChars,
-      durationMs,
-      success: !!parsed,
-      errorMessage: parsed ? undefined : "Failed to parse unstructured response",
-      renderedPrompt: combinedPrompt,
-      rawResponse,
-    });
-
-    if (!parsed) {
-      return {
-        status: "error",
-        message: `AI response was not valid JSON (${responseChars.toLocaleString()} chars received).`,
-      };
-    }
-
-    return { status: "success", mode, data: parsed } as AiResult;
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const durationMs = Date.now() - t0;
-
-    writePromptLog({
-      timestamp: new Date().toISOString(),
-      promptKey: mode,
-      promptVersion: version,
-      model,
-      estimatedInputTokens: prompt.estimatedTokens,
-      outputChars: 0,
-      durationMs,
-      success: false,
-      errorMessage: `Unstructured fallback failed: ${msg}`,
-    });
-
-    return { status: "error", message: `AI query failed: ${msg}` };
+    return { status: "error", message: `AI query failed: ${msg}`, modelUsed: model };
   }
 }
 
