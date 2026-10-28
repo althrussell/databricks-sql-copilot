@@ -9,8 +9,13 @@ import { executeQuery } from "@/lib/dbx/sql-client";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import type { ActionsContext } from "@/lib/queries/actions-data";
 import { buildActionsContext } from "@/lib/queries/actions-data";
+import {
+  buildAiQuerySql,
+  getMaxTokensForTask,
+  resolveModelForTask,
+  type AiModelSlug,
+} from "@/lib/ai/model-config";
 
-const MODEL = "databricks-claude-sonnet-4-5";
 const TIMEOUT_MS = 90_000;
 
 export interface ActionItem {
@@ -33,14 +38,12 @@ export interface ActionItem {
 export interface ActionsSummaryResult {
   items: ActionItem[];
   generatedAt: string;
-}
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
+  modelUsed?: string;
 }
 
 export async function generateActionsSummary(
   ctx: ActionsContext,
+  overrideModel?: AiModelSlug,
 ): Promise<
   { status: "success"; data: ActionsSummaryResult } | { status: "error"; message: string }
 > {
@@ -90,8 +93,12 @@ Hard rules — violating any of these makes the output useless:
 11. "effort" must be: quick-win (< 1 hour, run a command), medium (1-4 hours, code change or config), project (multi-day, architectural).
 12. Do NOT use markdown formatting inside JSON string values.`;
 
-  const escapedPrompt = escapeForSql(prompt);
-  const sql = `SELECT ai_query('${MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 8192, 'temperature', 0.0)) AS response`;
+  const model = resolveModelForTask("actions-summary", overrideModel);
+  const sql = buildAiQuerySql({
+    model,
+    prompt,
+    maxTokens: getMaxTokensForTask("actions-summary"),
+  });
 
   try {
     const result = await aiSemaphore.run(async () => {
@@ -113,7 +120,10 @@ Hard rules — violating any of these makes the output useless:
         message: `Could not parse AI response (${result.rows[0].response.length} chars)`,
       };
     }
-    return { status: "success", data: { items: parsed, generatedAt: new Date().toISOString() } };
+    return {
+      status: "success",
+      data: { items: parsed, generatedAt: new Date().toISOString(), modelUsed: model },
+    };
   } catch (err) {
     return {
       status: "error",

@@ -15,8 +15,13 @@ import type {
   JobRunPhaseStats,
 } from "@/lib/queries/jobs";
 import type { JobFlag } from "@/lib/domain/job-flags";
+import {
+  buildAiQuerySql,
+  getMaxTokensForTask,
+  resolveModelForTask,
+  type AiModelSlug,
+} from "@/lib/ai/model-config";
 
-const ANALYSIS_MODEL = "databricks-claude-sonnet-4-5";
 const ANALYSIS_TIMEOUT_MS = 90_000;
 
 export interface JobAnalysisResult {
@@ -33,10 +38,7 @@ export interface JobAnalysisResult {
     category: "cluster" | "code" | "scheduling" | "cost" | "reliability";
   }>;
   estimatedSavings: string | null;
-}
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
+  modelUsed?: string;
 }
 
 function formatDuration(s: number): string {
@@ -235,6 +237,7 @@ export async function analyseJob(
     avgQueueSeconds: 0,
     avgExecSeconds: 0,
   },
+  overrideModel?: AiModelSlug,
 ): Promise<{ status: "success"; data: JobAnalysisResult } | { status: "error"; message: string }> {
   const context = buildContext(stats, runs, flags, tasks, phase);
 
@@ -275,8 +278,12 @@ Hard rules:
 7. If job is healthy (>98% success, stable durations): say so and provide 1-2 proactive cost/efficiency tips.
 8. Do NOT include markdown in the JSON string values — no ** or # formatting.`;
 
-  const escapedPrompt = escapeForSql(prompt);
-  const sql = `SELECT ai_query('${ANALYSIS_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 8192, 'temperature', 0.0)) AS response`;
+  const model = resolveModelForTask("job-analysis", overrideModel);
+  const sql = buildAiQuerySql({
+    model,
+    prompt,
+    maxTokens: getMaxTokensForTask("job-analysis"),
+  });
 
   try {
     const result = await aiSemaphore.run(async () => {
@@ -301,7 +308,7 @@ Hard rules:
         message: `Could not parse AI response (${String(result.rows[0].response).length} chars) — try again`,
       };
     }
-    return { status: "success", data: parsed };
+    return { status: "success", data: { ...parsed, modelUsed: model } };
   } catch (err) {
     return {
       status: "error",

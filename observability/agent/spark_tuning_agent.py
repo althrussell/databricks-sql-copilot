@@ -33,7 +33,7 @@ from databricks.sdk import WorkspaceClient
 from unitycatalog.ai.core.databricks import DatabricksFunctionClient
 
 LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "databricks-claude-opus-5-5")
-MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "16384"))
+MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "125000"))
 CATALOG = os.getenv("UC_CATALOG", "main")
 SCHEMA = os.getenv("UC_SCHEMA", "unified_observability")
 
