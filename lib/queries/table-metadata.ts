@@ -481,6 +481,7 @@ export interface TableSummaryForTriage {
   partitionColumns: string[];
   isManaged: boolean;
   predictiveOptEnabled: boolean;
+  deletionVectorsEnabled?: boolean;
   format: string | null;
   sizeInBytes: number | null;
   numFiles: number | null;
@@ -507,12 +508,17 @@ async function fetchTableSummaryForTriage(
     detail.properties["delta.enablePredictiveOptimization"] === "true" ||
     detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
 
+  const hasDeletionVectors =
+    detail.properties["delta.enableDeletionVectors"] === "true" ||
+    detail.tableFeatures.some((f) => f.toLowerCase().includes("deletionvectors"));
+
   const summary: TableSummaryForTriage = {
     tableName,
     clusteringColumns: detail.clusteringColumns,
     partitionColumns: detail.partitionColumns,
     isManaged: detail.isManaged,
     predictiveOptEnabled: hasPredOpt,
+    deletionVectorsEnabled: hasDeletionVectors,
     format: detail.format,
     sizeInBytes: detail.sizeInBytes,
     numFiles: detail.numFiles,

@@ -156,7 +156,7 @@ export function evaluateDurationRegressionFlag(
     return {
       code: "DURATION_REGRESSION",
       label: "Duration Regression",
-      description: `p95 duration increased ${changePct.toFixed(0)}% vs prior period (${formatDuration(priorP95Seconds)} → ${formatDuration(job.p95DurationSeconds)}). Check for data volume growth, schema changes, or missing partitions.`,
+      description: `p95 duration increased ${changePct.toFixed(0)}% vs prior period (${formatDuration(priorP95Seconds)} → ${formatDuration(job.p95DurationSeconds)}). Check for data volume growth, skew, or missing Liquid Clustering (CLUSTER BY AUTO) and Predictive Optimization.`,
       severity: changePct > 100 ? "critical" : "warning",
     };
   }

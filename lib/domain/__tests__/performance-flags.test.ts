@@ -248,6 +248,75 @@ describe("computeFlags", () => {
     expect(coldFlag).toBeDefined();
     expect(coldFlag!.detail).toContain("Predictive Optimization");
   });
+
+  it("flags CaseInsensitiveFilterAntiPattern when LOWER() is used in WHERE", () => {
+    const c = makeCandidate({
+      sampleQueryText:
+        "SELECT * FROM catalog.schema.users WHERE LOWER(email) = 'alice@example.com'",
+    });
+    const flags = computeFlags(c);
+    const ciFlag = flags.find((f) => f.flag === "CaseInsensitiveFilterAntiPattern");
+    expect(ciFlag).toBeDefined();
+    expect(ciFlag!.detail).toContain("COLLATE UTF8_LCASE");
+  });
+
+  it("flags MissingDeletionVectors on MERGE queries against Delta tables without deletion vectors", () => {
+    const c = makeCandidate({
+      statementType: "MERGE",
+      sampleQueryText:
+        "MERGE INTO catalog.schema.orders t USING staging s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *",
+    });
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: ["order_date"],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: true,
+            deletionVectorsEnabled: false,
+            format: "delta",
+            sizeInBytes: 1e9,
+            numFiles: 50,
+          },
+        ],
+      ]),
+    };
+    const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
+    expect(flags.some((f) => f.flag === "MissingDeletionVectors")).toBe(true);
+  });
+
+  it("flags ClusterByAutoCandidate on unclustered managed tables with high scan bytes", () => {
+    const c = makeCandidate({
+      windowStats: {
+        ...makeCandidate().windowStats,
+        totalReadBytes: 200 * 1024 * 1024,
+      },
+    });
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            format: "delta",
+            sizeInBytes: 5e9,
+            numFiles: 200,
+          },
+        ],
+      ]),
+    };
+    const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
+    const autoFlag = flags.find((f) => f.flag === "ClusterByAutoCandidate");
+    expect(autoFlag).toBeDefined();
+    expect(autoFlag!.detail).toContain("CLUSTER BY AUTO");
+  });
 });
 
 describe("filterAndRankFlags", () => {

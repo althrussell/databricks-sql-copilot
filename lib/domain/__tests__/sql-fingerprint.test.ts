@@ -60,6 +60,24 @@ describe("normalizeSql", () => {
     const q2 = "SELECT * FROM orders WHERE user_id = 456 AND status = 'pending'";
     expect(normalizeSql(q1)).toBe(normalizeSql(q2));
   });
+
+  it("strips dbt block comments while preserving optimizer hints", () => {
+    const q1 =
+      '/* {"app": "dbt", "node_id": "model.a", "run_id": "1"} */ SELECT /*+ BROADCAST(d) */ * FROM orders JOIN d';
+    const q2 =
+      '/* {"app": "dbt", "node_id": "model.a", "run_id": "2"} */ SELECT /*+ BROADCAST(d) */ * FROM orders JOIN d';
+    expect(normalizeSql(q1)).toBe(normalizeSql(q2));
+    expect(normalizeSql(q1)).toContain("/*+ broadcast(d) */");
+  });
+
+  it("normalizes DBR 16.1+ SQL pipe syntax (|>)", () => {
+    const q1 =
+      "FROM catalog.schema.orders|>WHERE amount > 100|>AGGREGATE SUM(amount) GROUP BY region";
+    const q2 =
+      "FROM catalog.schema.orders   |>   WHERE amount > 500   |>   AGGREGATE SUM(amount) GROUP BY region";
+    expect(normalizeSql(q1)).toBe(normalizeSql(q2));
+    expect(normalizeSql(q1)).toContain(" |> where ");
+  });
 });
 
 describe("fingerprint", () => {

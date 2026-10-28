@@ -60,6 +60,17 @@ describe("scoreCandidate", () => {
     expect(spilly.breakdown.waste).toBeGreaterThan(clean.breakdown.waste);
   });
 
+  it("heavy shuffle without spill still contributes to waste score", () => {
+    const shuffly = scoreCandidate(
+      makeInput({
+        totalSpilledBytes: 0,
+        totalShuffleBytes: 800_000,
+        totalReadBytes: 1_000_000,
+      }),
+    );
+    expect(shuffly.breakdown.waste).toBeGreaterThan(0);
+  });
+
   it("high capacity wait produces high capacity score", () => {
     const waiting = scoreCandidate(makeInput({ avgWaitingAtCapacityMs: 30_000 }));
     const none = scoreCandidate(makeInput({ avgWaitingAtCapacityMs: 0 }));

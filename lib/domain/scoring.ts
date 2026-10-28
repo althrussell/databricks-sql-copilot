@@ -1,13 +1,13 @@
 /**
- * Candidate Scoring Model v1
+ * Candidate Scoring Model v2
  *
  * Produces an impact_score (0–100) with an explainable breakdown of 5 factors.
  * Each factor is scored 0–100, then weighted to produce the final score.
  *
  * Factors:
- *   runtime   — how slow is p95 relative to the window?
+ *   runtime   — how slow is p95 (with tail-skew amplification when p95 >> p50)?
  *   frequency — how often does this query run?
- *   waste     — how much spill/shuffle relative to reads?
+ *   waste     — how much spill and shuffle relative to reads?
  *   capacity  — how much time spent waiting at capacity?
  *   quickwin  — is it cacheable or nearly cached already?
  *
@@ -29,6 +29,8 @@ export interface ScoreInput {
   totalSpilledBytes: number;
   /** Total read bytes across all runs */
   totalReadBytes: number;
+  /** Optional: total shuffle read bytes across all runs */
+  totalShuffleBytes?: number;
   /** Average waiting-at-capacity duration (ms) */
   avgWaitingAtCapacityMs: number;
   /** Fraction of runs served from result cache (0–1) */
@@ -66,9 +68,9 @@ const WEIGHTS = {
  */
 export function scoreCandidate(input: ScoreInput): ScoreResult {
   const breakdown: ScoreBreakdown = {
-    runtime: scoreRuntime(input.p95Ms),
+    runtime: scoreRuntime(input.p95Ms, input.p50Ms),
     frequency: scoreFrequency(input.count),
-    waste: scoreWaste(input.totalSpilledBytes, input.totalReadBytes),
+    waste: scoreWaste(input.totalSpilledBytes, input.totalReadBytes, input.totalShuffleBytes ?? 0),
     capacity: scoreCapacity(input.avgWaitingAtCapacityMs),
     quickwin: scoreQuickWin(input.cacheHitRate),
   };
@@ -109,39 +111,42 @@ export function explainScore(breakdown: ScoreBreakdown): string[] {
 /* ── Factor scoring functions ── */
 
 /**
- * Runtime: p95 duration mapped to 0–100.
- * 0ms → 0, 1s → 20, 10s → 50, 60s → 80, 300s+ → 100
+ * Runtime: p95 duration mapped to 0–100, with up to +10 bonus if tail skew (p95/p50 > 3x).
+ * 0ms → 0, 1s → 14, 10s → 48, 60s → 82, 150s+ → 100
  */
-function scoreRuntime(p95Ms: number): number {
+function scoreRuntime(p95Ms: number, p50Ms = 0): number {
   if (p95Ms <= 0) return 0;
   const seconds = p95Ms / 1000;
-  // Log-based curve: score = 20 * ln(seconds + 1), capped at 100
-  return clamp(Math.round(20 * Math.log(seconds + 1)), 0, 100);
+  const base = Math.round(20 * Math.log(seconds + 1));
+  const skewRatio = p50Ms > 0 ? p95Ms / p50Ms : 1;
+  const skewBonus = skewRatio >= 3 ? Math.min(10, Math.round((skewRatio - 2) * 3)) : 0;
+  return clamp(base + skewBonus, 0, 100);
 }
 
 /**
  * Frequency: execution count mapped to 0–100.
- * 1 → 5, 10 → 30, 100 → 60, 1000+ → 90+
+ * 1 → 0, 10 → 46, 100 → 92, 150+ → 100
  */
 function scoreFrequency(count: number): number {
   if (count <= 0) return 0;
-  // Log-based: score = 20 * ln(count), capped at 100
   return clamp(Math.round(20 * Math.log(count)), 0, 100);
 }
 
 /**
- * Waste: spill ratio relative to reads.
- * 0% → 0, 10% → 30, 50% → 70, 100%+ → 100
+ * Waste: spill + weighted shuffle ratio relative to reads.
+ * Spill is weighted 1.0x; shuffle is weighted 0.25x so heavy shuffle without spill
+ * still registers as waste.
  */
-function scoreWaste(spilledBytes: number, readBytes: number): number {
-  if (readBytes <= 0 || spilledBytes <= 0) return 0;
-  const ratio = spilledBytes / readBytes;
+function scoreWaste(spilledBytes: number, readBytes: number, shuffleBytes = 0): number {
+  const effectiveWasteBytes = Math.max(0, spilledBytes) + Math.max(0, shuffleBytes) * 0.25;
+  if (readBytes <= 0 || effectiveWasteBytes <= 0) return 0;
+  const ratio = effectiveWasteBytes / readBytes;
   return clamp(Math.round(ratio * 100), 0, 100);
 }
 
 /**
  * Capacity: average waiting-at-capacity time.
- * 0ms → 0, 1s → 20, 5s → 50, 30s → 80, 60s+ → 100
+ * 0ms → 0, 1s → 14, 5s → 36, 30s → 69, 150s+ → 100
  */
 function scoreCapacity(avgWaitMs: number): number {
   if (avgWaitMs <= 0) return 0;

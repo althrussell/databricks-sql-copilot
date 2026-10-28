@@ -2,41 +2,50 @@
  * SQL Normalization + Fingerprinting
  *
  * Produces a stable "fingerprint" from SQL text by:
- * 1. Lowercasing
- * 2. Collapsing whitespace
- * 3. Masking string literals → '?'
- * 4. Masking numeric literals → ?
- * 5. Normalizing IN-lists → IN (?)
- * 6. Stripping trailing semicolons
+ * 1. Stripping SQL block comments (except optimizer hints `/*+ ... *\/`) and line comments
+ * 2. Masking string literals → '?'
+ * 3. Masking numeric literals → ?
+ * 4. Normalizing IN-lists → IN (?)
+ * 5. Normalizing DBR 16.1+ SQL pipe syntax (`|>`) spacing
+ * 6. Lowercasing & collapsing whitespace
+ * 7. Stripping trailing semicolons
  *
- * Two queries with the same fingerprint differ only in literal values,
+ * Two queries with the same fingerprint differ only in literal values or comments,
  * so they represent the "same logical query."
  */
 
-/** Normalize SQL text: collapse whitespace, mask literals, lowercase */
+/** Normalize SQL text: strip comments, collapse whitespace, mask literals, lowercase */
 export function normalizeSql(sql: string): string {
   let s = sql;
 
-  // 1. Replace string literals (single-quoted, including escaped quotes)
-  s = s.replace(/'(?:[^'\\]|\\.)*'/g, "'?'");
+  // 1. Strip non-hint block comments (e.g. dbt metadata JSON) while preserving /*+ BROADCAST(...) */ hints
+  s = s.replace(/\/\*(?!\+)[\s\S]*?\*\//g, " ");
 
-  // 2. Replace numeric literals (integers and decimals, not inside identifiers)
+  // 2. Strip single-line comments (-- ...) outside of string literals
+  //    First mask single-quoted string literals so -- inside strings isn't stripped
+  s = s.replace(/'(?:[^'\\]|\\.)*'/g, "'?'");
+  s = s.replace(/--[^\r\n]*/g, " ");
+
+  // 3. Replace numeric literals (integers and decimals, not inside identifiers)
   //    Negative look-behind for word chars to avoid mangling identifiers like "col1"
   s = s.replace(/(?<![a-zA-Z_])\b\d+(\.\d+)?\b/g, "?");
 
-  // 3. Collapse IN-lists with numeric ?: IN (?, ?, ?) → IN (?)
+  // 4. Collapse IN-lists with numeric ?: IN (?, ?, ?) → IN (?)
   s = s.replace(/\bIN\s*\(\s*\?\s*(?:,\s*\?\s*)*\)/gi, "IN (?)");
 
-  // 4. Collapse IN-lists with string '?': IN ('?', '?', '?') → IN (?)
+  // 5. Collapse IN-lists with string '?': IN ('?', '?', '?') → IN (?)
   s = s.replace(/\bIN\s*\(\s*'\?'\s*(?:,\s*'\?'\s*)*\)/gi, "IN (?)");
 
-  // 5. Lowercase
+  // 6. Normalize SQL pipe operator (DBR 16.1+) spacing: `|>` → ` |> `
+  s = s.replace(/\s*\|>\s*/g, " |> ");
+
+  // 7. Lowercase
   s = s.toLowerCase();
 
-  // 6. Strip trailing semicolons
+  // 8. Strip trailing semicolons
   s = s.replace(/;\s*$/, "");
 
-  // 7. Collapse whitespace (must be last to catch leftovers)
+  // 9. Collapse whitespace (must be last to catch leftovers)
   s = s.replace(/\s+/g, " ").trim();
 
   return s;
@@ -46,7 +55,7 @@ export function normalizeSql(sql: string): string {
  * Generate a stable fingerprint hash from normalized SQL.
  *
  * Uses a fast non-cryptographic hash (djb2) — good enough for grouping.
- * Returns a hex string.
+ * Returns a 16-char hex string.
  */
 export function fingerprint(sql: string): string {
   const normalized = normalizeSql(sql);

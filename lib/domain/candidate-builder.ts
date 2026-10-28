@@ -192,6 +192,7 @@ export function buildCandidates(
       totalDurationMs,
       totalSpilledBytes,
       totalReadBytes,
+      totalShuffleBytes,
       avgWaitingAtCapacityMs,
       cacheHitRate,
     };

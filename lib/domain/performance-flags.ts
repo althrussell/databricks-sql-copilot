@@ -28,7 +28,10 @@ export type PerformanceFlag =
   | "HighQueueRatio"
   | "ColdQuery"
   | "CompilationHeavy"
-  | "MaterializedViewCandidate";
+  | "MaterializedViewCandidate"
+  | "MissingDeletionVectors"
+  | "CaseInsensitiveFilterAntiPattern"
+  | "ClusterByAutoCandidate";
 
 export interface FlagThresholds {
   longRunningMs: number; // p95 above this
@@ -87,6 +90,8 @@ export interface FlagTableContext {
 }
 
 const AGG_PATTERN = /\b(GROUP\s+BY|SUM\s*\(|COUNT\s*\(|AVG\s*\(|MIN\s*\(|MAX\s*\()\b/i;
+const CASE_INSENSITIVE_FILTER_PATTERN =
+  /\bWHERE\b[\s\S]*?\b(?:LOWER|UPPER)\s*\(\s*[a-zA-Z_][a-zA-Z0-9_.]*\s*\)\s*(?:=|LIKE|IN)/i;
 
 /**
  * Compute performance flags for a candidate, with estimated impact percentages.
@@ -271,7 +276,7 @@ export function computeFlags(
     let joinDetail = `Produces ${ratio}x more rows than read (${ws.totalProducedRows.toLocaleString()} produced vs ${ws.totalReadRows.toLocaleString()} read) — likely cross join or many-to-many`;
 
     // Add PK/FK recommendation for join issues
-    joinDetail += `. Check PK/FK constraints on join keys — add them if missing for optimizer hints`;
+    joinDetail += `. Check PK/FK constraints with RELY (PRIMARY KEY ... RELY) and run ANALYZE TABLE for optimizer join hints`;
 
     flags.push({
       flag: "ExplodingJoin",
@@ -297,7 +302,7 @@ export function computeFlags(
     let filterDetail = `Reads ${ratio}x more rows than produced (${ws.totalReadRows.toLocaleString()} read → ${ws.totalProducedRows.toLocaleString()} produced) — filter before join could reduce work`;
 
     // Add PK/FK recommendation
-    filterDetail += `. Define PK/FK constraints on join keys for join elimination and predicate pushdown`;
+    filterDetail += `. Define PK/FK constraints with RELY on join keys for join elimination and predicate pushdown`;
 
     flags.push({
       flag: "FilteringJoin",
@@ -386,6 +391,55 @@ export function computeFlags(
       detail: `${ws.count} executions with ${(ws.cacheHitRate * 100).toFixed(0)}% cache hit rate on an aggregation query. CREATE MATERIALIZED VIEW would precompute results and auto-refresh on data changes`,
       estimatedImpactPct: Math.round((1 - ws.cacheHitRate) * 70),
     });
+  }
+
+  // CaseInsensitiveFilterAntiPattern: LOWER(col) or UPPER(col) in WHERE clause prevents Delta data skipping
+  if (CASE_INSENSITIVE_FILTER_PATTERN.test(candidate.sampleQueryText)) {
+    flags.push({
+      flag: "CaseInsensitiveFilterAntiPattern",
+      label: "LOWER/UPPER Filter",
+      severity: "warning",
+      detail: `Wrapping filter columns in LOWER()/UPPER() disables Delta data skipping. Recommend altering the column to use COLLATE UTF8_LCASE (DBR 16.1+)`,
+      estimatedImpactPct: 20,
+    });
+  }
+
+  // MissingDeletionVectors: DML (MERGE/UPDATE/DELETE) on tables without deletion vectors enabled
+  if (
+    ["MERGE", "UPDATE", "DELETE"].includes(candidate.statementType.toUpperCase()) &&
+    tables &&
+    tables.size > 0
+  ) {
+    const missingDvTables = [...tables.values()].filter(
+      (t) => t.format?.toLowerCase() === "delta" && t.deletionVectorsEnabled === false,
+    );
+    if (missingDvTables.length > 0) {
+      const names = missingDvTables.map((t) => t.tableName).join(", ");
+      flags.push({
+        flag: "MissingDeletionVectors",
+        label: "No Deletion Vectors",
+        severity: "warning",
+        detail: `${candidate.statementType} on ${names} without Deletion Vectors rewrites entire Parquet files. Run ALTER TABLE ... SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')`,
+        estimatedImpactPct: 35,
+      });
+    }
+  }
+
+  // ClusterByAutoCandidate: unclustered managed Delta tables scanned heavily
+  if (tables && tables.size > 0 && ws.totalReadBytes > 50 * 1024 * 1024) {
+    const unclusteredManaged = [...tables.values()].filter(
+      (t) => t.isManaged && t.clusteringColumns.length === 0 && t.partitionColumns.length === 0,
+    );
+    if (unclusteredManaged.length > 0) {
+      const names = unclusteredManaged.map((t) => t.tableName).join(", ");
+      flags.push({
+        flag: "ClusterByAutoCandidate",
+        label: "Unclustered Table",
+        severity: "warning",
+        detail: `Managed table(s) ${names} have no Liquid Clustering keys. Run ALTER TABLE ... CLUSTER BY AUTO to enable automatic workload-driven clustering`,
+        estimatedImpactPct: 30,
+      });
+    }
   }
 
   return flags;
