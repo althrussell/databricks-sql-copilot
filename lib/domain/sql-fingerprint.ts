@@ -1,7 +1,9 @@
+import { createHash } from "crypto";
+
 /**
  * SQL Normalization + Fingerprinting
  *
- * Produces a stable "fingerprint" from SQL text by:
+ * Produces a stable 16-char hex "fingerprint" from SQL text by:
  * 1. Stripping SQL block comments (except optimizer hints `/*+ ... *\/`) and line comments
  * 2. Masking string literals → '?'
  * 3. Masking numeric literals → ?
@@ -9,9 +11,11 @@
  * 5. Normalizing DBR 16.1+ SQL pipe syntax (`|>`) spacing
  * 6. Lowercasing & collapsing whitespace
  * 7. Stripping trailing semicolons
+ * 8. Hashing via `SUBSTRING(SHA2(normalized, 256), 1, 16)` — identical in TypeScript
+ *    and Databricks SQL (`SUBSTRING(sha2(..., 256), 1, 16)`).
  *
  * Two queries with the same fingerprint differ only in literal values or comments,
- * so they represent the "same logical query."
+ * so they represent the "same logical query" across both the app and SQL tables.
  */
 
 /** Normalize SQL text: strip comments, collapse whitespace, mask literals, lowercase */
@@ -52,31 +56,12 @@ export function normalizeSql(sql: string): string {
 }
 
 /**
- * Generate a stable fingerprint hash from normalized SQL.
+ * Generate a stable 16-char hex fingerprint hash from normalized SQL.
  *
- * Uses a fast non-cryptographic hash (djb2) — good enough for grouping.
- * Returns a 16-char hex string.
+ * Uses the first 16 hex characters of SHA-256 so that Databricks SQL
+ * (`SUBSTRING(sha2(normalized_sql, 256), 1, 16)`) produces the exact same hash.
  */
 export function fingerprint(sql: string): string {
   const normalized = normalizeSql(sql);
-  return djb2Hash(normalized);
-}
-
-/**
- * djb2 hash — fast, deterministic, no crypto dependency.
- * Returns 16-char hex string (two 32-bit hashes for lower collision rate).
- */
-function djb2Hash(str: string): string {
-  let h1 = 5381;
-  let h2 = 52711;
-
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i);
-    h1 = ((h1 << 5) + h1 + ch) | 0; // h1 * 33 + ch
-    h2 = ((h2 << 5) + h2 + ch) | 0;
-  }
-
-  const hex1 = (h1 >>> 0).toString(16).padStart(8, "0");
-  const hex2 = (h2 >>> 0).toString(16).padStart(8, "0");
-  return hex1 + hex2;
+  return createHash("sha256").update(normalized, "utf8").digest("hex").slice(0, 16);
 }
