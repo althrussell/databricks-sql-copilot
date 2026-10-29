@@ -91,8 +91,10 @@ export interface FlagTableContext {
 }
 
 const AGG_PATTERN = /\b(GROUP\s+BY|SUM\s*\(|COUNT\s*\(|AVG\s*\(|MIN\s*\(|MAX\s*\()\b/i;
+// LOWER/UPPER(col) compared inside one WHERE clause (outer or nested): the text after WHERE
+// may not cross a keyword or pipe operator that starts another clause or query block.
 const CASE_INSENSITIVE_FILTER_PATTERN =
-  /\bWHERE\b[\s\S]*?\b(?:LOWER|UPPER)\s*\(\s*[a-zA-Z_][a-zA-Z0-9_.]*\s*\)\s*(?:=|LIKE|IN)/i;
+  /\bWHERE\b(?:(?!\b(?:SELECT|(?:GROUP|ORDER|CLUSTER|DISTRIBUTE|SORT)\s+BY|HAVING|QUALIFY|WINDOW|LIMIT|UNION|INTERSECT|EXCEPT|MINUS)\b|\|>)[\s\S])*?\b(?:LOWER|UPPER)\s*\(\s*[a-zA-Z_][a-zA-Z0-9_.]*\s*\)\s*(?:=|LIKE|IN)/i;
 
 /**
  * Compute performance flags for a candidate, with estimated impact percentages.

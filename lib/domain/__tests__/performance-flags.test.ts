@@ -262,6 +262,23 @@ describe("computeFlags", () => {
     expect(ciFlag!.detail).toContain("COLLATE UTF8_LCASE");
   });
 
+  it.each([
+    "SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE LOWER(email) = 'a@b.c')",
+    "FROM catalog.schema.users |> WHERE UPPER(country) IN ('US', 'CA')",
+  ])("flags LOWER/UPPER comparisons in any WHERE clause: %s", (sql) => {
+    const flags = computeFlags(makeCandidate({ sampleQueryText: sql }));
+    expect(flags.some((f) => f.flag === "CaseInsensitiveFilterAntiPattern")).toBe(true);
+  });
+
+  it.each([
+    "SELECT a FROM t WHERE id > 5 UNION ALL SELECT CASE WHEN LOWER(name) = 'x' THEN 1 END FROM u",
+    "SELECT LOWER(name) AS n, COUNT(*) FROM t WHERE id > 5 GROUP BY LOWER(name) HAVING LOWER(name) = 'x'",
+    "FROM t |> WHERE id > 5 |> EXTEND LOWER(name) = 'x' AS is_x",
+  ])("ignores LOWER/UPPER comparisons outside WHERE clauses: %s", (sql) => {
+    const flags = computeFlags(makeCandidate({ sampleQueryText: sql }));
+    expect(flags.some((f) => f.flag === "CaseInsensitiveFilterAntiPattern")).toBe(false);
+  });
+
   it("flags MissingDeletionVectors on MERGE queries against Delta tables without deletion vectors", () => {
     const c = makeCandidate({
       statementType: "MERGE",
