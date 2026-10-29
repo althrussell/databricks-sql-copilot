@@ -75,7 +75,17 @@ export function mapApiQueryToTimeline(
   // Queue timestamps
   const startMs = q.query_start_time_ms;
   const endMs =
-    q.query_end_time_ms ?? q.execution_end_time_ms ?? startMs + (metrics.total_time_ms ?? 0);
+    q.query_end_time_ms ??
+    q.execution_end_time_ms ??
+    (status === "QUEUED"
+      ? Math.max(startMs + (metrics.total_time_ms ?? 0), nowMs)
+      : startMs + (metrics.total_time_ms ?? 0));
+
+  const isUncompiledTerminal =
+    (status === "CANCELED" || status === "FAILED") &&
+    !metrics.query_compilation_start_timestamp &&
+    !metrics.compilation_time_ms &&
+    !metrics.execution_time_ms;
 
   let queuedStartTimeMs: number | null = null;
   let queuedEndTimeMs: number | null = null;
@@ -84,14 +94,21 @@ export function mapApiQueryToTimeline(
       metrics.overloading_queue_start_timestamp ?? Infinity,
       metrics.provisioning_queue_start_timestamp ?? Infinity,
     );
-    // Queue time ends when compilation starts. A query cancelled or failed while queued never
-    // compiles, so its wait runs until it ended, or until now while it is still queued.
-    queuedEndTimeMs =
-      metrics.query_compilation_start_timestamp ?? (status === "QUEUED" ? nowMs : endMs);
+    // Queue time ends when compilation starts. Only when a query is still QUEUED or
+    // terminated (CANCELED/FAILED) before compilation/execution began does its queue
+    // wait run until endMs; otherwise fall back to queuedStartTimeMs so compile/execute
+    // time is never counted as queue wait and queuedEndTimeMs is never < queuedStartTimeMs.
+    const rawQueueEndMs =
+      metrics.query_compilation_start_timestamp ??
+      (status === "QUEUED" || isUncompiledTerminal ? endMs : queuedStartTimeMs);
+    queuedEndTimeMs = Math.max(rawQueueEndMs, queuedStartTimeMs);
   }
 
   // Duration
-  const durationMs = metrics.total_time_ms ?? endMs - startMs;
+  const durationMs =
+    status === "QUEUED"
+      ? Math.max(metrics.total_time_ms ?? 0, endMs - startMs)
+      : (metrics.total_time_ms ?? endMs - startMs);
 
   // Queue wait
   const queueWaitMs =
