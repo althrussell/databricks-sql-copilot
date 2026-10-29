@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["@databricks/sql", "@prisma/client", "pg"],
+  serverExternalPackages: ["@databricks/sql", "lz4-napi", "@prisma/client", "pg"],
   images: {
     // Only /databricks-icon.svg is rendered via next/image; skip sharp at runtime
     unoptimized: true,

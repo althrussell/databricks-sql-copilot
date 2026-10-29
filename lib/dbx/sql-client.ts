@@ -44,7 +44,8 @@ const DEFAULT_MAX_ROWS = 10_000;
  */
 const HAS_LZ4_SUPPORT = (() => {
   try {
-    createRequire(import.meta.url)("lz4-napi");
+    const lz4Pkg = ["lz4", "napi"].join("-");
+    createRequire(import.meta.url)(lz4Pkg);
     return true;
   } catch {
     return false;
