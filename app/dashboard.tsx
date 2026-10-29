@@ -807,6 +807,16 @@ export function Dashboard({
       }
       if (body.persisted === false) {
         notifyWarning("Action cleared", SESSION_ONLY_NOTICE);
+      } else if (body.visibleAction) {
+        const { action, note, actedBy, actedAt } = body.visibleAction as QueryActionEntry;
+        setQueryActions((prev) => ({
+          ...prev,
+          [fingerprint]: { action, note, actedBy, actedAt },
+        }));
+        notifyWarning(
+          "Your action was cleared",
+          "A shared workspace action still applies to this query. Clear it again to remove it for everyone.",
+        );
       } else {
         notifySuccess("Action cleared");
       }
@@ -1018,6 +1028,7 @@ export function Dashboard({
   // ── Observability Freshness SLO Health ──
   const [obsHealth, setObsHealth] = useState<{
     status: "healthy" | "degraded";
+    reason?: string;
     freshnessStatus?: string;
     breaches?: string[];
     ageMinutes?: { sql: number | null; spark: number | null; photon: number | null };
@@ -1025,10 +1036,11 @@ export function Dashboard({
 
   useEffect(() => {
     let active = true;
+    // Degraded health arrives as 5xx; "not_configured" (views not deployed) hides the badge.
     fetch("/api/observability-health")
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => res.json())
       .then((data) => {
-        if (active && data && data.status) {
+        if (active && (data?.status === "healthy" || data?.status === "degraded")) {
           setObsHealth(data);
         }
       })
@@ -1475,7 +1487,9 @@ export function Dashboard({
                   <TooltipContent side="bottom" className="max-w-xs text-xs">
                     {obsHealth.status === "healthy"
                       ? "Unified observability ingestion (SQL, Spark, Photon) is within freshness SLOs."
-                      : `Freshness SLO breach: ${(obsHealth.breaches ?? []).join(", ") || "scorecard degraded"}`}
+                      : obsHealth.breaches?.length
+                        ? `Freshness SLO breach: ${obsHealth.breaches.join(", ")}`
+                        : `Observability scorecard unavailable${obsHealth.reason ? `: ${obsHealth.reason.slice(0, 200)}` : ""}`}
                   </TooltipContent>
                 </Tooltip>
               )}

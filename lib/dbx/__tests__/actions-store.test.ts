@@ -5,16 +5,23 @@ const mocks = vi.hoisted(() => ({
   oboEmail: "Alice@Example.com" as string | null,
   queryAction: {
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     upsert: vi.fn(),
     deleteMany: vi.fn(),
   },
 }));
 
-vi.mock("../prisma", () => ({
-  isLakebaseEnabled: () => mocks.lakebaseEnabled,
-  withPrisma: (fn: (p: { queryAction: typeof mocks.queryAction }) => unknown) =>
-    fn({ queryAction: mocks.queryAction }),
-}));
+vi.mock("../prisma", () => {
+  type Client = { queryAction: typeof mocks.queryAction };
+  const client = {
+    queryAction: mocks.queryAction,
+    $transaction: (fn: (tx: Client) => unknown) => fn({ queryAction: mocks.queryAction }),
+  };
+  return {
+    isLakebaseEnabled: () => mocks.lakebaseEnabled,
+    withPrisma: (fn: (p: typeof client) => unknown) => fn(client),
+  };
+});
 
 vi.mock("../obo", () => ({
   getOboUserEmail: async () => mocks.oboEmail,
@@ -32,6 +39,7 @@ describe("actions-store", () => {
     mocks.lakebaseEnabled = true;
     mocks.oboEmail = "Alice@Example.com";
     mocks.queryAction.findMany.mockReset();
+    mocks.queryAction.findFirst.mockReset();
     mocks.queryAction.upsert.mockReset();
     mocks.queryAction.deleteMany.mockReset();
   });
@@ -56,11 +64,44 @@ describe("actions-store", () => {
     expect(mocks.queryAction.upsert.mock.calls[0][0].create.actedBy).toBeNull();
   });
 
-  it("clears both the user's row and the shared workspace row", async () => {
-    await removeQueryAction("fp1");
+  it("clears only the user's own action and returns the shared action still in effect", async () => {
+    const t = new Date("2026-10-28T00:00:00Z");
+    mocks.queryAction.deleteMany.mockResolvedValue({ count: 1 });
+    mocks.queryAction.findFirst.mockResolvedValue({
+      fingerprint: "fp1",
+      userId: WORKSPACE_SCOPE,
+      action: "dismiss",
+      note: null,
+      actedBy: null,
+      actedAt: t,
+      updatedAt: t,
+    });
 
-    expect(mocks.queryAction.deleteMany).toHaveBeenCalledWith({
-      where: { fingerprint: "fp1", userId: { in: ["alice@example.com", WORKSPACE_SCOPE] } },
+    const result = await removeQueryAction("fp1");
+
+    expect(mocks.queryAction.deleteMany).toHaveBeenCalledOnce();
+    expect(mocks.queryAction.deleteMany.mock.calls[0][0].where).toMatchObject({
+      fingerprint: "fp1",
+      userId: "alice@example.com",
+    });
+    expect(result.visibleAction).toMatchObject({ action: "dismiss", userId: WORKSPACE_SCOPE });
+  });
+
+  it("clears the shared action when that is the one the user sees", async () => {
+    mocks.queryAction.deleteMany
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValue({ count: 1 });
+
+    const result = await removeQueryAction("fp1");
+
+    expect(mocks.queryAction.deleteMany).toHaveBeenLastCalledWith({
+      where: { fingerprint: "fp1", userId: WORKSPACE_SCOPE },
+    });
+    expect(mocks.queryAction.findFirst).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      persisted: true,
+      userId: "alice@example.com",
+      visibleAction: null,
     });
   });
 

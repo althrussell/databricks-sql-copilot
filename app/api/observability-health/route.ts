@@ -8,6 +8,9 @@ import {
 
 export const dynamic = "force-dynamic";
 
+/** The unified observability views are optional (scripts/deploy.sh --init-observability) */
+const NOT_DEPLOYED_ERRORS = ["TABLE_OR_VIEW_NOT_FOUND", "SCHEMA_NOT_FOUND", "CATALOG_NOT_FOUND"];
+
 function ageMinutes(iso: string | null): number | null {
   if (!iso) return null;
   const ts = Date.parse(iso);
@@ -64,6 +67,9 @@ export async function GET(): Promise<NextResponse> {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    if (NOT_DEPLOYED_ERRORS.some((code) => message.includes(code))) {
+      return NextResponse.json({ status: "not_configured", reason: message }, { status: 404 });
+    }
     return NextResponse.json({ status: "degraded", reason: message }, { status: 500 });
   }
 }

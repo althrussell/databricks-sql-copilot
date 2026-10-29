@@ -68,8 +68,10 @@ function candidateSummary(c: Candidate): string {
 
   const rowRatio =
     ws.totalReadRows > 0 ? (ws.totalProducedRows / ws.totalReadRows).toFixed(1) : "n/a";
-  const queuePct =
-    ws.avgExecutionMs > 0 ? Math.round((ws.avgQueueWaitMs / ws.avgExecutionMs) * 100) : 0;
+  const queueShare =
+    ws.avgExecutionMs > 0
+      ? `${Math.round((ws.avgQueueWaitMs / ws.avgExecutionMs) * 100)}% of exec time`
+      : "no execution recorded";
 
   return [
     `ID: ${c.fingerprint}`,
@@ -79,7 +81,7 @@ function candidateSummary(c: Candidate): string {
     `Read: ${fmtBytes(ws.totalReadBytes)} (${ws.totalReadRows.toLocaleString()} rows), produced: ${ws.totalProducedRows.toLocaleString()} rows (ratio: ${rowRatio}x)`,
     `Spill: ${fmtBytes(ws.totalSpilledBytes)}, prune: ${Math.round(ws.avgPruningEfficiency * 100)}%`,
     `Cache: IO ${Math.round(ws.avgIoCachePercent)}%, result ${Math.round(ws.cacheHitRate * 100)}%`,
-    `Queue: ${fmtMs(ws.avgQueueWaitMs)} avg (${queuePct}% of exec time)`,
+    `Queue: ${fmtMs(ws.avgQueueWaitMs)} avg (${queueShare})`,
     `App: ${c.clientApplication}`,
     flags ? `Flags: ${flags}` : "",
   ]
