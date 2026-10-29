@@ -57,7 +57,7 @@ See [STYLE_GUIDE.md](STYLE_GUIDE.md) for the full guide. Key points:
 
 - **TypeScript strict** — no `any` without justification.
 - **Next.js App Router** patterns for pages and server actions.
-- **shadcn/ui** for all UI components.
+- **shadcn/ui** for all UI components. Add new components on demand with `npx shadcn@latest add <component>` (`components.json` configures the generator; the theme stylesheet is vendored in `app/shadcn-tailwind.css`).
 - Keep SQL queries in `/lib/queries/` — one file per query domain, named and versioned.
 - Use the shared data client at `/lib/dbx/sql-client.ts` for all Databricks SQL access.
 - PII redaction is on by default — never log raw SQL text unless explicitly enabled.
