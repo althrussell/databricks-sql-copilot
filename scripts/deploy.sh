@@ -246,13 +246,10 @@ if echo "$BIND_RESP" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
-    resources = d.get('resources', [])
-    for r in resources:
-        if r.get('name') == 'sql-warehouse':
-            sys.exit(0)
+except ValueError:
     sys.exit(1)
-except:
-    sys.exit(1)
+bound = isinstance(d, dict) and any(r.get('name') == 'sql-warehouse' for r in d.get('resources', []))
+sys.exit(0 if bound else 1)
 " 2>/dev/null; then
   RESOURCE_BOUND=true
   echo "  ✓ SQL warehouse bound as resource (valueFrom: sql-warehouse)"
@@ -371,22 +368,27 @@ fi
 
 echo ""
 echo "Post-deploy checklist:"
+STEP=0
+step() {
+  STEP=$((STEP + 1))
+  echo "  $STEP. $1"
+}
 if ! $RESOURCE_BOUND; then
-  echo "  1. Bind SQL warehouse in the app UI: App → Resources → Add SQL Warehouse → select '$WAREHOUSE_ID' with 'Can use'"
+  step "Bind SQL warehouse in the app UI: App → Resources → Add SQL Warehouse → select '$WAREHOUSE_ID' with 'Can use'"
   echo "     (or grant SP '$DEPLOYED_SP_ID' CAN_USE on warehouse '$WAREHOUSE_ID' manually)"
 fi
 if [[ -n "$GENIE_SPACE_ID" ]]; then
-  echo "  2. Verify SP '$DEPLOYED_SP_ID' has CAN_RUN on Genie space '$GENIE_SPACE_ID'"
+  step "Verify SP '$DEPLOYED_SP_ID' has CAN_RUN on Genie space '$GENIE_SPACE_ID'"
 fi
 if [[ "$AUTH_MODE" == "obo" ]]; then
-  echo "  3. Verify OBO scopes include 'dashboards.genie' in the app settings UI"
+  step "Verify OBO scopes include 'dashboards.genie' in the app settings UI"
 fi
 if $INIT_OBSERVABILITY; then
-  echo "  4. Run the notebook $WORKSPACE_PATH/observability/deploy/deploy_uc_functions on a cluster"
+  step "Run the notebook $WORKSPACE_PATH/observability/deploy/deploy_uc_functions on a cluster"
   echo "     with the 'shscreds' secret scope to create the Spark tuning agent UC functions"
 fi
-if $RESOURCE_BOUND; then
-  echo "  ✓ No manual steps needed — warehouse is bound as a resource"
+if [[ $STEP -eq 0 ]]; then
+  echo "  ✓ No manual steps needed"
 fi
 echo ""
 echo "Done!"
