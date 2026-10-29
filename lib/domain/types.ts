@@ -140,6 +140,8 @@ export interface PerformanceFlagInfo {
 /** Aggregated candidate (Sprint 1+) */
 export interface Candidate {
   fingerprint: string;
+  /** Pre-SHA-256 fingerprints of this pattern's runs, used to re-key persisted Lakebase rows */
+  legacyFingerprints?: string[];
   sampleStatementId: string;
   sampleStartedAt: string; // ISO timestamp of the sample query
   sampleQueryText: string;

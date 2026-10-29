@@ -76,6 +76,8 @@ interface MonitorQuerySlim {
   statementType: string;
   durationMs: number;
   executionTimeMs?: number;
+  compilationTimeMs?: number;
+  fetchTimeMs?: number;
   bytesScanned: number;
   spillBytes: number;
   cacheHitPercent: number;
@@ -100,7 +102,9 @@ export async function fetchMonitorInsights(
     queryText: q.queryText,
     statementType: q.statementType,
     durationMs: q.durationMs,
-    executionTimeMs: q.executionTimeMs ?? Math.max(0, q.durationMs - (q.queueWaitMs ?? 0)),
+    executionTimeMs: q.executionTimeMs ?? 0,
+    compilationTimeMs: q.compilationTimeMs ?? 0,
+    fetchTimeMs: q.fetchTimeMs ?? 0,
     bytesScanned: q.bytesScanned,
     spillBytes: q.spillBytes,
     cacheHitPercent: q.cacheHitPercent,
@@ -117,8 +121,6 @@ export async function fetchMonitorInsights(
     source: "",
     sourceName: "",
     filesRead: 0,
-    compilationTimeMs: 0,
-    fetchTimeMs: 0,
   }));
 
   // Get fingerprint → insight map from the AI model

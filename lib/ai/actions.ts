@@ -64,7 +64,15 @@ export async function rewriteQuery(
   // Check Lakebase cache first when running on the default rewrite model (unless force refresh)
   if (!forceRefresh && isDefaultModel) {
     try {
-      const cached = await getCachedRewrite(candidate.fingerprint);
+      let cached = await getCachedRewrite(candidate.fingerprint);
+      // Lazily re-key rewrites cached under pre-SHA-256 fingerprints
+      for (const legacy of candidate.legacyFingerprints ?? []) {
+        if (cached) break;
+        cached = await getCachedRewrite(legacy);
+        if (cached && cached.modelUsed === targetModel) {
+          await cacheRewrite(candidate.fingerprint, cached);
+        }
+      }
       if (cached && cached.modelUsed === targetModel) {
         console.log(
           `[ai-actions] rewrite: cache hit for ${candidate.fingerprint} (${targetModel})`,
