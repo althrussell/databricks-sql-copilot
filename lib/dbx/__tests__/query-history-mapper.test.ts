@@ -95,7 +95,7 @@ describe("mapApiQueryToTimeline queue wait", () => {
         query_start_time_ms: 1_000,
         query_end_time_ms: 10_000,
         metrics: {
-          provisioning_queue_start_timestamp: 1_000,
+          provisioning_queue_start_timestamp: 1_500,
           compilation_time_ms: 500,
           execution_time_ms: 6_000,
           total_time_ms: 9_000,
@@ -103,6 +103,8 @@ describe("mapApiQueryToTimeline queue wait", () => {
       }),
     );
 
+    expect(canceledAfterExec.queuedStartTimeMs).toBe(1_500);
+    expect(canceledAfterExec.queuedEndTimeMs).toBe(1_500);
     expect(canceledAfterExec.queueWaitMs).toBe(0);
   });
 

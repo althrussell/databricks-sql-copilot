@@ -96,11 +96,12 @@ export function mapApiQueryToTimeline(
     );
     // Queue time ends when compilation starts. Only when a query is still QUEUED or
     // terminated (CANCELED/FAILED) before compilation/execution began does its queue
-    // wait run until endMs; active RUNNING/COMPILING queries without a compilation
-    // timestamp fall back to startMs so compile/execute time is never counted as queue wait.
-    queuedEndTimeMs =
+    // wait run until endMs; otherwise fall back to queuedStartTimeMs so compile/execute
+    // time is never counted as queue wait and queuedEndTimeMs is never < queuedStartTimeMs.
+    const rawQueueEndMs =
       metrics.query_compilation_start_timestamp ??
-      (status === "QUEUED" || isUncompiledTerminal ? endMs : startMs);
+      (status === "QUEUED" || isUncompiledTerminal ? endMs : queuedStartTimeMs);
+    queuedEndTimeMs = Math.max(rawQueueEndMs, queuedStartTimeMs);
   }
 
   // Duration

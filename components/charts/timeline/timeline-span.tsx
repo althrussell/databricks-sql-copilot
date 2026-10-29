@@ -70,8 +70,9 @@ export function TimelineSpan({
       aria-label={`Query ${query.id}: ${query.status}, ${query.durationMs}ms`}
     >
       {/* Show a queued segment if there's queue time */}
-      {query.queuedStartTimeMs &&
-        query.queuedEndTimeMs &&
+      {query.queuedStartTimeMs != null &&
+        query.queuedEndTimeMs != null &&
+        query.queuedEndTimeMs > query.queuedStartTimeMs &&
         query.endTimeMs > query.startTimeMs &&
         widthPercent > 2 && (
           <div
