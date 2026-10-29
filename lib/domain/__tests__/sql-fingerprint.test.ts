@@ -71,6 +71,38 @@ describe("normalizeSql", () => {
     expect(normalizeSql(q1)).toContain("/*+ broadcast(d) */");
   });
 
+  it("treats comment markers inside string literals as text", () => {
+    const glob = "SELECT * FROM read_files('/Volumes/raw/*.json') WHERE region = 'EU' /* tag */";
+    expect(normalizeSql(glob)).toBe("select * from read_files('?') where region = '?'");
+    expect(normalizeSql("SELECT a FROM t WHERE note = '--x' AND id = 1")).toBe(
+      "select a from t where note = '?' and id = ?",
+    );
+  });
+
+  it("treats quotes inside comments as comment text", () => {
+    expect(normalizeSql("SELECT a -- don't\nFROM t WHERE c = 'x'")).toBe(
+      "select a from t where c = '?'",
+    );
+    expect(normalizeSql("/* it's dbt */ SELECT 1")).toBe("select ?");
+  });
+
+  it("keeps tokens separated where an inline comment is removed", () => {
+    expect(normalizeSql("SELECT a/* note */FROM t")).toBe("select a from t");
+  });
+
+  it("matches Databricks regex semantics for non-ASCII whitespace and letters", () => {
+    // Java's \s is ASCII-only and SQL TRIM() strips only spaces
+    expect(normalizeSql("\u00a0SELECT\u00a0a  FROM t ;")).toBe("\u00a0select\u00a0a from t");
+    // Word boundaries are ASCII, so digits after é are masked as in Databricks SQL
+    expect(normalizeSql("SELECT é1, col2 FROM t")).toBe("select é?, col2 from t");
+  });
+
+  it("masks double-quoted string literals and leaves backtick identifiers intact", () => {
+    expect(normalizeSql('SELECT `it\'s` FROM t WHERE a = "x" AND b IN ("p", "q")')).toBe(
+      "select `it's` from t where a = '?' and b in (?)",
+    );
+  });
+
   it("normalizes DBR 16.1+ SQL pipe syntax (|>)", () => {
     const q1 =
       "FROM catalog.schema.orders|>WHERE amount > 100|>AGGREGATE SUM(amount) GROUP BY region";
@@ -111,6 +143,12 @@ describe("fingerprint", () => {
   it("different queries produce different fingerprints", () => {
     const q1 = "SELECT * FROM users WHERE id = 1";
     const q2 = "SELECT * FROM orders WHERE id = 1";
+    expect(fingerprint(q1)).not.toBe(fingerprint(q2));
+  });
+
+  it("keeps queries apart when a string holds a comment marker before a real comment", () => {
+    const q1 = "SELECT * FROM read_files('s3://raw/*') WHERE a = 1 /* job */";
+    const q2 = "SELECT * FROM read_files('s3://raw/*') WHERE b = 1 /* job */";
     expect(fingerprint(q1)).not.toBe(fingerprint(q2));
   });
 
