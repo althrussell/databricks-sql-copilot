@@ -444,11 +444,24 @@ echo "  ✓ Deployment complete"
 # Re-assert resources + OBO scopes together after deploy so neither is cleared
 echo ""
 echo "→ Verifying app resources and OBO scopes..."
-databricks api patch "/api/2.0/apps/$APP_NAME" \
+VERIFY_RESP=$(databricks api patch "/api/2.0/apps/$APP_NAME" \
   --profile "$PROFILE" \
-  --json "$APP_PATCH_JSON" \
-  >/dev/null 2>&1 || true
-echo "  ✓ App resources and OBO scopes verified"
+  --json "$APP_PATCH_JSON" 2>&1) || true
+if echo "$VERIFY_RESP" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+ok = isinstance(d, dict) and any(r.get('name') == 'sql-warehouse' for r in d.get('resources', []))
+if '$AUTH_MODE' == 'obo':
+    ok = ok and 'dashboards.genie' in (d.get('user_api_scopes') or [])
+sys.exit(0 if ok else 1)
+" 2>/dev/null; then
+  echo "  ✓ App resources and OBO scopes verified"
+else
+  echo "  ⚠ Could not verify app resources / OBO scopes automatically — check post-deploy checklist"
+fi
 
 echo ""
 echo "=== Deployment Summary ==="

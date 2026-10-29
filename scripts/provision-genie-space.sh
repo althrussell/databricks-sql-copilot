@@ -123,9 +123,14 @@ p.pop('parent_path', None)
 with open('$UPDATE_TMP', 'w') as out:
     json.dump(p, out)
 "
-  databricks api patch "/api/2.0/genie/spaces/$EXISTING_ID" --profile "$PROFILE" --json "@${UPDATE_TMP}" >/dev/null 2>&1 || true
+  UPDATE_RESP=$(databricks api patch "/api/2.0/genie/spaces/$EXISTING_ID" --profile "$PROFILE" --json "@${UPDATE_TMP}" 2>&1) || true
   rm -f "$UPDATE_TMP"
-  SPACE_ID="$EXISTING_ID"
+  SPACE_ID=$(echo "$UPDATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('space_id',''))" 2>/dev/null || echo "")
+  if [[ -z "$SPACE_ID" ]]; then
+    echo "ERROR: Failed to update existing Genie Space '$EXISTING_ID'." >&2
+    echo "Response: $UPDATE_RESP" >&2
+    exit 1
+  fi
   echo "  ✓ Genie Space updated: $SPACE_ID" >&2
 else
   RESPONSE=$(databricks api post /api/2.0/genie/spaces \

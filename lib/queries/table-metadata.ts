@@ -436,18 +436,10 @@ export interface TableSummaryForTriage {
   numFiles: number | null;
 }
 
-/** In-memory cache for lightweight triage summaries (per server session, including negative/view results) */
-const triageSummaryCache = new Map<string, TableSummaryForTriage | null>();
-const triageInFlight = new Map<string, Promise<TableSummaryForTriage | null>>();
-
-/** Permanent DESCRIBE DETAIL error codes (views or missing objects) that are safe to negative-cache */
-const PERMANENT_DESCRIBE_ERRORS = [
-  "EXPECT_TABLE_NOT_VIEW",
-  "TABLE_OR_VIEW_NOT_FOUND",
-  "SCHEMA_NOT_FOUND",
-  "CATALOG_NOT_FOUND",
-  "PARSE_SYNTAX_ERROR",
-];
+/** In-memory cache for lightweight triage summaries (per server session) */
+const triageSummaryCache = new Map<string, TableSummaryForTriage>();
+/** Identifiers confirmed by Unity Catalog (or naming convention) to be views rather than physical tables */
+const knownViewCache = new Set<string>();
 
 function normalizeTableCacheKey(tableName: string): string {
   return tableName.replace(/`/g, "").trim().toLowerCase();
@@ -455,74 +447,62 @@ function normalizeTableCacheKey(tableName: string): string {
 
 /**
  * Fetch lightweight metadata for a single table (DESCRIBE DETAIL only).
- * Uses an in-memory cache (caching null only for permanent non-table errors such as views)
- * and in-flight deduplication to avoid repeated or concurrent calls for the same table.
+ * Caches physical table summaries and confirmed views (`EXPECT_TABLE_NOT_VIEW`),
+ * while never negative-caching permission or not-found errors across OBO users.
  */
 async function fetchTableSummaryForTriage(
   tableName: string,
 ): Promise<TableSummaryForTriage | null> {
   const cacheKey = normalizeTableCacheKey(tableName);
-  if (triageSummaryCache.has(cacheKey)) {
-    return triageSummaryCache.get(cacheKey) ?? null;
-  }
+  const cached = triageSummaryCache.get(cacheKey);
+  if (cached) return cached;
+  if (knownViewCache.has(cacheKey)) return null;
 
   // Views (vw_*, v_*) cannot be described with DESCRIBE DETAIL (SQLSTATE 42809 EXPECT_TABLE_NOT_VIEW)
   const leafName = cacheKey.split(".").pop() ?? "";
   if (leafName.startsWith("vw_") || leafName.startsWith("v_")) {
-    triageSummaryCache.set(cacheKey, null);
+    knownViewCache.add(cacheKey);
     return null;
   }
 
-  const existing = triageInFlight.get(cacheKey);
-  if (existing) return existing;
-
-  const promise = (async (): Promise<TableSummaryForTriage | null> => {
-    const { detail, error } = await fetchDescribeDetail(tableName);
-    if (error || !detail) {
-      if (error && PERMANENT_DESCRIBE_ERRORS.some((code) => error.includes(code))) {
-        triageSummaryCache.set(cacheKey, null);
-      }
-      return null;
+  const { detail, error } = await fetchDescribeDetail(tableName);
+  if (error || !detail) {
+    if (error && error.includes("EXPECT_TABLE_NOT_VIEW")) {
+      knownViewCache.add(cacheKey);
     }
-
-    const hasPredOpt =
-      detail.properties["delta.enableOptimizeWrite"] === "true" ||
-      detail.properties["delta.enablePredictiveOptimization"] === "true" ||
-      detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
-
-    // Tri-state. A table using deletion vectors must list the deletionVectors feature in its
-    // protocol, so a feature list without it means they are off; no feature list proves nothing.
-    const dvProperty = detail.properties["delta.enableDeletionVectors"];
-    const hasDeletionVectors =
-      dvProperty === "true" ||
-      detail.tableFeatures.some((f) => f.toLowerCase().includes("deletionvectors"))
-        ? true
-        : dvProperty === "false" || detail.tableFeatures.length > 0
-          ? false
-          : undefined;
-
-    const summary: TableSummaryForTriage = {
-      tableName,
-      clusteringColumns: detail.clusteringColumns,
-      partitionColumns: detail.partitionColumns,
-      isManaged: detail.isManaged,
-      predictiveOptEnabled: hasPredOpt,
-      deletionVectorsEnabled: hasDeletionVectors,
-      format: detail.format,
-      sizeInBytes: detail.sizeInBytes,
-      numFiles: detail.numFiles,
-    };
-
-    triageSummaryCache.set(cacheKey, summary);
-    return summary;
-  })();
-
-  triageInFlight.set(cacheKey, promise);
-  try {
-    return await promise;
-  } finally {
-    triageInFlight.delete(cacheKey);
+    return null;
   }
+
+  const hasPredOpt =
+    detail.properties["delta.enableOptimizeWrite"] === "true" ||
+    detail.properties["delta.enablePredictiveOptimization"] === "true" ||
+    detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
+
+  // Tri-state. A table using deletion vectors must list the deletionVectors feature in its
+  // protocol, so a feature list without it means they are off; no feature list proves nothing.
+  const dvProperty = detail.properties["delta.enableDeletionVectors"];
+  const hasDeletionVectors =
+    dvProperty === "true" ||
+    detail.tableFeatures.some((f) => f.toLowerCase().includes("deletionvectors"))
+      ? true
+      : dvProperty === "false" || detail.tableFeatures.length > 0
+        ? false
+        : undefined;
+
+  const summary: TableSummaryForTriage = {
+    tableName,
+    clusteringColumns: detail.clusteringColumns,
+    partitionColumns: detail.partitionColumns,
+    isManaged: detail.isManaged,
+    predictiveOptEnabled: hasPredOpt,
+    deletionVectorsEnabled: hasDeletionVectors,
+    format: detail.format,
+    sizeInBytes: detail.sizeInBytes,
+    numFiles: detail.numFiles,
+  };
+
+  triageSummaryCache.set(cacheKey, summary);
+  return summary;
 }
 
 /**
