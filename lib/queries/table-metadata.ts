@@ -457,7 +457,8 @@ async function fetchTableSummaryForTriage(
     detail.properties["delta.enablePredictiveOptimization"] === "true" ||
     detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
 
-  // Tri-state: only report "disabled" when DESCRIBE DETAIL gives us evidence either way
+  // Tri-state. A table using deletion vectors must list the deletionVectors feature in its
+  // protocol, so a feature list without it means they are off; no feature list proves nothing.
   const dvProperty = detail.properties["delta.enableDeletionVectors"];
   const hasDeletionVectors =
     dvProperty === "true" ||
