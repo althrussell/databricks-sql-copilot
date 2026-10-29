@@ -140,6 +140,58 @@ export async function setQueryAction(
 }
 
 /**
+ * Re-key actions saved under pre-SHA-256 fingerprints to their pattern's current
+ * fingerprint. Rows whose (target, user) already has an action are left to expire
+ * (30-day TTL). Returns the number of rows re-keyed.
+ */
+export async function migrateLegacyActionKeys(
+  candidates: Array<{ fingerprint: string; legacyFingerprints?: string[] }>,
+): Promise<number> {
+  if (!isLakebaseEnabled()) return 0;
+
+  const current = new Set(candidates.map((c) => c.fingerprint));
+  const legacyToCurrent = new Map<string, string>();
+  for (const c of candidates) {
+    for (const legacy of c.legacyFingerprints ?? []) {
+      if (!current.has(legacy)) legacyToCurrent.set(legacy, c.fingerprint);
+    }
+  }
+  if (legacyToCurrent.size === 0) return 0;
+
+  return withPrisma(async (p) => {
+    const legacyRows = await p.queryAction.findMany({
+      where: { fingerprint: { in: [...legacyToCurrent.keys()] } },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (legacyRows.length === 0) return 0;
+
+    const targets = [...new Set(legacyRows.map((r) => legacyToCurrent.get(r.fingerprint)!))];
+    const taken = new Set(
+      (
+        await p.queryAction.findMany({
+          where: { fingerprint: { in: targets } },
+          select: { fingerprint: true, userId: true },
+        })
+      ).map((r) => `${r.fingerprint}::${r.userId}`),
+    );
+
+    let migrated = 0;
+    for (const row of legacyRows) {
+      const target = legacyToCurrent.get(row.fingerprint)!;
+      const key = `${target}::${row.userId}`;
+      if (taken.has(key)) continue;
+      await p.queryAction.update({
+        where: { fingerprint_userId: { fingerprint: row.fingerprint, userId: row.userId } },
+        data: { fingerprint: target },
+      });
+      taken.add(key);
+      migrated++;
+    }
+    return migrated;
+  });
+}
+
+/**
  * Remove the action visible to the current user on a query fingerprint.
  * Deletes the user's own row and any shared workspace-scoped row (legacy global
  * actions), so a cleared action does not reappear from the workspace fallback.

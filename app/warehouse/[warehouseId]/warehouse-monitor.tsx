@@ -265,6 +265,8 @@ export function WarehouseMonitor({
         statementType: q.statementType,
         durationMs: q.durationMs,
         executionTimeMs: q.executionTimeMs,
+        compilationTimeMs: q.compilationTimeMs,
+        fetchTimeMs: q.fetchTimeMs,
         bytesScanned: q.bytesScanned,
         spillBytes: q.spillBytes,
         cacheHitPercent: q.cacheHitPercent,

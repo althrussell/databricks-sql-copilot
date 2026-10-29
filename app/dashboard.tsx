@@ -94,10 +94,14 @@ import type { WarehouseOption } from "@/lib/queries/warehouses";
 import {
   notifyError,
   notifySuccess,
+  notifyWarning,
   isPermissionError,
   extractPermissionDetails,
 } from "@/lib/errors";
 import dynamic from "next/dynamic";
+
+const SESSION_ONLY_NOTICE =
+  "Applied for this session only — Lakebase persistence is disabled, so it won't be saved.";
 
 const CustomRangePicker = dynamic(
   () => import("./components/dashboard/custom-range-picker").then((m) => m.CustomRangePicker),
@@ -753,16 +757,21 @@ export function Dashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fingerprint, action }),
       });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error ?? `Server error (${res.status})`);
+        throw new Error(body.error ?? `Server error (${res.status})`);
       }
       const actionLabels: Record<string, string> = {
         dismiss: "Query dismissed",
         watch: "Query marked as watched",
         applied: "Recommendation applied",
       };
-      notifySuccess(actionLabels[action] ?? "Action saved");
+      const label = actionLabels[action] ?? "Action saved";
+      if (body.persisted === false) {
+        notifyWarning(label, SESSION_ONLY_NOTICE);
+      } else {
+        notifySuccess(label);
+      }
     } catch (err) {
       // Roll back optimistic state on error
       setQueryActions((prev) => {
@@ -792,11 +801,15 @@ export function Dashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fingerprint }),
       });
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error ?? `Server error (${res.status})`);
+        throw new Error(body.error ?? `Server error (${res.status})`);
       }
-      notifySuccess("Action cleared");
+      if (body.persisted === false) {
+        notifyWarning("Action cleared", SESSION_ONLY_NOTICE);
+      } else {
+        notifySuccess("Action cleared");
+      }
     } catch (err) {
       if (previousEntry) {
         setQueryActions((prev) => ({

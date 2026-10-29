@@ -7,7 +7,7 @@ import { getWarehouseCosts } from "@/lib/queries/warehouse-cost";
 import { buildCandidates } from "@/lib/domain/candidate-builder";
 import { getWorkspaceBaseUrl } from "@/lib/utils/deep-links";
 import { triageCandidates } from "@/lib/ai/triage";
-import { getQueryActions } from "@/lib/dbx/actions-store";
+import { getQueryActions, migrateLegacyActionKeys } from "@/lib/dbx/actions-store";
 import { getWarehouseActivityBuckets } from "@/lib/queries/warehouse-activity";
 import type { WarehouseOption } from "@/lib/queries/warehouses";
 import { fetchTriageTableContext } from "@/lib/queries/table-metadata";
@@ -175,6 +175,9 @@ async function CoreDashboardLoader({
     }
   > = {};
   try {
+    await migrateLegacyActionKeys(candidates).catch((err) =>
+      console.warn("[page] legacy action re-key skipped:", err),
+    );
     const actionsMap = await getQueryActions();
     for (const [fp, act] of actionsMap) {
       queryActionsObj[fp] = {
