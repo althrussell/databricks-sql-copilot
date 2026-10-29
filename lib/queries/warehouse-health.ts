@@ -17,7 +17,10 @@ export interface WarehouseHealthRow {
   queries: number;
   uniqueUsers: number;
   capacityQueueMin: number;
+  /** Compute provisioning wait (cold start + cluster scale-out wait from waiting_for_compute_duration_ms) */
   coldStartMin: number;
+  /** Synonym for coldStartMin with explicit semantics */
+  computeProvisioningWaitMin?: number;
   spillGiB: number;
   avgRuntimeSec: number;
   p95Sec: number;
@@ -81,6 +84,7 @@ export async function fetchWarehouseHealthMetrics(): Promise<WarehouseHealthRow[
     uniqueUsers: Number(r.unique_users) || 0,
     capacityQueueMin: Number(r.capacity_queue_min) || 0,
     coldStartMin: Number(r.coldstart_min) || 0,
+    computeProvisioningWaitMin: Number(r.coldstart_min) || 0,
     spillGiB: Number(r.spill_gib) || 0,
     avgRuntimeSec: Number(r.avg_runtime_sec) || 0,
     p95Sec: Number(r.p95_sec) || 0,

@@ -99,6 +99,57 @@ export async function setQueryAction(
 }
 
 /**
+ * Re-key actions saved under pre-SHA-256 fingerprints to their pattern's current
+ * fingerprint. Rows whose target already has an action are left to expire (30-day TTL).
+ * Returns the number of rows re-keyed.
+ */
+export async function migrateLegacyActionKeys(
+  candidates: Array<{ fingerprint: string; legacyFingerprints?: string[] }>,
+): Promise<number> {
+  if (!isLakebaseEnabled()) return 0;
+
+  const current = new Set(candidates.map((c) => c.fingerprint));
+  const legacyToCurrent = new Map<string, string>();
+  for (const c of candidates) {
+    for (const legacy of c.legacyFingerprints ?? []) {
+      if (!current.has(legacy)) legacyToCurrent.set(legacy, c.fingerprint);
+    }
+  }
+  if (legacyToCurrent.size === 0) return 0;
+
+  return withPrisma(async (p) => {
+    const legacyRows = await p.queryAction.findMany({
+      where: { fingerprint: { in: [...legacyToCurrent.keys()] } },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (legacyRows.length === 0) return 0;
+
+    const targets = [...new Set(legacyRows.map((r) => legacyToCurrent.get(r.fingerprint)!))];
+    const taken = new Set(
+      (
+        await p.queryAction.findMany({
+          where: { fingerprint: { in: targets } },
+          select: { fingerprint: true },
+        })
+      ).map((r) => r.fingerprint),
+    );
+
+    let migrated = 0;
+    for (const row of legacyRows) {
+      const target = legacyToCurrent.get(row.fingerprint)!;
+      if (taken.has(target)) continue;
+      await p.queryAction.update({
+        where: { fingerprint: row.fingerprint },
+        data: { fingerprint: target },
+      });
+      taken.add(target);
+      migrated++;
+    }
+    return migrated;
+  });
+}
+
+/**
  * Remove an action from a query fingerprint.
  */
 export async function removeQueryAction(fingerprint: string): Promise<void> {

@@ -11,6 +11,7 @@
 
 import type { Candidate } from "@/lib/domain/types";
 import type { TableSummaryForTriage } from "@/lib/queries/table-metadata";
+import { extractTableNames } from "@/lib/domain/sql-table-names";
 
 export type PerformanceFlag =
   | "LongRunning"
@@ -28,7 +29,10 @@ export type PerformanceFlag =
   | "HighQueueRatio"
   | "ColdQuery"
   | "CompilationHeavy"
-  | "MaterializedViewCandidate";
+  | "MaterializedViewCandidate"
+  | "MissingDeletionVectors"
+  | "CaseInsensitiveFilterAntiPattern"
+  | "ClusterByAutoCandidate";
 
 export interface FlagThresholds {
   longRunningMs: number; // p95 above this
@@ -87,6 +91,10 @@ export interface FlagTableContext {
 }
 
 const AGG_PATTERN = /\b(GROUP\s+BY|SUM\s*\(|COUNT\s*\(|AVG\s*\(|MIN\s*\(|MAX\s*\()\b/i;
+// LOWER/UPPER(col) compared inside one WHERE clause (outer or nested): the text after WHERE
+// may not cross a keyword or pipe operator that starts another clause or query block.
+const CASE_INSENSITIVE_FILTER_PATTERN =
+  /\bWHERE\b(?:(?!\b(?:SELECT|(?:GROUP|ORDER|CLUSTER|DISTRIBUTE|SORT)\s+BY|HAVING|QUALIFY|WINDOW|LIMIT|UNION|INTERSECT|EXCEPT|MINUS)\b|\|>)[\s\S])*?\b(?:LOWER|UPPER)\s*\(\s*[a-zA-Z_][a-zA-Z0-9_.]*\s*\)\s*(?:=|LIKE|IN)/i;
 
 /**
  * Compute performance flags for a candidate, with estimated impact percentages.
@@ -107,14 +115,20 @@ export function computeFlags(
     ws.avgExecutionMs +
     ws.avgFetchMs;
 
-  // Gather table metadata for enrichment
-  const tables = tableContext?.tables;
-  const hasClusteredTable = tables
-    ? [...tables.values()].some((t) => t.clusteringColumns.length > 0)
-    : false;
-  const hasPredOptEnabled = tables
-    ? [...tables.values()].some((t) => t.predictiveOptEnabled)
-    : false;
+  // The table context is shared across all candidates, so only use tables this SQL references
+  const rawTables = tableContext?.tables;
+  let candidateTables: TableSummaryForTriage[] = [];
+  if (rawTables && rawTables.size > 0) {
+    const referencedNames = new Set(
+      extractTableNames(candidate.sampleQueryText).map((n) => n.replace(/`/g, "").toLowerCase()),
+    );
+    candidateTables = [...rawTables.values()].filter((t) =>
+      referencedNames.has(t.tableName.replace(/`/g, "").toLowerCase()),
+    );
+  }
+  const hasCandidateTables = candidateTables.length > 0;
+  const hasClusteredTable = candidateTables.some((t) => t.clusteringColumns.length > 0);
+  const hasPredOptEnabled = candidateTables.some((t) => t.predictiveOptEnabled);
 
   if (ws.p95Ms > thresholds.longRunningMs) {
     flags.push({
@@ -136,8 +150,8 @@ export function computeFlags(
         : undefined;
     let spillDetail = `${formatSize(ws.totalSpilledBytes)} spilled to disk`;
     // Enrich with table size context
-    if (tables) {
-      const tableSizes = [...tables.values()]
+    if (hasCandidateTables) {
+      const tableSizes = candidateTables
         .filter((t) => t.sizeInBytes != null)
         .map((t) => ({ name: t.tableName, size: t.sizeInBytes! }));
       if (tableSizes.length > 0) {
@@ -184,7 +198,7 @@ export function computeFlags(
     // Enrich: suppress noise if tables already have clustering matching query filters
     if (hasClusteredTable) {
       pruneDetail += `. Tables have clustering — verify clustering columns match WHERE/JOIN filters`;
-    } else if (tables && tables.size > 0) {
+    } else if (hasCandidateTables) {
       pruneDetail += `. Recommend: ALTER TABLE ... CLUSTER BY (filter_columns)`;
     }
 
@@ -271,7 +285,7 @@ export function computeFlags(
     let joinDetail = `Produces ${ratio}x more rows than read (${ws.totalProducedRows.toLocaleString()} produced vs ${ws.totalReadRows.toLocaleString()} read) — likely cross join or many-to-many`;
 
     // Add PK/FK recommendation for join issues
-    joinDetail += `. Check PK/FK constraints on join keys — add them if missing for optimizer hints`;
+    joinDetail += `. Check PK/FK constraints with RELY (PRIMARY KEY ... RELY) and run ANALYZE TABLE for optimizer join hints`;
 
     flags.push({
       flag: "ExplodingJoin",
@@ -297,7 +311,7 @@ export function computeFlags(
     let filterDetail = `Reads ${ratio}x more rows than produced (${ws.totalReadRows.toLocaleString()} read → ${ws.totalProducedRows.toLocaleString()} produced) — filter before join could reduce work`;
 
     // Add PK/FK recommendation
-    filterDetail += `. Define PK/FK constraints on join keys for join elimination and predicate pushdown`;
+    filterDetail += `. Define PK/FK constraints with RELY on join keys for join elimination and predicate pushdown`;
 
     flags.push({
       flag: "FilteringJoin",
@@ -338,7 +352,7 @@ export function computeFlags(
     let coldDetail = `Result cache ${(ws.cacheHitRate * 100).toFixed(0)}%, IO cache ${ws.avgIoCachePercent.toFixed(0)}% — query never benefits from caching. Table may need OPTIMIZE or Liquid Clustering`;
 
     // Enrich with Predictive Optimization recommendation
-    if (!hasPredOptEnabled && tables && tables.size > 0) {
+    if (!hasPredOptEnabled && hasCandidateTables) {
       coldDetail += `. Enable Predictive Optimization to automate OPTIMIZE, VACUUM, and ANALYZE`;
     }
 
@@ -386,6 +400,58 @@ export function computeFlags(
       detail: `${ws.count} executions with ${(ws.cacheHitRate * 100).toFixed(0)}% cache hit rate on an aggregation query. CREATE MATERIALIZED VIEW would precompute results and auto-refresh on data changes`,
       estimatedImpactPct: Math.round((1 - ws.cacheHitRate) * 70),
     });
+  }
+
+  // CaseInsensitiveFilterAntiPattern: LOWER(col) or UPPER(col) in WHERE clause prevents Delta data skipping
+  if (CASE_INSENSITIVE_FILTER_PATTERN.test(candidate.sampleQueryText)) {
+    flags.push({
+      flag: "CaseInsensitiveFilterAntiPattern",
+      label: "LOWER/UPPER Filter",
+      severity: "warning",
+      detail: `Wrapping filter columns in LOWER()/UPPER() disables Delta data skipping. Recommend altering the column to use COLLATE UTF8_LCASE (DBR 16.1+)`,
+      estimatedImpactPct: 20,
+    });
+  }
+
+  // MissingDeletionVectors: DML (MERGE/UPDATE/DELETE) on tables without deletion vectors enabled
+  if (
+    ["MERGE", "UPDATE", "DELETE"].includes(candidate.statementType.toUpperCase()) &&
+    hasCandidateTables
+  ) {
+    const missingDvTables = candidateTables.filter(
+      (t) => t.format?.toLowerCase() === "delta" && t.deletionVectorsEnabled === false,
+    );
+    if (missingDvTables.length > 0) {
+      const names = missingDvTables.map((t) => t.tableName).join(", ");
+      flags.push({
+        flag: "MissingDeletionVectors",
+        label: "No Deletion Vectors",
+        severity: "warning",
+        detail: `${candidate.statementType} on ${names} without Deletion Vectors rewrites entire Parquet files. Run ALTER TABLE ... SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')`,
+        estimatedImpactPct: 35,
+      });
+    }
+  }
+
+  // ClusterByAutoCandidate: unclustered managed Delta tables scanned heavily
+  if (hasCandidateTables && ws.totalReadBytes > 50 * 1024 * 1024) {
+    const unclusteredManaged = candidateTables.filter(
+      (t) =>
+        t.isManaged &&
+        t.format?.toLowerCase() === "delta" &&
+        t.clusteringColumns.length === 0 &&
+        t.partitionColumns.length === 0,
+    );
+    if (unclusteredManaged.length > 0) {
+      const names = unclusteredManaged.map((t) => t.tableName).join(", ");
+      flags.push({
+        flag: "ClusterByAutoCandidate",
+        label: "Unclustered Table",
+        severity: "warning",
+        detail: `Managed table(s) ${names} have no Liquid Clustering keys. Run ALTER TABLE ... CLUSTER BY AUTO to enable automatic workload-driven clustering`,
+        estimatedImpactPct: 30,
+      });
+    }
   }
 
   return flags;

@@ -35,10 +35,6 @@ export async function getWarehouseCosts(params: GetWarehouseCostsParams): Promis
   const startDate = validStart.slice(0, 10); // YYYY-MM-DD
   const endDate = validEnd.slice(0, 10);
 
-  // Midpoint of the time window — used to pick the effective price
-  const midpointMs = (new Date(validStart).getTime() + new Date(validEnd).getTime()) / 2;
-  const midpoint = new Date(midpointMs).toISOString();
-
   // ── Query 1: DBU totals per warehouse + SKU ──
   const dbuSql = `
     SELECT
@@ -60,7 +56,7 @@ export async function getWarehouseCosts(params: GetWarehouseCostsParams): Promis
     ORDER BY total_dbus DESC
   `;
 
-  // ── Query 2: effective price per SKU at the window midpoint ──
+  // ── Query 2: effective price per SKU aligned to end of usage window (matches jobs billing) ──
   const priceSql = `
     SELECT
       sku_name,
@@ -68,8 +64,8 @@ export async function getWarehouseCosts(params: GetWarehouseCostsParams): Promis
     FROM system.billing.list_prices
     WHERE sku_name LIKE '%SQL_COMPUTE%'
       AND pricing.effective_list.\`default\` IS NOT NULL
-      AND price_start_time <= '${midpoint}'
-      AND (price_end_time IS NULL OR price_end_time > '${midpoint}')
+      AND price_start_time <= '${validEnd}'
+      AND (price_end_time IS NULL OR price_end_time > '${validEnd}')
     QUALIFY ROW_NUMBER() OVER (PARTITION BY sku_name ORDER BY price_start_time DESC) = 1
   `;
 

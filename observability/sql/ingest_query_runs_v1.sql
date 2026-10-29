@@ -1,5 +1,10 @@
 -- Incremental ingestion for real DBSQL query history into canonical table.
 -- Safe to run repeatedly; deduplicates on statement_id.
+-- Uses normalized SQL text + SUBSTRING(sha2(..., 256), 1, 16) matching lib/domain/sql-fingerprint.ts
+-- so query_fingerprint is identical across query_runs_v1 and the Next.js app.
+-- Keep the normalization in sync with SQL_NORMALIZED_EXPR in lib/queries/sql-insights.ts.
+-- Databricks has no '' escape, so regexes are raw r'...' literals that spell quote characters
+-- as \x27, \x22, and \x60.
 
 INSERT INTO main.unified_observability.query_runs_v1 (
   workspace_id,
@@ -23,7 +28,54 @@ SELECT
   CAST(h.workspace_id AS STRING) AS workspace_id,
   CAST(h.compute.warehouse_id AS STRING) AS warehouse_id,
   CAST(h.statement_id AS STRING) AS statement_id,
-  sha2(COALESCE(h.statement_text, h.statement_id), 256) AS query_fingerprint,
+  SUBSTRING(
+    sha2(
+      TRIM(
+        REGEXP_REPLACE(
+          REGEXP_REPLACE(
+            LOWER(
+              REGEXP_REPLACE(
+                REGEXP_REPLACE(
+                  REGEXP_REPLACE(
+                    REGEXP_REPLACE(
+                      REGEXP_REPLACE(
+                        REGEXP_REPLACE(
+                          REGEXP_REPLACE(
+                            COALESCE(h.statement_text, h.statement_id),
+                            r'/\*|--',
+                            ' $0'
+                          ),
+                          r'(/\*\+[\s\S]*?\*/)|(\x60(?:[^\x60]|\x60\x60)*\x60)|/\*[\s\S]*?\*/|--[^\r\n]*|(\x27)(?:[^\x27\\]|\\.)*(\x27)|(\x22)(?:[^\x22\\]|\\.)*(\x22)',
+                          '$1$2$3$4$5$6'
+                        ),
+                        r'\x27\x27|\x22\x22',
+                        '\'?\''
+                      ),
+                      r'(?<![A-Za-z0-9_])\d+(\.\d+)?(?![A-Za-z0-9_])',
+                      '?'
+                    ),
+                    r'(?i)(?<![A-Za-z0-9_])IN\s*\(\s*\?\s*(?:,\s*\?\s*)*\)',
+                    'IN (?)'
+                  ),
+                  r'(?i)(?<![A-Za-z0-9_])IN\s*\(\s*\x27\?\x27\s*(?:,\s*\x27\?\x27\s*)*\)',
+                  'IN (?)'
+                ),
+                r'\s*\|>\s*',
+                ' |> '
+              )
+            ),
+            r';\s*(?![\s\S])',
+            ''
+          ),
+          r'\s+',
+          ' '
+        )
+      ),
+      256
+    ),
+    1,
+    16
+  ) AS query_fingerprint,
   h.start_time AS started_at,
   h.end_time AS ended_at,
   CAST(COALESCE(h.total_duration_ms, 0) AS BIGINT) AS duration_ms,

@@ -7,7 +7,7 @@
  */
 
 import type { QueryRun, Candidate, QueryOrigin, WarehouseCost } from "@/lib/domain/types";
-import { fingerprint } from "@/lib/domain/sql-fingerprint";
+import { fingerprint, legacyFingerprint } from "@/lib/domain/sql-fingerprint";
 import { scoreCandidate, type ScoreInput } from "@/lib/domain/scoring";
 import {
   computeFlags,
@@ -18,6 +18,7 @@ import { isDbtQuery, extractDbtMetadata, extractQueryTag } from "@/lib/domain/db
 
 interface RunGroup {
   fingerprint: string;
+  legacyFingerprints: Set<string>;
   runs: QueryRun[];
 }
 
@@ -87,19 +88,20 @@ export function buildCandidates(
 
   // 1. Group by fingerprint (with memoization to avoid rehashing identical SQL)
   const groups = new Map<string, RunGroup>();
-  const fpCache = new Map<string, string>();
+  const fpCache = new Map<string, { fp: string; legacyFp: string }>();
 
   for (const run of runs) {
-    let fp = fpCache.get(run.queryText);
-    if (fp === undefined) {
-      fp = fingerprint(run.queryText);
-      fpCache.set(run.queryText, fp);
+    let cached = fpCache.get(run.queryText);
+    if (cached === undefined) {
+      cached = { fp: fingerprint(run.queryText), legacyFp: legacyFingerprint(run.queryText) };
+      fpCache.set(run.queryText, cached);
     }
-    let group = groups.get(fp);
+    let group = groups.get(cached.fp);
     if (!group) {
-      group = { fingerprint: fp, runs: [] };
-      groups.set(fp, group);
+      group = { fingerprint: cached.fp, legacyFingerprints: new Set(), runs: [] };
+      groups.set(cached.fp, group);
     }
+    if (cached.legacyFp !== cached.fp) group.legacyFingerprints.add(cached.legacyFp);
     group.runs.push(run);
   }
 
@@ -192,6 +194,7 @@ export function buildCandidates(
       totalDurationMs,
       totalSpilledBytes,
       totalReadBytes,
+      totalShuffleBytes,
       avgWaitingAtCapacityMs,
       cacheHitRate,
     };
@@ -234,6 +237,7 @@ export function buildCandidates(
 
     const candidate: Candidate = {
       fingerprint: group.fingerprint,
+      legacyFingerprints: [...group.legacyFingerprints],
       sampleStatementId: slowest.statementId,
       sampleStartedAt: slowest.startedAt,
       sampleQueryText: slowest.queryText,

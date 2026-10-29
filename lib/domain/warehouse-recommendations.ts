@@ -395,7 +395,7 @@ export function generateRecommendations(
       m.totalCapacityQueueMin > 0 &&
       m.totalCapacityQueueMin / ((m.avgRuntimeSec * m.totalQueries) / 60) > 0.5;
 
-    // Rule 1: High cold starts + not serverless → suggest Serverless
+    // Rule 1: High cold starts / compute provisioning wait + not serverless → suggest Serverless
     if (highColdStart && !m.isServerless) {
       action = "serverless";
       severity = confidence === "high" ? "critical" : "warning";
@@ -404,9 +404,9 @@ export function generateRecommendations(
         (m.totalColdStartMin * 60) / (m.avgRuntimeSec || 10),
       ); // rough count of queries affected
       rationale = [
-        `${m.totalColdStartMin.toFixed(1)} min of cold start wait over 7 days (${m.daysWithColdStart}/7 days).`,
-        `Serverless SQL eliminates cold starts entirely — instant start, no idle cost, elastic scaling.`,
-        `Estimated ${coldStartQueriesEstimate} queries affected by cold starts weekly.`,
+        `${m.totalColdStartMin.toFixed(1)} min of compute provisioning & cold-start wait over 7 days (${m.daysWithColdStart}/7 days).`,
+        `Serverless SQL eliminates cold-start and cluster scale-out provisioning delays — instant start, no idle cost, elastic scaling.`,
+        `Estimated ${coldStartQueriesEstimate} queries affected by compute startup/scale-out weekly.`,
         m.autoStopMinutes < LOW_AUTOSTOP_MIN
           ? `Current auto-stop is ${m.autoStopMinutes} min which causes frequent restarts. Serverless eliminates this trade-off.`
           : "",

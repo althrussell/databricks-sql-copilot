@@ -12,6 +12,7 @@
 
 import { executeQuery } from "@/lib/dbx/sql-client";
 import { validateIdentifier } from "@/lib/validation";
+import { extractTableNames } from "@/lib/domain/sql-table-names";
 
 /* ── Types ── */
 
@@ -66,60 +67,7 @@ const metadataCache = new Map<string, TableMetadata>();
 
 /* ── Table name extraction ── */
 
-/**
- * Extract table references from SQL text.
- * Handles 1/2/3-part names, backtick-quoted identifiers.
- * Looks for FROM, JOIN, INTO, UPDATE, MERGE INTO clauses.
- */
-export function extractTableNames(sql: string): string[] {
-  const tables = new Set<string>();
-
-  // Identifier pattern: backtick-quoted or bare dotted name
-  // Matches: `cat`.`schema`.`table`, catalog.schema.table, schema.table, table
-  const ident = "(?:`[^`]+`|[a-zA-Z_][a-zA-Z0-9_]*)";
-  const dottedName = `${ident}(?:\\.${ident}){0,2}`;
-
-  // Keywords that precede table names
-  const prefixes = [
-    "FROM",
-    "JOIN",
-    "INNER\\s+JOIN",
-    "LEFT\\s+(?:OUTER\\s+)?JOIN",
-    "RIGHT\\s+(?:OUTER\\s+)?JOIN",
-    "FULL\\s+(?:OUTER\\s+)?JOIN",
-    "CROSS\\s+JOIN",
-    "INTO",
-    "UPDATE",
-    "MERGE\\s+INTO",
-    "TABLE",
-  ];
-
-  const prefixGroup = prefixes.join("|");
-  const pattern = new RegExp(`(?:${prefixGroup})\\s+(${dottedName})`, "gi");
-
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(sql)) !== null) {
-    const name = match[1].trim();
-
-    // Skip system tables, CTEs, subquery aliases, and keywords
-    const bare = name.replace(/`/g, "").toLowerCase();
-    if (
-      bare.startsWith("system.") ||
-      bare === "values" ||
-      bare === "dual" ||
-      bare === "select" ||
-      bare === "exists" ||
-      bare === "not" ||
-      !bare.includes(".") // require at least schema.table (2-part)
-    ) {
-      continue;
-    }
-
-    tables.add(name);
-  }
-
-  return [...tables];
-}
+export { extractTableNames };
 
 /* ── Individual metadata fetchers ── */
 
@@ -481,6 +429,8 @@ export interface TableSummaryForTriage {
   partitionColumns: string[];
   isManaged: boolean;
   predictiveOptEnabled: boolean;
+  /** undefined when DESCRIBE DETAIL does not reveal whether deletion vectors are enabled */
+  deletionVectorsEnabled?: boolean;
   format: string | null;
   sizeInBytes: number | null;
   numFiles: number | null;
@@ -507,12 +457,24 @@ async function fetchTableSummaryForTriage(
     detail.properties["delta.enablePredictiveOptimization"] === "true" ||
     detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
 
+  // Tri-state. A table using deletion vectors must list the deletionVectors feature in its
+  // protocol, so a feature list without it means they are off; no feature list proves nothing.
+  const dvProperty = detail.properties["delta.enableDeletionVectors"];
+  const hasDeletionVectors =
+    dvProperty === "true" ||
+    detail.tableFeatures.some((f) => f.toLowerCase().includes("deletionvectors"))
+      ? true
+      : dvProperty === "false" || detail.tableFeatures.length > 0
+        ? false
+        : undefined;
+
   const summary: TableSummaryForTriage = {
     tableName,
     clusteringColumns: detail.clusteringColumns,
     partitionColumns: detail.partitionColumns,
     isManaged: detail.isManaged,
     predictiveOptEnabled: hasPredOpt,
+    deletionVectorsEnabled: hasDeletionVectors,
     format: detail.format,
     sizeInBytes: detail.sizeInBytes,
     numFiles: detail.numFiles,

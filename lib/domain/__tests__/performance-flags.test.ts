@@ -188,6 +188,7 @@ describe("computeFlags", () => {
 
   it("enriches LowPruning with table context when provided", () => {
     const c = makeCandidate({
+      sampleQueryText: "SELECT * FROM catalog.schema.orders WHERE id = 1",
       windowStats: {
         ...makeCandidate().windowStats,
         avgPruningEfficiency: 0.1,
@@ -219,6 +220,7 @@ describe("computeFlags", () => {
 
   it("enriches ColdQuery with Predictive Optimization recommendation", () => {
     const c = makeCandidate({
+      sampleQueryText: "SELECT * FROM catalog.schema.orders WHERE id = 1",
       windowStats: {
         ...makeCandidate().windowStats,
         count: 5,
@@ -247,6 +249,206 @@ describe("computeFlags", () => {
     const coldFlag = flags.find((f) => f.flag === "ColdQuery");
     expect(coldFlag).toBeDefined();
     expect(coldFlag!.detail).toContain("Predictive Optimization");
+  });
+
+  it("flags CaseInsensitiveFilterAntiPattern when LOWER() is used in WHERE", () => {
+    const c = makeCandidate({
+      sampleQueryText:
+        "SELECT * FROM catalog.schema.users WHERE LOWER(email) = 'alice@example.com'",
+    });
+    const flags = computeFlags(c);
+    const ciFlag = flags.find((f) => f.flag === "CaseInsensitiveFilterAntiPattern");
+    expect(ciFlag).toBeDefined();
+    expect(ciFlag!.detail).toContain("COLLATE UTF8_LCASE");
+  });
+
+  it.each([
+    "SELECT * FROM orders WHERE user_id IN (SELECT id FROM users WHERE LOWER(email) = 'a@b.c')",
+    "FROM catalog.schema.users |> WHERE UPPER(country) IN ('US', 'CA')",
+  ])("flags LOWER/UPPER comparisons in any WHERE clause: %s", (sql) => {
+    const flags = computeFlags(makeCandidate({ sampleQueryText: sql }));
+    expect(flags.some((f) => f.flag === "CaseInsensitiveFilterAntiPattern")).toBe(true);
+  });
+
+  it.each([
+    "SELECT a FROM t WHERE id > 5 UNION ALL SELECT CASE WHEN LOWER(name) = 'x' THEN 1 END FROM u",
+    "SELECT LOWER(name) AS n, COUNT(*) FROM t WHERE id > 5 GROUP BY LOWER(name) HAVING LOWER(name) = 'x'",
+    "FROM t |> WHERE id > 5 |> EXTEND LOWER(name) = 'x' AS is_x",
+  ])("ignores LOWER/UPPER comparisons outside WHERE clauses: %s", (sql) => {
+    const flags = computeFlags(makeCandidate({ sampleQueryText: sql }));
+    expect(flags.some((f) => f.flag === "CaseInsensitiveFilterAntiPattern")).toBe(false);
+  });
+
+  it("flags MissingDeletionVectors on MERGE queries against Delta tables without deletion vectors", () => {
+    const c = makeCandidate({
+      statementType: "MERGE",
+      sampleQueryText:
+        "MERGE INTO catalog.schema.orders t USING staging s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *",
+    });
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: ["order_date"],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: true,
+            deletionVectorsEnabled: false,
+            format: "delta",
+            sizeInBytes: 1e9,
+            numFiles: 50,
+          },
+        ],
+      ]),
+    };
+    const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
+    expect(flags.some((f) => f.flag === "MissingDeletionVectors")).toBe(true);
+  });
+
+  it("ignores tables in the shared context that the candidate SQL does not reference", () => {
+    const c = makeCandidate({
+      statementType: "MERGE",
+      sampleQueryText:
+        "MERGE INTO catalog.schema.customers t USING staging s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *",
+      windowStats: {
+        ...makeCandidate().windowStats,
+        totalReadBytes: 200 * 1024 * 1024,
+      },
+    });
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            deletionVectorsEnabled: false,
+            format: "delta",
+            sizeInBytes: 5e9,
+            numFiles: 200,
+          },
+        ],
+      ]),
+    };
+    const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
+    expect(flags.some((f) => f.flag === "ClusterByAutoCandidate")).toBe(false);
+    expect(flags.some((f) => f.flag === "MissingDeletionVectors")).toBe(false);
+  });
+
+  it("does not use shared table context when the SQL references no qualified tables", () => {
+    const c = makeCandidate({
+      sampleQueryText: "SELECT * FROM orders WHERE id = 1",
+      windowStats: { ...makeCandidate().windowStats, totalReadBytes: 200 * 1024 * 1024 },
+    });
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            format: "delta",
+            sizeInBytes: 5e9,
+            numFiles: 200,
+          },
+        ],
+      ]),
+    };
+    const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
+    expect(flags.some((f) => f.flag === "ClusterByAutoCandidate")).toBe(false);
+  });
+
+  it("skips Delta-only advice for non-Delta tables and unknown deletion-vector status", () => {
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            format: "parquet",
+            sizeInBytes: 5e9,
+            numFiles: 200,
+          },
+        ],
+        [
+          "catalog.schema.items",
+          {
+            tableName: "catalog.schema.items",
+            clusteringColumns: ["sku"],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: true,
+            deletionVectorsEnabled: undefined,
+            format: "delta",
+            sizeInBytes: 1e9,
+            numFiles: 50,
+          },
+        ],
+      ]),
+    };
+    const scan = computeFlags(
+      makeCandidate({
+        sampleQueryText: "SELECT * FROM catalog.schema.orders",
+        windowStats: { ...makeCandidate().windowStats, totalReadBytes: 200 * 1024 * 1024 },
+      }),
+      DEFAULT_THRESHOLDS,
+      tableContext,
+    );
+    expect(scan.some((f) => f.flag === "ClusterByAutoCandidate")).toBe(false);
+
+    const merge = computeFlags(
+      makeCandidate({
+        statementType: "MERGE",
+        sampleQueryText:
+          "MERGE INTO catalog.schema.items t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *",
+      }),
+      DEFAULT_THRESHOLDS,
+      tableContext,
+    );
+    expect(merge.some((f) => f.flag === "MissingDeletionVectors")).toBe(false);
+  });
+
+  it("flags ClusterByAutoCandidate on unclustered managed tables with high scan bytes", () => {
+    const c = makeCandidate({
+      sampleQueryText: "SELECT * FROM catalog.schema.orders WHERE id = 1",
+      windowStats: {
+        ...makeCandidate().windowStats,
+        totalReadBytes: 200 * 1024 * 1024,
+      },
+    });
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            format: "delta",
+            sizeInBytes: 5e9,
+            numFiles: 200,
+          },
+        ],
+      ]),
+    };
+    const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
+    const autoFlag = flags.find((f) => f.flag === "ClusterByAutoCandidate");
+    expect(autoFlag).toBeDefined();
+    expect(autoFlag!.detail).toContain("CLUSTER BY AUTO");
   });
 });
 

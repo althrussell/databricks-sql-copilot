@@ -15,12 +15,20 @@ export interface DbtMetadata {
 }
 
 /**
- * Extract QUERY_TAG from SQL comment: `QUERY_TAG:value`
+ * Extract QUERY_TAG from SQL comment (`/* ... QUERY_TAG:value *\/`)
+ * or inline `SET query_tags = '...'` / `-- QUERY_TAG: value`.
  */
-export function extractQueryTag(sql: string): string | null {
-  const match = sql.match(/\/\*[\s\S]*?QUERY_TAG:([\s\S]*?)(?:\*\/)/);
-  if (match && match[1]) {
-    return match[1].trim();
+export function extractQueryTag(sql: string, nativeQueryTag?: string | null): string | null {
+  if (nativeQueryTag && nativeQueryTag.trim().length > 0) {
+    return nativeQueryTag.trim();
+  }
+  const blockMatch = sql.match(/\/\*[\s\S]*?QUERY_TAG:([\s\S]*?)(?:\*\/)/i);
+  if (blockMatch && blockMatch[1]) {
+    return blockMatch[1].trim();
+  }
+  const lineMatch = sql.match(/--\s*QUERY_TAG:\s*([^\r\n]+)/i);
+  if (lineMatch && lineMatch[1]) {
+    return lineMatch[1].trim();
   }
   return null;
 }

@@ -1723,7 +1723,13 @@ export async function getJobHealthScores(params: GetJobsParams): Promise<JobHeal
     const successRateScore = Math.min((successRate / 100) * 40, 40);
     const stabilityScore = Math.min(Math.max(40 - cvPct * 0.4, 0), 30);
     const overheadScore = Math.min(Math.max(20 - overheadPct * 0.4, 0), 20);
-    const costEfficiencyScore = Math.min(10, 10);
+    // Cost efficiency (0-10): penalizes wasted DBU time from failed runs and non-execution overhead
+    const failureWasteRatio = 1 - successRate / 100;
+    const overheadWasteRatio = Math.min(overheadPct / 100, 1);
+    const costEfficiencyScore = Math.max(
+      0,
+      Math.min(10, 10 * (1 - failureWasteRatio * 0.6 - overheadWasteRatio * 0.4)),
+    );
     const healthScore = Math.round(
       successRateScore + stabilityScore + overheadScore + costEfficiencyScore,
     );
