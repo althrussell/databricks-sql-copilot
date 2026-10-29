@@ -8,12 +8,13 @@
  */
 
 import { executeQuery } from "@/lib/dbx/sql-client";
-import { fingerprint as computeFingerprint } from "@/lib/domain/sql-fingerprint";
+import { fingerprint as computeFingerprint, normalizeSql } from "@/lib/domain/sql-fingerprint";
 import type { TimelineQuery } from "@/lib/domain/types";
 import type { TriageInsight } from "@/lib/ai/triage";
 import { fetchTriageTableContext, formatTriageTableContext } from "@/lib/queries/table-metadata";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import { renderPrompt } from "@/lib/ai/prompts/registry";
+import { writePromptLog } from "@/lib/ai/prompt-logger";
 import { buildAiQuerySql, getMaxTokensForTask, resolveModelForTask } from "@/lib/ai/model-config";
 
 const MAX_PATTERNS = 15;
@@ -30,6 +31,9 @@ interface PatternSummary {
   runCount: number;
   totalDurationMs: number;
   avgDurationMs: number;
+  /** Queue wait as a share of execution time over runs that executed; null when none did */
+  queueShareOfExec: number | null;
+  neverExecutedRuns: number;
   maxDurationMs: number;
   totalBytesScanned: number;
   totalRowsProduced: number;
@@ -65,6 +69,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
       sqlSnippet: string;
       statementType: string;
       durations: number[];
+      executionTimes: number[];
       bytesScanned: number[];
       rowsProduced: number[];
       spillBytes: number[];
@@ -83,6 +88,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
 
     if (existing) {
       existing.durations.push(q.durationMs);
+      existing.executionTimes.push(q.executionTimeMs);
       existing.bytesScanned.push(q.bytesScanned);
       existing.rowsProduced.push(q.rowsProduced);
       existing.spillBytes.push(q.spillBytes);
@@ -93,9 +99,10 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
     } else {
       groups.set(fp, {
         fingerprint: fp,
-        sqlSnippet: q.queryText.replace(/\s+/g, " ").trim().slice(0, 150),
+        sqlSnippet: normalizeSql(q.queryText).replace(/\s+/g, " ").trim().slice(0, 150),
         statementType: q.statementType,
         durations: [q.durationMs],
+        executionTimes: [q.executionTimeMs],
         bytesScanned: [q.bytesScanned],
         rowsProduced: [q.rowsProduced],
         spillBytes: [q.spillBytes],
@@ -111,6 +118,16 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
   for (const g of groups.values()) {
     const totalDurationMs = g.durations.reduce((a, b) => a + b, 0);
     const avgDurationMs = totalDurationMs / g.durations.length;
+    let executedRuns = 0;
+    let executedQueueMs = 0;
+    let executedExecMs = 0;
+    g.executionTimes.forEach((execMs, i) => {
+      if (execMs > 0) {
+        executedRuns++;
+        executedQueueMs += g.queueWaits[i];
+        executedExecMs += execMs;
+      }
+    });
     const maxDurationMs = Math.max(...g.durations);
     const totalBytesScanned = g.bytesScanned.reduce((a, b) => a + b, 0);
     const totalRowsProduced = g.rowsProduced.reduce((a, b) => a + b, 0);
@@ -125,6 +142,8 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
       runCount: g.durations.length,
       totalDurationMs,
       avgDurationMs,
+      queueShareOfExec: executedExecMs > 0 ? executedQueueMs / executedExecMs : null,
+      neverExecutedRuns: g.durations.length - executedRuns,
       maxDurationMs,
       totalBytesScanned,
       totalRowsProduced,
@@ -142,8 +161,16 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
   return result;
 }
 
+function queueShareLabel(p: PatternSummary): string {
+  if (p.queueShareOfExec === null) return "no execution time recorded";
+  const share = `${Math.round(p.queueShareOfExec * 100)}% of exec time`;
+  return p.neverExecutedRuns > 0
+    ? `${share} for executed runs; ${p.neverExecutedRuns} of ${p.runCount} runs recorded no execution time`
+    : share;
+}
+
 function patternSummaryLine(p: PatternSummary): string {
-  const queuePct = p.avgDurationMs > 0 ? Math.round((p.avgQueueWaitMs / p.avgDurationMs) * 100) : 0;
+  const queueShare = queueShareLabel(p);
 
   return [
     `ID: ${p.fingerprint}`,
@@ -152,7 +179,7 @@ function patternSummaryLine(p: PatternSummary): string {
     `Runs: ${p.runCount}, avg: ${fmtMs(p.avgDurationMs)}, max: ${fmtMs(p.maxDurationMs)}`,
     `Read: ${fmtBytes(p.totalBytesScanned)}, produced: ${p.totalRowsProduced.toLocaleString()} rows`,
     `Spill: ${fmtBytes(p.totalSpillBytes)}, cache: ${Math.round(p.avgCacheHitPercent)}%`,
-    `Queue: ${fmtMs(p.avgQueueWaitMs)} avg (${queuePct}% of duration)`,
+    `Queue: ${fmtMs(p.avgQueueWaitMs)} avg (${queueShare})`,
     p.clientApplications.length > 0 ? `App: ${p.clientApplications.join(", ")}` : "",
     `Users: ${p.users.join(", ")}`,
   ]
@@ -202,8 +229,8 @@ export async function triageMonitorQueries(queries: TimelineQuery[]): Promise<Mo
     maxTokens: getMaxTokensForTask("triage-monitor"),
   });
 
+  const t0 = Date.now();
   try {
-    const t0 = Date.now();
     console.log(
       `[ai-triage-monitor] calling ${triageModel} for ${top.length} patterns (prompt ~${combinedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`,
     );
@@ -219,22 +246,61 @@ export async function triageMonitorQueries(queries: TimelineQuery[]): Promise<Mo
       );
       return Promise.race([resultPromise, timeoutPromise]);
     });
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    const durationMs = Date.now() - t0;
+    const elapsed = (durationMs / 1000).toFixed(1);
 
     if (!result.rows.length || !result.rows[0].response) {
       console.warn(`[ai-triage-monitor] empty response (${elapsed}s)`);
+      writePromptLog({
+        timestamp: new Date().toISOString(),
+        promptKey: "triage",
+        promptVersion: rendered.version,
+        model: triageModel,
+        estimatedInputTokens: rendered.estimatedTokens,
+        outputChars: 0,
+        durationMs,
+        success: false,
+        errorMessage: "Empty response",
+      });
       return {};
     }
 
     const raw = result.rows[0].response;
     const parsed = parseMonitorTriageResponse(raw, top);
+    const insightCount = Object.keys(parsed).length;
+
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "triage",
+      promptVersion: rendered.version,
+      model: triageModel,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: raw.length,
+      durationMs,
+      success: insightCount > 0,
+      renderedPrompt: combinedPrompt,
+      rawResponse: raw,
+    });
+
     console.log(
-      `[ai-triage-monitor] got insights for ${Object.keys(parsed).length}/${top.length} patterns in ${elapsed}s`,
+      `[ai-triage-monitor] got insights for ${insightCount}/${top.length} patterns in ${elapsed}s`,
     );
     return parsed;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    const durationMs = Date.now() - t0;
     console.error("[ai-triage-monitor] failed:", msg);
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "triage",
+      promptVersion: rendered.version,
+      model: triageModel,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: 0,
+      durationMs,
+      success: false,
+      errorMessage: msg,
+    });
     return {};
   }
 }

@@ -48,11 +48,11 @@ Analyse the SQL query and metrics, then produce an optimised rewrite with IDENTI
 9. Replace repeated CTE references with TEMPORARY VIEW
 10. Reduce SELECT * to only needed columns`;
 
-export const rewriteV1: PromptTemplate = {
+export const rewriteV2: PromptTemplate = {
   key: "rewrite",
-  version: "v1",
+  version: "v2",
   description:
-    "Initial rewrite prompt with semantic equivalence rules and 10 common rewrite patterns",
+    "DBR 17+ rewrite prompt with semantic equivalence rules, COLLATE UTF8_LCASE, QUALIFY, and CLUSTER BY AUTO",
   build(ctx: PromptBuildContext): RenderedPrompt {
     const userPrompt = buildUserPromptSections(ctx, "rewrite");
     const estimatedTokens = Math.ceil((SYSTEM_PROMPT.length + userPrompt.length) / 4);
@@ -61,8 +61,10 @@ export const rewriteV1: PromptTemplate = {
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
       promptKey: "rewrite",
-      version: "v1",
+      version: "v2",
       estimatedTokens,
     };
   },
 };
+
+export const rewriteV1 = rewriteV2;

@@ -8,7 +8,14 @@ import {
 } from "@/lib/ai/prompts/registry";
 import type { PromptBuildContext } from "@/lib/ai/prompts/types";
 
-const ALL_KEYS: PromptKey[] = ["diagnose", "rewrite", "triage"];
+const ALL_KEYS: PromptKey[] = [
+  "diagnose",
+  "rewrite",
+  "triage",
+  "job-triage",
+  "job-analysis",
+  "actions-summary",
+];
 
 import type { Candidate } from "@/lib/domain/types";
 
@@ -101,30 +108,34 @@ describe("Prompt Registry", () => {
   });
 
   describe("listTemplates", () => {
-    it("lists all 3 registered templates", () => {
+    it("lists all 6 registered templates", () => {
       const list = listTemplates();
-      expect(list).toHaveLength(3);
+      expect(list).toHaveLength(6);
       const keys = list.map((t) => t.key);
       expect(keys).toContain("diagnose");
       expect(keys).toContain("rewrite");
       expect(keys).toContain("triage");
+      expect(keys).toContain("job-triage");
+      expect(keys).toContain("job-analysis");
+      expect(keys).toContain("actions-summary");
     });
 
     it("each entry has key, version, and description", () => {
       for (const entry of listTemplates()) {
         expect(entry.key).toBeTruthy();
-        expect(entry.version).toBeTruthy();
+        expect(entry.version).toBe("v2");
         expect(entry.description).toBeTruthy();
       }
     });
   });
 
   describe("renderPrompt", () => {
-    it("renders diagnose prompt with valid structure", () => {
+    it("renders diagnose prompt with valid structure and DBR 17+ guidance", () => {
       const result = renderPrompt("diagnose", MINIMAL_CANDIDATE_CTX);
       expect(result.promptKey).toBe("diagnose");
-      expect(result.version).toBeTruthy();
-      expect(result.systemPrompt.length).toBeGreaterThan(0);
+      expect(result.version).toBe("v2");
+      expect(result.systemPrompt).toContain("CLUSTER BY AUTO");
+      expect(result.systemPrompt).toContain("COLLATE UTF8_LCASE");
       expect(result.userPrompt.length).toBeGreaterThan(0);
       expect(result.estimatedTokens).toBeGreaterThan(0);
     });
@@ -132,7 +143,7 @@ describe("Prompt Registry", () => {
     it("renders rewrite prompt with valid structure", () => {
       const result = renderPrompt("rewrite", MINIMAL_CANDIDATE_CTX);
       expect(result.promptKey).toBe("rewrite");
-      expect(result.version).toBeTruthy();
+      expect(result.version).toBe("v2");
       expect(result.systemPrompt.length).toBeGreaterThan(0);
       expect(result.userPrompt.length).toBeGreaterThan(0);
       expect(result.estimatedTokens).toBeGreaterThan(0);
@@ -141,10 +152,20 @@ describe("Prompt Registry", () => {
     it("renders triage prompt with valid structure", () => {
       const result = renderPrompt("triage", MINIMAL_TRIAGE_CTX);
       expect(result.promptKey).toBe("triage");
-      expect(result.version).toBeTruthy();
+      expect(result.version).toBe("v2");
       expect(result.systemPrompt.length).toBeGreaterThan(0);
       expect(result.userPrompt.length).toBeGreaterThan(0);
       expect(result.estimatedTokens).toBeGreaterThan(0);
+    });
+
+    it("renders actions-summary prompt recommending Liquid Clustering instead of ZORDER BY", () => {
+      const result = renderPrompt("actions-summary", {
+        actionsContextText: "Table main.sales.orders has 10% pruning",
+      });
+      expect(result.promptKey).toBe("actions-summary");
+      expect(result.version).toBe("v2");
+      expect(result.userPrompt).toContain("CLUSTER BY AUTO");
+      expect(result.userPrompt).toContain("NEVER recommend legacy `ZORDER BY`");
     });
 
     it("includes candidate SQL in diagnose user prompt", () => {
@@ -159,7 +180,12 @@ describe("Prompt Registry", () => {
 
     it("version from renderPrompt matches getActiveVersion", () => {
       for (const key of ALL_KEYS) {
-        const ctx = key === "triage" ? MINIMAL_TRIAGE_CTX : MINIMAL_CANDIDATE_CTX;
+        const ctx =
+          key === "triage"
+            ? MINIMAL_TRIAGE_CTX
+            : key === "diagnose" || key === "rewrite"
+              ? MINIMAL_CANDIDATE_CTX
+              : {};
         const rendered = renderPrompt(key, ctx);
         expect(rendered.version).toBe(getActiveVersion(key));
       }

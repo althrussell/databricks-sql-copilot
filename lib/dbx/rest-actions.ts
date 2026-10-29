@@ -75,10 +75,16 @@ interface MonitorQuerySlim {
   queryText?: string;
   statementType: string;
   durationMs: number;
+  executionTimeMs?: number;
+  compilationTimeMs?: number;
+  fetchTimeMs?: number;
   bytesScanned: number;
   spillBytes: number;
   cacheHitPercent: number;
   userName: string;
+  queueWaitMs?: number;
+  rowsProduced?: number;
+  clientApplication?: string;
 }
 
 /**
@@ -96,10 +102,16 @@ export async function fetchMonitorInsights(
     queryText: q.queryText,
     statementType: q.statementType,
     durationMs: q.durationMs,
+    executionTimeMs: q.executionTimeMs ?? 0,
+    compilationTimeMs: q.compilationTimeMs ?? 0,
+    fetchTimeMs: q.fetchTimeMs ?? 0,
     bytesScanned: q.bytesScanned,
     spillBytes: q.spillBytes,
     cacheHitPercent: q.cacheHitPercent,
     userName: q.userName,
+    queueWaitMs: q.queueWaitMs ?? 0,
+    rowsProduced: q.rowsProduced ?? 0,
+    clientApplication: q.clientApplication ?? "",
     // Fields not needed for triage — zero/empty defaults
     status: "",
     startTimeMs: 0,
@@ -109,12 +121,6 @@ export async function fetchMonitorInsights(
     source: "",
     sourceName: "",
     filesRead: 0,
-    compilationTimeMs: 0,
-    executionTimeMs: 0,
-    fetchTimeMs: 0,
-    queueWaitMs: 0,
-    rowsProduced: 0,
-    clientApplication: "",
   }));
 
   // Get fingerprint → insight map from the AI model

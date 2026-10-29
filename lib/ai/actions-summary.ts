@@ -15,6 +15,8 @@ import {
   resolveModelForTask,
   type AiModelSlug,
 } from "@/lib/ai/model-config";
+import { renderPrompt } from "@/lib/ai/prompts/registry";
+import { writePromptLog } from "@/lib/ai/prompt-logger";
 
 const TIMEOUT_MS = 90_000;
 
@@ -56,50 +58,18 @@ export async function generateActionsSummary(
     };
   }
 
-  const prompt = `You are a senior Databricks platform engineer creating a prioritised action list for a busy operations team.
-
-Analyse the following cross-cutting data from SQL warehouse queries, Databricks jobs, and table scan patterns. Generate EXACTLY 10 actionable items, ranked by business impact (cost × frequency × severity).
-
-${contextText}
-
-Return ONLY a JSON object:
-{
-  "items": [
-    {
-      "priority": 1,
-      "action": "<specific instruction — what to do, in imperative form, e.g. 'Run OPTIMIZE on catalog.schema.table ZORDER BY (order_date, customer_id)'>",
-      "target": "<the exact table name, query fingerprint, or job name this applies to>",
-      "owner": "<email or username of the person to contact — the query author or job creator>",
-      "impact": "<quantified impact, e.g. 'Save ~$45/week (15 runs × $3/run wasted on full scans)' or 'Reduce p95 from 12m to ~3m'>",
-      "effort": "<quick-win | medium | project>",
-      "category": "<query-optimization | table-optimization | job-reliability | job-performance | cost-reduction | user-outreach>",
-      "command": "<exact SQL or CLI command to run, or null if the action is non-technical>"
-    }
-  ]
-}
-
-Hard rules — violating any of these makes the output useless:
-
-1. EVERY action must reference a specific table, query, or job from the data — never generic advice.
-2. For tables with poor pruning (<70%): recommend OPTIMIZE with ZORDER BY on the columns used in WHERE clauses. Extract the filter columns from the SQL text provided. Do NOT recommend liquid clustering or predictive optimization — these may not be available yet. Instead give the OPTIMIZE ZORDER command they can run TODAY.
-3. For queries with high spill (>1GB): recommend specific partition pruning or pre-aggregation. Name the table and suggest which column to partition by based on the SQL.
-4. For queries waiting at capacity: recommend warehouse sizing or scheduling changes. Be specific about WHEN to schedule (e.g. "move to off-peak 2-4am window").
-5. For failing jobs: if the termination code is DRIVER_OOM or OOM, recommend specific memory config. If it's LIBRARY_INSTALL_ERROR, say to pin library versions. If unknown, say "reach out to [owner] to review error logs."
-6. For jobs with high queue % (>15%): recommend moving to a dedicated cluster or pool. Name the job.
-7. For jobs with high setup % (>20%): recommend instance pools. Name the job.
-8. Include at least 2 "reach out to [specific user]" actions for the biggest offenders (highest cost or most failures).
-9. The "command" field must contain the exact runnable SQL/CLI command when applicable (e.g. "OPTIMIZE catalog.schema.table ZORDER BY (col1, col2)"), or null for people-actions.
-10. Mix categories — don't give 10 query optimizations. Cover queries, jobs, tables, and people outreach.
-11. "effort" must be: quick-win (< 1 hour, run a command), medium (1-4 hours, code change or config), project (multi-day, architectural).
-12. Do NOT use markdown formatting inside JSON string values.`;
-
+  const rendered = renderPrompt("actions-summary", {
+    actionsContextText: contextText,
+  });
+  const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
   const model = resolveModelForTask("actions-summary", overrideModel);
   const sql = buildAiQuerySql({
     model,
-    prompt,
+    prompt: combinedPrompt,
     maxTokens: getMaxTokensForTask("actions-summary"),
   });
 
+  const t0 = Date.now();
   try {
     const result = await aiSemaphore.run(async () => {
       const resultPromise = executeQuery<{ response: string }>(sql);
@@ -109,15 +79,44 @@ Hard rules — violating any of these makes the output useless:
       return Promise.race([resultPromise, timeoutPromise]);
     });
 
+    const durationMs = Date.now() - t0;
+
     if (!result.rows.length || !result.rows[0].response) {
+      writePromptLog({
+        timestamp: new Date().toISOString(),
+        promptKey: "actions-summary",
+        promptVersion: rendered.version,
+        model,
+        estimatedInputTokens: rendered.estimatedTokens,
+        outputChars: 0,
+        durationMs,
+        success: false,
+        errorMessage: "Empty response",
+      });
       return { status: "error", message: "AI returned an empty response" };
     }
 
-    const parsed = parseResponse(result.rows[0].response);
+    const raw = result.rows[0].response;
+    const parsed = parseResponse(raw);
+
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "actions-summary",
+      promptVersion: rendered.version,
+      model,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: raw.length,
+      durationMs,
+      success: !!parsed,
+      errorMessage: parsed ? undefined : "Failed to parse actions summary response",
+      renderedPrompt: combinedPrompt,
+      rawResponse: raw,
+    });
+
     if (!parsed) {
       return {
         status: "error",
-        message: `Could not parse AI response (${result.rows[0].response.length} chars)`,
+        message: `Could not parse AI response (${raw.length} chars)`,
       };
     }
     return {
@@ -125,9 +124,22 @@ Hard rules — violating any of these makes the output useless:
       data: { items: parsed, generatedAt: new Date().toISOString(), modelUsed: model },
     };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    const durationMs = Date.now() - t0;
+    writePromptLog({
+      timestamp: new Date().toISOString(),
+      promptKey: "actions-summary",
+      promptVersion: rendered.version,
+      model,
+      estimatedInputTokens: rendered.estimatedTokens,
+      outputChars: 0,
+      durationMs,
+      success: false,
+      errorMessage: msg,
+    });
     return {
       status: "error",
-      message: err instanceof Error ? err.message : "Unknown error",
+      message: msg,
     };
   }
 }

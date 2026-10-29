@@ -264,10 +264,16 @@ export function WarehouseMonitor({
         queryText: q.queryText,
         statementType: q.statementType,
         durationMs: q.durationMs,
+        executionTimeMs: q.executionTimeMs,
+        compilationTimeMs: q.compilationTimeMs,
+        fetchTimeMs: q.fetchTimeMs,
         bytesScanned: q.bytesScanned,
         spillBytes: q.spillBytes,
         cacheHitPercent: q.cacheHitPercent,
         userName: q.userName,
+        queueWaitMs: q.queueWaitMs,
+        rowsProduced: q.rowsProduced,
+        clientApplication: q.clientApplication,
       }));
       console.log(
         `[warehouse-monitor] requesting insights for ${slim.length} queries with SQL text`,
