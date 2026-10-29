@@ -429,6 +429,7 @@ export interface TableSummaryForTriage {
   partitionColumns: string[];
   isManaged: boolean;
   predictiveOptEnabled: boolean;
+  /** undefined when DESCRIBE DETAIL does not reveal whether deletion vectors are enabled */
   deletionVectorsEnabled?: boolean;
   format: string | null;
   sizeInBytes: number | null;
@@ -456,9 +457,15 @@ async function fetchTableSummaryForTriage(
     detail.properties["delta.enablePredictiveOptimization"] === "true" ||
     detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
 
+  // Tri-state: only report "disabled" when DESCRIBE DETAIL gives us evidence either way
+  const dvProperty = detail.properties["delta.enableDeletionVectors"];
   const hasDeletionVectors =
-    detail.properties["delta.enableDeletionVectors"] === "true" ||
-    detail.tableFeatures.some((f) => f.toLowerCase().includes("deletionvectors"));
+    dvProperty === "true" ||
+    detail.tableFeatures.some((f) => f.toLowerCase().includes("deletionvectors"))
+      ? true
+      : dvProperty === "false" || detail.tableFeatures.length > 0
+        ? false
+        : undefined;
 
   const summary: TableSummaryForTriage = {
     tableName,

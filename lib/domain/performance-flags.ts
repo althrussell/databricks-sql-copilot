@@ -113,21 +113,16 @@ export function computeFlags(
     ws.avgExecutionMs +
     ws.avgFetchMs;
 
-  // Gather table metadata scoped to tables actually referenced by this candidate's SQL
-  // (falling back to all provided tables if SQL table extraction yields none, e.g. in unit tests)
+  // The table context is shared across all candidates, so only use tables this SQL references
   const rawTables = tableContext?.tables;
   let candidateTables: TableSummaryForTriage[] = [];
   if (rawTables && rawTables.size > 0) {
     const referencedNames = new Set(
       extractTableNames(candidate.sampleQueryText).map((n) => n.replace(/`/g, "").toLowerCase()),
     );
-    if (referencedNames.size > 0) {
-      candidateTables = [...rawTables.values()].filter((t) =>
-        referencedNames.has(t.tableName.replace(/`/g, "").toLowerCase()),
-      );
-    } else {
-      candidateTables = [...rawTables.values()];
-    }
+    candidateTables = [...rawTables.values()].filter((t) =>
+      referencedNames.has(t.tableName.replace(/`/g, "").toLowerCase()),
+    );
   }
   const hasCandidateTables = candidateTables.length > 0;
   const hasClusteredTable = candidateTables.some((t) => t.clusteringColumns.length > 0);
@@ -439,7 +434,11 @@ export function computeFlags(
   // ClusterByAutoCandidate: unclustered managed Delta tables scanned heavily
   if (hasCandidateTables && ws.totalReadBytes > 50 * 1024 * 1024) {
     const unclusteredManaged = candidateTables.filter(
-      (t) => t.isManaged && t.clusteringColumns.length === 0 && t.partitionColumns.length === 0,
+      (t) =>
+        t.isManaged &&
+        t.format?.toLowerCase() === "delta" &&
+        t.clusteringColumns.length === 0 &&
+        t.partitionColumns.length === 0,
     );
     if (unclusteredManaged.length > 0) {
       const names = unclusteredManaged.map((t) => t.tableName).join(", ");

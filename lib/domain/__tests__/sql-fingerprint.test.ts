@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createHash } from "crypto";
-import { normalizeSql, fingerprint } from "../sql-fingerprint";
+import { normalizeSql, fingerprint, legacyFingerprint } from "../sql-fingerprint";
 
 describe("normalizeSql", () => {
   it("collapses whitespace and lowercases", () => {
@@ -85,6 +85,15 @@ describe("fingerprint", () => {
   it("returns a hex string", () => {
     const fp = fingerprint("SELECT 1");
     expect(fp).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("reproduces the pre-unification fingerprints persisted in Lakebase", () => {
+    // Values produced by the djb2 implementation on main before the SHA-256 switch
+    expect(legacyFingerprint("SELECT * FROM users WHERE id = 1")).toBe("e7b511592fd0d23b");
+    expect(legacyFingerprint("/* dbt */ SELECT a FROM t WHERE x IN (1, 2)")).toBe(
+      "fb2a747458e1f756",
+    );
+    expect(legacyFingerprint("SELECT 1")).toBe("ff48ed64465d6846");
   });
 
   it("matches SUBSTRING(sha2(normalized_sql, 256), 1, 16) used by the SQL ingest and regressions", () => {
