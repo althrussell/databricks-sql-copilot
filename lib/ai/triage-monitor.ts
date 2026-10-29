@@ -84,7 +84,9 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
     const fp = computeFingerprint(q.queryText);
     const existing = groups.get(fp);
     const execMs =
-      q.executionTimeMs > 0 ? q.executionTimeMs : Math.max(0, q.durationMs - q.queueWaitMs);
+      q.executionTimeMs > 0
+        ? q.executionTimeMs
+        : Math.max(0, q.durationMs - q.queueWaitMs - q.compilationTimeMs - q.fetchTimeMs);
 
     if (existing) {
       existing.durations.push(q.durationMs);
