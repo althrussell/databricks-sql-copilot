@@ -57,19 +57,9 @@ export async function POST(request: Request) {
       );
     }
 
+    // Without Lakebase the action still applies for the current session; the client warns the user.
     const result = await setQueryAction(fingerprint, action, note);
-    if (!result.persisted) {
-      return NextResponse.json(
-        {
-          ok: false,
-          persisted: false,
-          reason: result.reason,
-          error: "Lakebase persistence is disabled (ENABLE_LAKEBASE=false).",
-        },
-        { status: 503 },
-      );
-    }
-    return NextResponse.json({ ok: true, persisted: true, userId: result.userId });
+    return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[api/query-actions] POST failed:", err);
     return NextResponse.json({ error: "Failed to save action" }, { status: 500 });
@@ -91,18 +81,7 @@ export async function DELETE(request: Request) {
     }
 
     const result = await removeQueryAction(fingerprint);
-    if (!result.persisted) {
-      return NextResponse.json(
-        {
-          ok: false,
-          persisted: false,
-          reason: result.reason,
-          error: "Lakebase persistence is disabled (ENABLE_LAKEBASE=false).",
-        },
-        { status: 503 },
-      );
-    }
-    return NextResponse.json({ ok: true, persisted: true, userId: result.userId });
+    return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[api/query-actions] DELETE failed:", err);
     return NextResponse.json({ error: "Failed to remove action" }, { status: 500 });
