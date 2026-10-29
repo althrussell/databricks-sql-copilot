@@ -65,11 +65,15 @@ PACKAGE_TARBALL=""
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BACKUP="$PROJECT_DIR/app.yaml.bak"
+SYNC_TMP=""
 
-# Always restore app.yaml on exit or interruption so the working tree stays clean
+# Always restore app.yaml and remove temporary staging dir on exit or interruption
 cleanup() {
   if [[ -f "$BACKUP" ]]; then
     mv "$BACKUP" "$PROJECT_DIR/app.yaml"
+  fi
+  if [[ -n "$SYNC_TMP" && -d "$SYNC_TMP" ]]; then
+    rm -rf "$SYNC_TMP"
   fi
 }
 trap cleanup EXIT
@@ -384,15 +388,18 @@ $WH_ENV_LINE
 YAML
 echo "  ✓ app.yaml generated"
 
-# Prepare sync directory based on deploy mode
+# Prepare sync directory based on deploy mode.
+# Stage outside the git working tree ($SYNC_TMP) so `databricks sync` does not apply the
+# repo's .gitignore rules to the pre-built bundle directory.
 SYNC_DIR="$PROJECT_DIR"
 if [[ "$DEPLOY_MODE" == "bundle" ]]; then
   echo ""
   echo "→ Building self-contained offline package (fast deploy mode)..."
+  SYNC_TMP="$(mktemp -d "${TMPDIR:-/tmp}/sqlcopilot-deploy.XXXXXX")"
   chmod +x "$SCRIPT_DIR/package-app.sh"
-  "$SCRIPT_DIR/package-app.sh" --output-dir "$PROJECT_DIR/.build-package"
-  cp "$PROJECT_DIR/app.yaml" "$PROJECT_DIR/.build-package/app.yaml"
-  SYNC_DIR="$PROJECT_DIR/.build-package"
+  "$SCRIPT_DIR/package-app.sh" --output-dir "$SYNC_TMP"
+  cp "$PROJECT_DIR/app.yaml" "$SYNC_TMP/app.yaml"
+  SYNC_DIR="$SYNC_TMP"
 elif [[ "$DEPLOY_MODE" == "package" ]]; then
   if [[ ! -f "$PACKAGE_TARBALL" ]]; then
     echo "ERROR: Package tarball not found: $PACKAGE_TARBALL"
@@ -400,11 +407,10 @@ elif [[ "$DEPLOY_MODE" == "package" ]]; then
   fi
   echo ""
   echo "→ Unpacking offline bundle tarball $PACKAGE_TARBALL..."
-  rm -rf "$PROJECT_DIR/.build-package"
-  mkdir -p "$PROJECT_DIR/.build-package"
-  tar -xzf "$PACKAGE_TARBALL" -C "$PROJECT_DIR/.build-package"
-  cp "$PROJECT_DIR/app.yaml" "$PROJECT_DIR/.build-package/app.yaml"
-  SYNC_DIR="$PROJECT_DIR/.build-package"
+  SYNC_TMP="$(mktemp -d "${TMPDIR:-/tmp}/sqlcopilot-deploy.XXXXXX")"
+  tar -xzf "$PACKAGE_TARBALL" -C "$SYNC_TMP"
+  cp "$PROJECT_DIR/app.yaml" "$SYNC_TMP/app.yaml"
+  SYNC_DIR="$SYNC_TMP"
 fi
 
 # Sync to workspace
@@ -412,9 +418,10 @@ WORKSPACE_PATH="/Workspace/Shared/$APP_NAME"
 echo ""
 echo "→ Syncing deployment files to $WORKSPACE_PATH..."
 if [[ "$DEPLOY_MODE" != "source" ]]; then
-  # Clear any stale package.json / source tree from previous source-mode deploys so the
-  # Databricks Apps container skips npm install + next build and unpacks the bundle directly.
-  databricks workspace delete "$WORKSPACE_PATH" --recursive --profile "$PROFILE" >/dev/null 2>&1 || true
+  # Remove any stale package.json from previous source-mode deploys so the Databricks Apps
+  # container skips npm install + next build and unpacks the pre-built bundle directly.
+  databricks workspace delete "$WORKSPACE_PATH/package.json" --profile "$PROFILE" >/dev/null 2>&1 || true
+  databricks workspace delete "$WORKSPACE_PATH/package-lock.json" --profile "$PROFILE" >/dev/null 2>&1 || true
 fi
 databricks sync "$SYNC_DIR" "$WORKSPACE_PATH" --full --profile "$PROFILE"
 echo "  ✓ Files synced"

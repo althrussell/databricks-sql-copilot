@@ -121,7 +121,7 @@ if [ -n "$SCHEMA_URL" ]; then
       .catch(err => { console.warn('[startup] Schema rename skipped:', err.message); client.end(); });
   " "$SCHEMA_URL" 2>&1 || true
 
-  if [ -x "$PRISMA_BIN" ]; then
+  if [ -x "$PRISMA_BIN" ] && [ -f "prisma.config.ts" ]; then
     echo "[startup] Applying Prisma migrations..."
     MIGRATE_OK=0
     # Keep the "&& MIGRATE_OK=1" form: set -e ignores failures inside an && list, so a failed
