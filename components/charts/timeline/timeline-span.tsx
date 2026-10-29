@@ -70,19 +70,22 @@ export function TimelineSpan({
       aria-label={`Query ${query.id}: ${query.status}, ${query.durationMs}ms`}
     >
       {/* Show a queued segment if there's queue time */}
-      {query.queuedStartTimeMs && query.queuedEndTimeMs && widthPercent > 2 && (
-        <div
-          className="absolute top-0 bottom-0 left-0 bg-foreground/20 rounded-l-[2px]"
-          style={{
-            width: `${Math.min(
-              ((query.queuedEndTimeMs - query.queuedStartTimeMs) /
-                (query.endTimeMs - query.startTimeMs)) *
+      {query.queuedStartTimeMs &&
+        query.queuedEndTimeMs &&
+        query.endTimeMs > query.startTimeMs &&
+        widthPercent > 2 && (
+          <div
+            className="absolute top-0 bottom-0 left-0 bg-foreground/20 rounded-l-[2px]"
+            style={{
+              width: `${Math.min(
+                ((query.queuedEndTimeMs - query.queuedStartTimeMs) /
+                  (query.endTimeMs - query.startTimeMs)) *
+                  100,
                 100,
-              100,
-            )}%`,
-          }}
-        />
-      )}
+              )}%`,
+            }}
+          />
+        )}
     </div>
   );
 }

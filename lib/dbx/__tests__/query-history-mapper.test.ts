@@ -66,7 +66,44 @@ describe("mapApiQueryToTimeline queue wait", () => {
 
     expect(mapped.queuedStartTimeMs).toBe(10_000);
     expect(mapped.queuedEndTimeMs).toBe(25_000);
+    expect(mapped.endTimeMs).toBe(25_000);
+    expect(mapped.durationMs).toBe(15_000);
     expect(mapped.queueWaitMs).toBe(15_000);
+  });
+
+  it("does not attribute running or compilation time to queue wait when compilation timestamp is missing", () => {
+    const running = mapApiQueryToTimeline(
+      apiQuery({
+        status: "RUNNING",
+        query_start_time_ms: 1_000,
+        query_end_time_ms: undefined,
+        metrics: {
+          overloading_queue_start_timestamp: 1_000,
+          execution_time_ms: 8_000,
+          total_time_ms: 9_000,
+        },
+      }),
+      10_000,
+    );
+
+    expect(running.queueWaitMs).toBe(0);
+    expect(running.durationMs).toBe(9_000);
+
+    const canceledAfterExec = mapApiQueryToTimeline(
+      apiQuery({
+        status: "CANCELED",
+        query_start_time_ms: 1_000,
+        query_end_time_ms: 10_000,
+        metrics: {
+          provisioning_queue_start_timestamp: 1_000,
+          compilation_time_ms: 500,
+          execution_time_ms: 6_000,
+          total_time_ms: 9_000,
+        },
+      }),
+    );
+
+    expect(canceledAfterExec.queueWaitMs).toBe(0);
   });
 
   it("picks the earliest timestamp when both provisioning and overloading queues are present", () => {
