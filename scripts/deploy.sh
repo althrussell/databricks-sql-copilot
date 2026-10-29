@@ -13,8 +13,14 @@
 #   --enable-lakebase     Enable Lakebase persistence: true or false (default: true)
 #   --genie-space         Genie Space ID (optional, leave blank to skip)
 #   --create-genie        Auto-provision Genie Space from genie-space-config.json
-#   --init-observability  Create unified observability tables + views and run the
-#                         first query-history ingest (fails the deploy on error)
+#   --init-observability  Create unified observability tables + views (fails the deploy
+#                         on error), then submit the first query-history ingest to run
+#                         on the warehouse in the background
+#   --ai-model TASK=ENDPOINT
+#                         Serve one AI task from a different model endpoint (repeatable).
+#                         Tasks: triage, rewrite, actions, diagnose, job-analysis.
+#                         Defaults: Gemini 4 Argon for triage, GPT 6.1 Sol for rewrite
+#                         and actions, Claude Opus 5.5 for diagnose and job-analysis
 #   --create              Create the app if it doesn't exist
 #   --help, -h            Show this help message
 #
@@ -24,6 +30,9 @@
 #
 #   # Deploy with explicit warehouse
 #   ./scripts/deploy.sh -p my-workspace -w abc123def456
+#
+#   # Route SQL rewrites to Claude Opus 5.5
+#   ./scripts/deploy.sh -p my-workspace --ai-model rewrite=databricks-claude-opus-5-5
 #
 #   # Deploy with SP auth and existing Genie Space
 #   ./scripts/deploy.sh -p DEFAULT -a sp --genie-space 01f11d330b1e17349370616c86cb90ba
@@ -36,6 +45,12 @@ APP_NAME="sql-obs-genie"
 AUTH_MODE="obo"
 ENABLE_LAKEBASE="true"
 GENIE_SPACE_ID=""
+# Assigned here (not inherited) so local-dev AI_MODEL_* exports never reach a deployment
+AI_MODEL_TRIAGE="databricks-gemini-4-argon"
+AI_MODEL_REWRITE="databricks-gpt-6-1-sol"
+AI_MODEL_ACTIONS="databricks-gpt-6-1-sol"
+AI_MODEL_DIAGNOSE="databricks-claude-opus-5-5"
+AI_MODEL_JOB_ANALYSIS="databricks-claude-opus-5-5"
 CREATE_APP=false
 CREATE_GENIE=false
 INIT_OBSERVABILITY=false
@@ -56,6 +71,25 @@ usage() {
   exit 0
 }
 
+set_ai_model() {
+  local task="${1%%=*}" endpoint="${1#*=}"
+  if [[ "$1" != *=* || -z "$task" || -z "$endpoint" ]]; then
+    echo "ERROR: --ai-model expects TASK=ENDPOINT (got '$1')"
+    exit 1
+  fi
+  case "$task" in
+    triage)       AI_MODEL_TRIAGE="$endpoint" ;;
+    rewrite)      AI_MODEL_REWRITE="$endpoint" ;;
+    actions)      AI_MODEL_ACTIONS="$endpoint" ;;
+    diagnose)     AI_MODEL_DIAGNOSE="$endpoint" ;;
+    job-analysis) AI_MODEL_JOB_ANALYSIS="$endpoint" ;;
+    *)
+      echo "ERROR: Unknown --ai-model task '$task' (use triage, rewrite, actions, diagnose, or job-analysis)"
+      exit 1
+      ;;
+  esac
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -p|--profile)          PROFILE="$2"; shift 2 ;;
@@ -66,6 +100,7 @@ while [[ $# -gt 0 ]]; do
     --genie-space)         GENIE_SPACE_ID="$2"; shift 2 ;;
     --create-genie)        CREATE_GENIE=true; shift ;;
     --init-observability)  INIT_OBSERVABILITY=true; shift ;;
+    --ai-model)            set_ai_model "${2:-}"; shift 2 ;;
     --create)              CREATE_APP=true; shift ;;
     -h|--help)             usage ;;
     *) echo "Unknown option: $1"; usage ;;
@@ -128,6 +163,8 @@ echo "  App name:       $APP_NAME"
 echo "  Auth mode:      $AUTH_MODE"
 echo "  Lakebase:       $ENABLE_LAKEBASE"
 echo "  Genie space:    ${GENIE_SPACE_ID:-<none>}"
+echo "  AI models:      triage=$AI_MODEL_TRIAGE rewrite=$AI_MODEL_REWRITE actions=$AI_MODEL_ACTIONS"
+echo "                  diagnose=$AI_MODEL_DIAGNOSE job-analysis=$AI_MODEL_JOB_ANALYSIS"
 echo ""
 
 # Bootstrap unified observability tables, views, and the first query-history ingest
@@ -248,15 +285,15 @@ $WH_ENV_LINE
   - name: ENABLE_LAKEBASE
     value: "$ENABLE_LAKEBASE"
   - name: AI_MODEL_TRIAGE
-    value: "${AI_MODEL_TRIAGE:-databricks-gemini-4-argon}"
+    value: "$AI_MODEL_TRIAGE"
   - name: AI_MODEL_REWRITE
-    value: "${AI_MODEL_REWRITE:-databricks-gpt-6-1-sol}"
+    value: "$AI_MODEL_REWRITE"
   - name: AI_MODEL_ACTIONS
-    value: "${AI_MODEL_ACTIONS:-databricks-gpt-6-1-sol}"
+    value: "$AI_MODEL_ACTIONS"
   - name: AI_MODEL_DIAGNOSE
-    value: "${AI_MODEL_DIAGNOSE:-databricks-claude-opus-5-5}"
+    value: "$AI_MODEL_DIAGNOSE"
   - name: AI_MODEL_JOB_ANALYSIS
-    value: "${AI_MODEL_JOB_ANALYSIS:-databricks-claude-opus-5-5}"
+    value: "$AI_MODEL_JOB_ANALYSIS"
   - name: UNIFIED_OBSERVABILITY_CATALOG
     value: "main"
   - name: UNIFIED_OBSERVABILITY_SCHEMA

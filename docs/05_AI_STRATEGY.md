@@ -16,7 +16,9 @@ All LLM calls use Databricks Foundation Model APIs (`ai_query()` in SQL or Model
 3) **Deep Diagnostic & Agentic Reasoning (`databricks-claude-opus-5-5` — Claude Opus 5.5)**
    - Overridable via `AI_MODEL_DIAGNOSE`, `AI_MODEL_JOB_ANALYSIS`, `LLM_ENDPOINT`, or UI model selector
    - Used for: Deep SQL query diagnosis (`lib/ai/aiClient.ts` mode `diagnose`), Lakeflow Job root-cause analysis (`lib/ai/job-analysis.ts`), and the interactive Spark Tuning Agent (`observability/agent/spark_tuning_agent.py`)
-   - Output budget: `max_tokens: 8192` (SQL) / `16384` (Spark Agent)
+   - Output budget: `max_tokens: 8192` (SQL) / `125000` (Spark Agent, `LLM_MAX_TOKENS`)
+
+When deploying with `scripts/deploy.sh`, set per-task models with `--ai-model TASK=ENDPOINT` (for example `--ai-model rewrite=databricks-claude-opus-5-5`). The script ignores `AI_MODEL_*` variables exported in your shell.
 
 ## Prompt Registry (`lib/ai/prompts/registry.ts`)
 All 6 prompt templates (`diagnose`, `rewrite`, `triage`, `job-triage`, `job-analysis`, `actions-summary`) are versioned (`v2`), logged via `writePromptLog()`, and aligned with DBR 17+ best practices:
