@@ -7,12 +7,7 @@
  */
 
 export type PromptKey =
-  | "diagnose"
-  | "rewrite"
-  | "triage"
-  | "job-triage"
-  | "job-analysis"
-  | "actions-summary";
+  "diagnose" | "rewrite" | "triage" | "job-triage" | "job-analysis" | "actions-summary";
 
 export interface RenderedPrompt {
   systemPrompt: string;
