@@ -32,8 +32,21 @@ from pydantic import BaseModel
 from databricks.sdk import WorkspaceClient
 from unitycatalog.ai.core.databricks import DatabricksFunctionClient
 
-LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "databricks-claude-opus-5-5")
-MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "125000"))
+DEFAULT_LLM_ENDPOINT = "databricks-claude-opus-5-5"
+DEFAULT_MAX_TOKENS = 125000
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        warnings.warn(f"Ignoring non-integer {name}={raw!r}; using {default}")
+        return default
+
+
+LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "").strip() or DEFAULT_LLM_ENDPOINT
+MAX_TOKENS = _env_int("LLM_MAX_TOKENS", DEFAULT_MAX_TOKENS)
 CATALOG = os.getenv("UC_CATALOG", "main")
 SCHEMA = os.getenv("UC_SCHEMA", "unified_observability")
 
