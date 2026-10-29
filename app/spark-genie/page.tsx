@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ShieldAlert, Wrench, AlertTriangle, XCircle } from "lucide-react";
+import { ShieldAlert, Wrench, AlertTriangle, XCircle, ExternalLink } from "lucide-react";
 
 interface Message {
   id: string;
@@ -154,7 +154,22 @@ export default function SparkGeniePage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [error, setError] = useState<GenieErrorInfo | null>(null);
   const [showSql, setShowSql] = useState<Record<string, boolean>>({});
+  const [spaceInfo, setSpaceInfo] = useState<{
+    spaceId: string | null;
+    spaceUrl: string | null;
+  }>({ spaceId: null, spaceUrl: null });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/spark-genie")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.spaceId) {
+          setSpaceInfo({ spaceId: d.spaceId, spaceUrl: d.spaceUrl ?? null });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -307,12 +322,27 @@ export default function SparkGeniePage() {
 
   return (
     <div className="px-6 py-8 space-y-6 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">SQL Observability & Monitoring Genie</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Ask natural language questions over query history, warehouse health, cluster inventory,
-          and billing system tables.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            SQL Observability & Monitoring Genie
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Ask natural language questions over query history, warehouse health, cluster inventory,
+            and billing system tables.
+          </p>
+        </div>
+        {spaceInfo.spaceUrl && (
+          <a
+            href={spaceInfo.spaceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors shrink-0"
+          >
+            <span>Open Genie Room in Workspace</span>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        )}
       </div>
 
       {messages.length === 0 && (

@@ -1,19 +1,27 @@
 import { getConfig } from "@/lib/config";
+import { getOboToken } from "@/lib/dbx/obo";
 import { fetchWithTimeout, TIMEOUTS } from "@/lib/dbx/fetch-with-timeout";
 
 /**
- * Always use the app service principal's all-apis token for Genie calls.
- * The OBO user token's `dashboards.genie` scope is not accepted by the
- * Genie Conversation API (it requires the literal `genie` scope which
- * cannot be requested through the Apps scope picker). The SP token with
- * `all-apis` works reliably — the SP just needs `Can Run` on the space.
+ * Get a bearer token for Genie Conversation API calls.
+ * Priority (matching rest-client.ts and sql-client.ts):
+ *   1. OBO user token from `x-forwarded-access-token` when AUTH_MODE=obo
+ *   2. PAT (local dev)
+ *   3. Service Principal OAuth client_credentials (when AUTH_MODE=sp)
  */
-async function getSpBearerToken(): Promise<string> {
+async function getGenieBearerToken(): Promise<string> {
+  const oboToken = await getOboToken();
+  if (oboToken) {
+    return oboToken;
+  }
+
   const config = getConfig();
   if (config.auth.mode === "pat") return config.auth.token;
 
   if (config.auth.mode !== "oauth") {
-    throw new Error("Genie client requires OAuth (SP) or PAT credentials.");
+    throw new Error(
+      "No OBO user token available and no SP/PAT credentials configured for Genie client.",
+    );
   }
 
   const tokenUrl = `https://${config.serverHostname}/oidc/v1/token`;
@@ -31,7 +39,7 @@ async function getSpBearerToken(): Promise<string> {
     },
     { timeoutMs: TIMEOUTS.AUTH },
   );
-  if (!response.ok) throw new Error("Genie SP OAuth failed: " + response.status);
+  if (!response.ok) throw new Error("Genie OAuth token exchange failed: " + response.status);
   const data = (await response.json()) as { access_token: string };
   return data.access_token;
 }
@@ -52,9 +60,6 @@ function parseGenieError(status: number, body: string, context: string): GenieEr
 
   const errorCode = parsed.error_code ?? String(status);
   const rawMsg = parsed.message ?? body;
-  const config = getConfig();
-  const spId =
-    config.auth.mode === "oauth" ? config.auth.clientId : "your-app-service-principal-id";
 
   if (
     status === 404 &&
@@ -62,11 +67,10 @@ function parseGenieError(status: number, body: string, context: string): GenieEr
   ) {
     return {
       code: "GENIE_SPACE_NOT_FOUND",
-      message: `The Genie Space does not exist or the app's Service Principal does not have access.`,
+      message: `The Genie Space does not exist or you do not have access to it.`,
       fixSteps: [
-        `Open Databricks workspace → navigate to the Genie Space`,
-        `Click the Share button on the Genie Space`,
-        `Add the app's Service Principal (ID: ${spId}) with "Can Run" permission`,
+        `Open Databricks workspace → Genie → verify the Genie Space exists`,
+        `Ensure your user account has at least "Can Run" permission on the Genie Space`,
         `If the space was deleted, create a new one and update the GENIE_SPACE_ID environment variable`,
       ],
     };
@@ -79,39 +83,33 @@ function parseGenieError(status: number, body: string, context: string): GenieEr
     ) {
       return {
         code: "WAREHOUSE_PERMISSION_DENIED",
-        message: `The app's Service Principal cannot access the SQL warehouse used by this Genie Space.`,
+        message: `You cannot access the SQL warehouse used by this Genie Space.`,
         fixSteps: [
           `Open Databricks workspace → SQL Warehouses`,
-          `Click the warehouse used by the Genie Space`,
-          `Go to Permissions tab`,
-          `Add the app's Service Principal (ID: ${spId}) with "Can use" permission`,
-          `Wait ~30 seconds for permissions to propagate, then retry`,
+          `Select the warehouse used by the Genie Space and verify you have "Can use" permission`,
         ],
       };
     }
 
     if (rawMsg.includes("required scopes") || rawMsg.includes("Invalid scope")) {
       const scopeMatch = rawMsg.match(/required scopes?: (\w+)/);
-      const missingScope = scopeMatch?.[1] ?? "genie / sql";
+      const missingScope = scopeMatch?.[1] ?? "dashboards.genie / sql";
       return {
         code: "MISSING_OAUTH_SCOPE",
-        message: `The app is missing the "${missingScope}" OAuth scope.`,
+        message: `The app is missing the "${missingScope}" OBO user scope.`,
         fixSteps: [
-          `Open Databricks workspace → Compute → Apps`,
-          `Click on this app's name`,
-          `Go to Permissions / OAuth Scopes`,
-          `Add the following scopes: sql, dashboards.genie, serving.serving-endpoints`,
-          `Save and wait for the app to restart`,
+          `Open Databricks workspace → Compute → Apps → select this app`,
+          `Verify User API Scopes include: sql, dashboards.genie, catalog.tables:read, catalog.schemas:read, catalog.catalogs:read`,
+          `Save and re-authorize the app if prompted`,
         ],
       };
     }
 
     return {
       code: "PERMISSION_DENIED",
-      message: `Access denied during ${context}. The Service Principal lacks required permissions.`,
+      message: `Access denied during ${context}: ${rawMsg.slice(0, 240)}`,
       fixSteps: [
-        `Grant the app's Service Principal (ID: ${spId}) "Can Run" on the Genie Space`,
-        `Grant "Can use" on the SQL warehouse used by the Genie Space`,
+        `Verify your user account has "Can Run" on the Genie Space and "Can use" on its SQL warehouse`,
         `Ensure the app has the sql and dashboards.genie OAuth scopes`,
       ],
     };
@@ -163,7 +161,7 @@ export async function startGenieConversation(
   question: string,
 ): Promise<{ conversationId: string; messageId: string }> {
   const config = getConfig();
-  const token = await getSpBearerToken();
+  const token = await getGenieBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/start-conversation`;
   const res = await genieRequest(
     url,
@@ -186,7 +184,7 @@ export async function continueGenieConversation(
   question: string,
 ): Promise<{ messageId: string }> {
   const config = getConfig();
-  const token = await getSpBearerToken();
+  const token = await getGenieBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/conversations/${conversationId}/messages`;
   const res = await genieRequest(
     url,
@@ -209,7 +207,7 @@ export async function pollGenieMessage(
   messageId: string,
 ): Promise<GenieMessage> {
   const config = getConfig();
-  const token = await getSpBearerToken();
+  const token = await getGenieBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/conversations/${conversationId}/messages/${messageId}`;
   const res = await genieRequest(
     url,
@@ -224,6 +222,7 @@ export async function pollGenieMessage(
   const data = (await res.json()) as {
     id: string;
     status: string;
+    error?: { error?: string; type?: string };
     attachments?: Array<{
       text?: { content: string };
       query?: { query: string; description: string };
@@ -236,6 +235,10 @@ export async function pollGenieMessage(
   for (const att of attachments) {
     if (att.text?.content) content += att.text.content + "\n";
     if (att.query?.query) sql = att.query.query;
+  }
+
+  if (data.status === "FAILED" && !content.trim()) {
+    content = data.error?.error ?? "Genie query failed";
   }
 
   return {
@@ -253,7 +256,7 @@ export async function getGenieQueryResult(
   messageId: string,
 ): Promise<{ columns: string[]; rows: unknown[][] }> {
   const config = getConfig();
-  const token = await getSpBearerToken();
+  const token = await getGenieBearerToken();
   const url = `https://${config.serverHostname}/api/2.0/genie/spaces/${spaceId}/conversations/${conversationId}/messages/${messageId}/query-result`;
   const res = await fetchWithTimeout(
     url,

@@ -126,6 +126,7 @@ async function openSession(
       host: config.serverHostname,
       path: config.httpPath,
       token: oboToken,
+      telemetryEnabled: false,
     });
     return { session: await connection.openSession(), isObo: true };
   }
@@ -141,12 +142,14 @@ async function openSession(
           path: config.httpPath,
           oauthClientId: config.auth.clientId,
           oauthClientSecret: config.auth.clientSecret,
+          telemetryEnabled: false,
         }
       : {
           authType: "access-token" as const,
           host: config.serverHostname,
           path: config.httpPath,
           token: config.auth.token,
+          telemetryEnabled: false,
         };
 
   const connection = await client.connect(connectOptions);

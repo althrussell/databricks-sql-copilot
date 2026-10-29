@@ -371,7 +371,7 @@ export async function getLakebaseConnectionUrl(): Promise<string> {
 
   return (
     `postgresql://${encodeURIComponent(username)}:${encodeURIComponent(token)}` +
-    `@${host}/${DATABASE_NAME}?sslmode=require`
+    `@${host}/${DATABASE_NAME}?uselibpqcompat=true&sslmode=require`
   );
 }
 

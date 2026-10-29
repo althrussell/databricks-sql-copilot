@@ -47,7 +47,7 @@ Alpha. Internal use only. Not a Databricks product. SQL observability and Jobs H
 
 - Databricks system tables (`system.query.history`, `system.compute.warehouses`, `system.billing.usage`) are GA and stable.
 - Databricks Apps support OBO authentication, enabling per-user identity without custom auth infrastructure.
-- Foundation Model APIs (`databricks-gemini-4-argon`, `databricks-gpt-6-1-sol`, `databricks-claude-opus-5-5`) are available via `ai_query()` for pay-per-token AI enrichment without legacy temperature parameters.
+- Foundation Model APIs (`databricks-gpt-6-1-sol`, `databricks-claude-opus-5-5`) are available via `ai_query()` for pay-per-token AI enrichment without legacy temperature parameters.
 - Spark-observability-agent has matured to produce consistent table outputs from Databricks clusters.
 
 ---
@@ -164,7 +164,7 @@ Running a POC or health check for a customer. Needs to deploy the app, run profi
 
 2. **Spark path (batch):** A scheduled Databricks Job runs `spark_backend_ingest.py`, which reads profiler output tables (`Applications`, `jobs`, `stages`, `photonanalysis`) and writes canonical Delta tables (`spark_job_runs_v1`, `spark_stage_bottlenecks_v1`, `photon_opportunity_v1`). The app reads these through serving views.
 
-3. **AI path (tiered):** AI triage runs automatically on dashboard load (`databricks-gemini-4-argon`, fast batch). SQL rewrites and operator action summaries run on `databricks-gpt-6-1-sol`. Deep query diagnosis, job root-cause analysis, and the Spark Tuning Agent run on `databricks-claude-opus-5-5` (or user-selected model override). All calls use `ai_query()` pay-per-token billing without legacy `temperature` inputs.
+3. **AI path (tiered):** AI triage, SQL rewrites, and operator action summaries run on `databricks-gpt-6-1-sol`. Deep query diagnosis, job root-cause analysis, and the Spark Tuning Agent run on `databricks-claude-opus-5-5` (or user-selected model override). All calls use `ai_query()` pay-per-token billing without legacy `temperature` inputs.
 
 ---
 
@@ -352,10 +352,10 @@ The AI is the **explainer and rewriter**, not the primary detector. Rule-based d
 
 | Model | Purpose | Trigger | Billing |
 |---|---|---|---|
-| `databricks-gemini-4-argon` | Fast SQL & Monitor triage (one-liner per query pattern) | Auto on dashboard load / monitor click | PPT |
+| `databricks-gpt-6-1-sol` | Fast SQL & Monitor triage (one-liner per query pattern) | Auto on dashboard load / monitor click | PPT |
 | `databricks-gpt-6-1-sol` | SQL rewrite + EXPLAIN validation | User clicks "AI Rewrite" on a query | PPT |
 | `databricks-claude-opus-5-5` | Quick SQL root-cause diagnosis | User clicks "Quick Diagnose" on a query | PPT |
-| `databricks-gemini-4-argon` | Job triage (one-liner per job with metrics) | Auto on Jobs Health page load | PPT |
+| `databricks-gpt-6-1-sol` | Job triage (one-liner per job with metrics) | Auto on Jobs Health page load | PPT |
 | `databricks-claude-opus-5-5` | Job deep analysis (phase, task, duration) & Spark Agent | User clicks "Analyse Job" on job detail | PPT |
 | `databricks-gpt-6-1-sol` | Operator Actions Summary (top-10 cross-cutting) | User clicks "Generate Actions" on main dashboard | PPT |
 

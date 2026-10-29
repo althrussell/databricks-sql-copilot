@@ -226,7 +226,7 @@ async function main() {
 
   const url =
     `postgresql://${encodeURIComponent(username)}:${encodeURIComponent(dbToken)}` +
-    `@${epHost}/${DATABASE_NAME}?sslmode=require`;
+    `@${epHost}/${DATABASE_NAME}?uselibpqcompat=true&sslmode=require`;
 
   process.stdout.write(url);
   log("Connection URL generated.");

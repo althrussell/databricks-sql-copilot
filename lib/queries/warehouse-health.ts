@@ -99,29 +99,33 @@ export async function fetchWarehouseTopUsers(): Promise<WarehouseUserRow[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const sql = `
-    SELECT
-      h.compute.warehouse_id AS warehouse_id,
-      h.executed_by,
-      COUNT(*) AS query_count,
-      COALESCE(
-        h.query_source.dashboard_id,
-        CAST(h.query_source.job_info.job_id AS STRING),
-        h.query_source.notebook_id,
-        'ad-hoc'
-      ) AS source_id,
-      CASE
-        WHEN h.query_source.dashboard_id IS NOT NULL THEN 'dashboard'
-        WHEN h.query_source.job_info.job_id IS NOT NULL THEN 'job'
-        WHEN h.query_source.notebook_id IS NOT NULL THEN 'notebook'
-        ELSE 'ad-hoc'
-      END AS source_type
-    FROM system.query.history h
-    WHERE h.start_time >= '${sevenDaysAgo}'
-      AND h.compute.warehouse_id IS NOT NULL
-      AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
-      AND h.statement_text NOT LIKE '-- This is a system generated query %'
-    GROUP BY h.compute.warehouse_id, h.executed_by, source_id, source_type
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY h.compute.warehouse_id ORDER BY COUNT(*) DESC) <= 20
+    WITH grouped AS (
+      SELECT
+        h.compute.warehouse_id AS warehouse_id,
+        h.executed_by,
+        COUNT(*) AS query_count,
+        COALESCE(
+          h.query_source.dashboard_id,
+          CAST(h.query_source.job_info.job_id AS STRING),
+          h.query_source.notebook_id,
+          'ad-hoc'
+        ) AS source_id,
+        CASE
+          WHEN h.query_source.dashboard_id IS NOT NULL THEN 'dashboard'
+          WHEN h.query_source.job_info.job_id IS NOT NULL THEN 'job'
+          WHEN h.query_source.notebook_id IS NOT NULL THEN 'notebook'
+          ELSE 'ad-hoc'
+        END AS source_type
+      FROM system.query.history h
+      WHERE h.start_time >= '${sevenDaysAgo}'
+        AND h.compute.warehouse_id IS NOT NULL
+        AND h.execution_status IN ('FINISHED', 'FAILED', 'CANCELED')
+        AND h.statement_text NOT LIKE '-- This is a system generated query %'
+      GROUP BY 1, 2, 4, 5
+    )
+    SELECT warehouse_id, executed_by, query_count, source_id, source_type
+    FROM grouped
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY warehouse_id ORDER BY query_count DESC) <= 20
     ORDER BY query_count DESC
   `;
 

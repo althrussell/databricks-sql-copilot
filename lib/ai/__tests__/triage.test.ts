@@ -47,7 +47,7 @@ describe("triageCandidates cache", () => {
     ] as unknown as Candidate[]);
 
     expect(result).toEqual(cached);
-    const scope = `${AI_MODELS.GEMINI_4_ARGON}::${getActiveVersion("triage")}`;
+    const scope = `${AI_MODELS.GPT_6_1_SOL}::${getActiveVersion("triage")}`;
     expect(computeFingerprintHash).toHaveBeenCalledWith(["fp2", "fp1"], scope);
     expect(getCachedTriage).toHaveBeenCalledWith(`${scope}|fp1,fp2`);
   });

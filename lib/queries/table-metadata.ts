@@ -436,57 +436,87 @@ export interface TableSummaryForTriage {
   numFiles: number | null;
 }
 
-/** In-memory cache for lightweight triage summaries (per server session) */
-const triageSummaryCache = new Map<string, TableSummaryForTriage>();
+/** In-memory cache for lightweight triage summaries (per server session, including negative/view results) */
+const triageSummaryCache = new Map<string, TableSummaryForTriage | null>();
+const triageInFlight = new Map<string, Promise<TableSummaryForTriage | null>>();
+
+function normalizeTableCacheKey(tableName: string): string {
+  return tableName.replace(/`/g, "").trim().toLowerCase();
+}
 
 /**
  * Fetch lightweight metadata for a single table (DESCRIBE DETAIL only).
- * Uses an in-memory cache to avoid repeated calls.
+ * Uses an in-memory cache (including negative results for views) and in-flight
+ * deduplication to avoid repeated or concurrent calls for the same table.
  */
 async function fetchTableSummaryForTriage(
   tableName: string,
 ): Promise<TableSummaryForTriage | null> {
-  const cached = triageSummaryCache.get(tableName);
-  if (cached) return cached;
+  const cacheKey = normalizeTableCacheKey(tableName);
+  if (triageSummaryCache.has(cacheKey)) {
+    return triageSummaryCache.get(cacheKey) ?? null;
+  }
 
-  const { detail, error } = await fetchDescribeDetail(tableName);
-  if (error || !detail) return null;
+  // Views (vw_*, v_*) cannot be described with DESCRIBE DETAIL (SQLSTATE 42809 EXPECT_TABLE_NOT_VIEW)
+  const leafName = cacheKey.split(".").pop() ?? "";
+  if (leafName.startsWith("vw_") || leafName.startsWith("v_")) {
+    triageSummaryCache.set(cacheKey, null);
+    return null;
+  }
 
-  const hasPredOpt =
-    detail.properties["delta.enableOptimizeWrite"] === "true" ||
-    detail.properties["delta.enablePredictiveOptimization"] === "true" ||
-    detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
+  const existing = triageInFlight.get(cacheKey);
+  if (existing) return existing;
 
-  // Tri-state. A table using deletion vectors must list the deletionVectors feature in its
-  // protocol, so a feature list without it means they are off; no feature list proves nothing.
-  const dvProperty = detail.properties["delta.enableDeletionVectors"];
-  const hasDeletionVectors =
-    dvProperty === "true" ||
-    detail.tableFeatures.some((f) => f.toLowerCase().includes("deletionvectors"))
-      ? true
-      : dvProperty === "false" || detail.tableFeatures.length > 0
-        ? false
-        : undefined;
+  const promise = (async (): Promise<TableSummaryForTriage | null> => {
+    const { detail, error } = await fetchDescribeDetail(tableName);
+    if (error || !detail) {
+      triageSummaryCache.set(cacheKey, null);
+      return null;
+    }
 
-  const summary: TableSummaryForTriage = {
-    tableName,
-    clusteringColumns: detail.clusteringColumns,
-    partitionColumns: detail.partitionColumns,
-    isManaged: detail.isManaged,
-    predictiveOptEnabled: hasPredOpt,
-    deletionVectorsEnabled: hasDeletionVectors,
-    format: detail.format,
-    sizeInBytes: detail.sizeInBytes,
-    numFiles: detail.numFiles,
-  };
+    const hasPredOpt =
+      detail.properties["delta.enableOptimizeWrite"] === "true" ||
+      detail.properties["delta.enablePredictiveOptimization"] === "true" ||
+      detail.tableFeatures.some((f) => f.toLowerCase().includes("predictive"));
 
-  triageSummaryCache.set(tableName, summary);
-  return summary;
+    // Tri-state. A table using deletion vectors must list the deletionVectors feature in its
+    // protocol, so a feature list without it means they are off; no feature list proves nothing.
+    const dvProperty = detail.properties["delta.enableDeletionVectors"];
+    const hasDeletionVectors =
+      dvProperty === "true" ||
+      detail.tableFeatures.some((f) => f.toLowerCase().includes("deletionvectors"))
+        ? true
+        : dvProperty === "false" || detail.tableFeatures.length > 0
+          ? false
+          : undefined;
+
+    const summary: TableSummaryForTriage = {
+      tableName,
+      clusteringColumns: detail.clusteringColumns,
+      partitionColumns: detail.partitionColumns,
+      isManaged: detail.isManaged,
+      predictiveOptEnabled: hasPredOpt,
+      deletionVectorsEnabled: hasDeletionVectors,
+      format: detail.format,
+      sizeInBytes: detail.sizeInBytes,
+      numFiles: detail.numFiles,
+    };
+
+    triageSummaryCache.set(cacheKey, summary);
+    return summary;
+  })();
+
+  triageInFlight.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    triageInFlight.delete(cacheKey);
+  }
 }
 
 /**
  * Batch-fetch lightweight table metadata for triage.
- * Extracts table names from multiple SQL texts, deduplicates,
+ * Extracts table names from multiple SQL texts, deduplicates by normalized identifier,
  * and fetches DESCRIBE DETAIL in parallel (capped at 10 tables).
  *
  * Returns a Map of tableName → TableSummaryForTriage.
@@ -494,18 +524,21 @@ async function fetchTableSummaryForTriage(
 export async function fetchTriageTableContext(
   sqlTexts: string[],
 ): Promise<Map<string, TableSummaryForTriage>> {
-  // Extract and deduplicate table names across all SQL texts
-  const allTables = new Set<string>();
+  // Extract and deduplicate table names across all SQL texts by normalized key
+  const byKey = new Map<string, string>();
   for (const sql of sqlTexts) {
     for (const t of extractTableNames(sql)) {
-      allTables.add(t);
+      const key = normalizeTableCacheKey(t);
+      if (!byKey.has(key)) {
+        byKey.set(key, t);
+      }
     }
   }
 
-  if (allTables.size === 0) return new Map();
+  if (byKey.size === 0) return new Map();
 
   // Cap at 10 tables to keep it fast
-  const capped = [...allTables].slice(0, 10);
+  const capped = [...byKey.values()].slice(0, 10);
 
   console.log(
     `[triage-metadata] Fetching lightweight metadata for ${capped.length} tables: ${capped.join(", ")}`,
