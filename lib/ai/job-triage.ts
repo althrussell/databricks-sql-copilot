@@ -11,8 +11,8 @@ import { executeQuery } from "@/lib/dbx/sql-client";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import type { JobSummary } from "@/lib/queries/jobs";
 import type { JobFlag } from "@/lib/domain/job-flags";
+import { buildAiQuerySql, getMaxTokensForTask, resolveModelForTask } from "@/lib/ai/model-config";
 
-const TRIAGE_MODEL = "databricks-claude-sonnet-4-5";
 const MAX_JOBS = 10;
 const TRIAGE_TIMEOUT_MS = 60_000;
 
@@ -22,10 +22,6 @@ export interface JobTriageInsight {
 }
 
 export type JobTriageMap = Record<string, JobTriageInsight>;
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
-}
 
 function formatDuration(s: number): string {
   if (s <= 0) return "0s";
@@ -115,8 +111,12 @@ Rules:
 - Do NOT give generic advice like "check logs" or "monitor performance".
 - Do not include preamble or explanation outside the JSON array.`;
 
-  const escapedPrompt = escapeForSql(prompt);
-  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 4096, 'temperature', 0.0)) AS response`;
+  const model = resolveModelForTask("job-triage");
+  const sql = buildAiQuerySql({
+    model,
+    prompt,
+    maxTokens: getMaxTokensForTask("job-triage"),
+  });
 
   try {
     const result = await aiSemaphore.run(async () => {

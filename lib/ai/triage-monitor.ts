@@ -14,8 +14,8 @@ import type { TriageInsight } from "@/lib/ai/triage";
 import { fetchTriageTableContext, formatTriageTableContext } from "@/lib/queries/table-metadata";
 import { aiSemaphore } from "@/lib/ai/semaphore";
 import { renderPrompt } from "@/lib/ai/prompts/registry";
+import { buildAiQuerySql, getMaxTokensForTask, resolveModelForTask } from "@/lib/ai/model-config";
 
-const TRIAGE_MODEL = "databricks-claude-sonnet-4-5";
 const MAX_PATTERNS = 15;
 const TRIAGE_TIMEOUT_MS = 60_000; // 60s max for AI call
 
@@ -38,10 +38,6 @@ interface PatternSummary {
   avgQueueWaitMs: number;
   users: string[];
   clientApplications: string[];
-}
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
 }
 
 function fmtBytes(bytes: number): string {
@@ -199,13 +195,17 @@ export async function triageMonitorQueries(queries: TimelineQuery[]): Promise<Mo
   });
 
   const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
-  const escapedPrompt = escapeForSql(combinedPrompt);
-  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 4096, 'temperature', 0.0)) AS response`;
+  const triageModel = resolveModelForTask("triage-monitor");
+  const sql = buildAiQuerySql({
+    model: triageModel,
+    prompt: combinedPrompt,
+    maxTokens: getMaxTokensForTask("triage-monitor"),
+  });
 
   try {
     const t0 = Date.now();
     console.log(
-      `[ai-triage-monitor] calling ${TRIAGE_MODEL} for ${top.length} patterns (prompt ~${escapedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`,
+      `[ai-triage-monitor] calling ${triageModel} for ${top.length} patterns (prompt ~${combinedPrompt.length} chars)${tableContextBlock ? " (with table context)" : ""}`,
     );
 
     // Use semaphore for concurrency control

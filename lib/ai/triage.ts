@@ -21,8 +21,8 @@ import { aiSemaphore } from "@/lib/ai/semaphore";
 import { renderPrompt } from "@/lib/ai/prompts/registry";
 import { writePromptLog } from "@/lib/ai/prompt-logger";
 import { computeFingerprintHash, getCachedTriage, cacheTriage } from "@/lib/dbx/triage-store";
+import { buildAiQuerySql, getMaxTokensForTask, resolveModelForTask } from "@/lib/ai/model-config";
 
-const TRIAGE_MODEL = "databricks-claude-sonnet-4-5";
 const MAX_CANDIDATES = 15;
 const TRIAGE_TIMEOUT_MS = 60_000; // 60s max for AI call
 
@@ -35,10 +35,6 @@ export interface TriageInsight {
 
 /** Map of fingerprint → insight */
 export type TriageMap = Record<string, TriageInsight>;
-
-function escapeForSql(text: string): string {
-  return text.replace(/'/g, "''").replace(/\\/g, "\\\\");
-}
 
 function fmtBytes(bytes: number): string {
   if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)}TB`;
@@ -100,9 +96,13 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
 
   // Take top N by impact score (already sorted)
   const top = candidates.slice(0, MAX_CANDIDATES);
+  const triageModel = resolveModelForTask("triage");
 
-  // Check triage cache before calling the LLM
-  const fpHash = computeFingerprintHash(top.map((c) => c.fingerprint));
+  // Check triage cache before calling the LLM (scoped by model + fingerprints)
+  const fpHash = computeFingerprintHash(
+    top.map((c) => c.fingerprint),
+    triageModel,
+  );
   try {
     const cached = await getCachedTriage(fpHash);
     if (cached && Object.keys(cached).length > 0) {
@@ -137,14 +137,16 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
   });
 
   const combinedPrompt = `${rendered.systemPrompt}\n\n${rendered.userPrompt}`;
-  const escapedPrompt = escapeForSql(combinedPrompt);
-
-  const sql = `SELECT ai_query('${TRIAGE_MODEL}', '${escapedPrompt}', modelParameters => named_struct('max_tokens', 4096, 'temperature', 0.0)) AS response`;
+  const sql = buildAiQuerySql({
+    model: triageModel,
+    prompt: combinedPrompt,
+    maxTokens: getMaxTokensForTask("triage"),
+  });
 
   const t0 = Date.now();
   try {
     console.log(
-      `[ai-triage] calling ${TRIAGE_MODEL} for ${top.length} candidates${tableContextBlock ? ` (with table context)` : ""}`,
+      `[ai-triage] calling ${triageModel} for ${top.length} candidates${tableContextBlock ? ` (with table context)` : ""}`,
     );
 
     // Use semaphore for concurrency control
@@ -169,7 +171,7 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
         timestamp: new Date().toISOString(),
         promptKey: "triage",
         promptVersion: rendered.version,
-        model: TRIAGE_MODEL,
+        model: triageModel,
         estimatedInputTokens: rendered.estimatedTokens,
         outputChars: 0,
         durationMs,
@@ -187,7 +189,7 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
       timestamp: new Date().toISOString(),
       promptKey: "triage",
       promptVersion: rendered.version,
-      model: TRIAGE_MODEL,
+      model: triageModel,
       estimatedInputTokens: rendered.estimatedTokens,
       outputChars: raw.length,
       durationMs,
@@ -214,7 +216,7 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
       timestamp: new Date().toISOString(),
       promptKey: "triage",
       promptVersion: rendered.version,
-      model: TRIAGE_MODEL,
+      model: triageModel,
       estimatedInputTokens: rendered.estimatedTokens,
       outputChars: 0,
       durationMs,

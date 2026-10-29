@@ -167,3 +167,8 @@ export function getSparkFreshnessSloMinutes(): number {
 export function getPhotonFreshnessSloMinutes(): number {
   return parseMinutes(process.env.PHOTON_FRESHNESS_SLO_MINUTES, 1440, 60, 10080);
 }
+
+export function isLakebaseEnabled(): boolean {
+  const val = process.env.ENABLE_LAKEBASE?.trim().toLowerCase();
+  return val === "true" || val === "1";
+}

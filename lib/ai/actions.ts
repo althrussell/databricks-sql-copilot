@@ -19,13 +19,17 @@ import { fetchAllTableMetadata } from "@/lib/queries/table-metadata";
 import { listWarehouses } from "@/lib/queries/warehouses";
 import { getCachedRewrite, cacheRewrite } from "@/lib/dbx/rewrite-store";
 import { validateWithExplain } from "./explain-validator";
+import { resolveModelForTask } from "./model-config";
 
 export type { AiResult } from "./aiClient";
 
 /** Extended result type that includes cache info */
 export type AiResultWithCache = AiResult & { cached?: boolean };
 
-export async function diagnoseQuery(candidate: Candidate): Promise<AiResult> {
+export async function diagnoseQuery(
+  candidate: Candidate,
+  overrideModel?: string,
+): Promise<AiResult> {
   // Fetch table metadata to enrich the AI prompt
   let tableMetadata;
   try {
@@ -45,19 +49,26 @@ export async function diagnoseQuery(candidate: Candidate): Promise<AiResult> {
     tableMetadata,
     warehouseConfig,
   };
-  return callAi("diagnose", context);
+  return callAi("diagnose", context, overrideModel);
 }
 
 export async function rewriteQuery(
   candidate: Candidate,
   forceRefresh = false,
+  overrideModel?: string,
 ): Promise<AiResultWithCache> {
-  // Check Lakebase cache first (unless force refresh)
-  if (!forceRefresh) {
+  const defaultRewriteModel = resolveModelForTask("rewrite");
+  const targetModel = resolveModelForTask("rewrite", overrideModel);
+  const isDefaultModel = targetModel === defaultRewriteModel;
+
+  // Check Lakebase cache first when running on the default rewrite model (unless force refresh)
+  if (!forceRefresh && isDefaultModel) {
     try {
       const cached = await getCachedRewrite(candidate.fingerprint);
-      if (cached) {
-        console.log(`[ai-actions] rewrite: cache hit for ${candidate.fingerprint}`);
+      if (cached && cached.modelUsed === targetModel) {
+        console.log(
+          `[ai-actions] rewrite: cache hit for ${candidate.fingerprint} (${targetModel})`,
+        );
         return {
           status: "success",
           mode: "rewrite",
@@ -74,6 +85,7 @@ export async function rewriteQuery(
             risks: (cached.diagnosis?.risks as Array<{ risk: string; mitigation: string }>) ?? [],
             validationPlan: (cached.diagnosis?.validationPlan as string[]) ?? [],
           },
+          modelUsed: cached.modelUsed,
           cached: true,
         };
       }
@@ -102,7 +114,7 @@ export async function rewriteQuery(
     tableMetadata,
     warehouseConfig,
   };
-  const result = await callAi("rewrite", context);
+  const result = await callAi("rewrite", context, overrideModel);
 
   // Validate the rewritten SQL via EXPLAIN before presenting to user
   if (result.status === "success" && result.mode === "rewrite") {
@@ -133,8 +145,9 @@ export async function rewriteQuery(
     }
   }
 
-  // Cache the result in Lakebase for future lookups
-  if (result.status === "success" && result.mode === "rewrite") {
+  // Cache the result in Lakebase only when running the default rewrite model
+  // so one-off model experiments do not overwrite shared default-model cache entries.
+  if (result.status === "success" && result.mode === "rewrite" && isDefaultModel) {
     try {
       await cacheRewrite(candidate.fingerprint, {
         diagnosis: {
@@ -147,7 +160,7 @@ export async function rewriteQuery(
         rationale: result.data.rationale,
         risks: JSON.stringify(result.data.risks),
         validationPlan: JSON.stringify(result.data.validationPlan),
-        modelUsed: "databricks-claude-sonnet-4-5",
+        modelUsed: result.modelUsed,
       });
       console.log(`[ai-actions] rewrite: cached result for ${candidate.fingerprint}`);
     } catch (err) {
