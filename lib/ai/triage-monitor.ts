@@ -154,8 +154,10 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
 }
 
 function patternSummaryLine(p: PatternSummary): string {
-  const execBase = p.avgExecutionMs > 0 ? p.avgExecutionMs : p.avgDurationMs;
-  const queuePct = execBase > 0 ? Math.round((p.avgQueueWaitMs / execBase) * 100) : 0;
+  const queueShare =
+    p.avgExecutionMs > 0
+      ? `${Math.round((p.avgQueueWaitMs / p.avgExecutionMs) * 100)}% of exec time`
+      : "no execution recorded";
 
   return [
     `ID: ${p.fingerprint}`,
@@ -164,7 +166,7 @@ function patternSummaryLine(p: PatternSummary): string {
     `Runs: ${p.runCount}, avg: ${fmtMs(p.avgDurationMs)}, max: ${fmtMs(p.maxDurationMs)}`,
     `Read: ${fmtBytes(p.totalBytesScanned)}, produced: ${p.totalRowsProduced.toLocaleString()} rows`,
     `Spill: ${fmtBytes(p.totalSpillBytes)}, cache: ${Math.round(p.avgCacheHitPercent)}%`,
-    `Queue: ${fmtMs(p.avgQueueWaitMs)} avg (${queuePct}% of exec time)`,
+    `Queue: ${fmtMs(p.avgQueueWaitMs)} avg (${queueShare})`,
     p.clientApplications.length > 0 ? `App: ${p.clientApplications.join(", ")}` : "",
     `Users: ${p.users.join(", ")}`,
   ]

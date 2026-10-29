@@ -17,7 +17,7 @@ import type { PromptContext } from "./promptBuilder";
 import type { Candidate } from "@/lib/domain/types";
 import { fetchAllTableMetadata } from "@/lib/queries/table-metadata";
 import { listWarehouses } from "@/lib/queries/warehouses";
-import { getCachedRewrite, cacheRewrite } from "@/lib/dbx/rewrite-store";
+import { getCachedRewrite, cacheRewrite, type CachedRewrite } from "@/lib/dbx/rewrite-store";
 import { validateWithExplain } from "./explain-validator";
 import { resolveModelForTask } from "./model-config";
 
@@ -64,16 +64,21 @@ export async function rewriteQuery(
   // Check Lakebase cache first when running on the default rewrite model (unless force refresh)
   if (!forceRefresh && isDefaultModel) {
     try {
+      const isUsable = (entry: CachedRewrite | null): entry is CachedRewrite =>
+        entry?.modelUsed === targetModel;
       let cached = await getCachedRewrite(candidate.fingerprint);
       // Lazily re-key rewrites cached under pre-SHA-256 fingerprints
-      for (const legacy of candidate.legacyFingerprints ?? []) {
-        if (cached) break;
-        cached = await getCachedRewrite(legacy);
-        if (cached && cached.modelUsed === targetModel) {
-          await cacheRewrite(candidate.fingerprint, cached);
+      if (!isUsable(cached)) {
+        for (const legacy of candidate.legacyFingerprints ?? []) {
+          const legacyEntry = await getCachedRewrite(legacy);
+          if (isUsable(legacyEntry)) {
+            await cacheRewrite(candidate.fingerprint, legacyEntry);
+            cached = legacyEntry;
+            break;
+          }
         }
       }
-      if (cached && cached.modelUsed === targetModel) {
+      if (isUsable(cached)) {
         console.log(
           `[ai-actions] rewrite: cache hit for ${candidate.fingerprint} (${targetModel})`,
         );
