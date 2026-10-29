@@ -103,6 +103,7 @@ cp scripts/start.sh "$OUT_DIR/scripts/start.sh"
 chmod +x "$OUT_DIR/scripts/start.sh"
 cp scripts/provision-lakebase.mjs "$OUT_DIR/scripts/provision-lakebase.mjs"
 cp -R prisma/migrations "$OUT_DIR/prisma/migrations"
+cp prisma/schema.prisma "$OUT_DIR/prisma/schema.prisma"
 cp app.yaml "$OUT_DIR/app.yaml"
 
 mkdir -p "$(dirname "$DIST_TARBALL")"
