@@ -71,7 +71,7 @@ function candidateSummary(c: Candidate): string {
   const queueShare =
     ws.avgExecutionMs > 0
       ? `${Math.round((ws.avgQueueWaitMs / ws.avgExecutionMs) * 100)}% of exec time`
-      : "no execution recorded";
+      : "no execution time recorded";
 
   return [
     `ID: ${c.fingerprint}`,
