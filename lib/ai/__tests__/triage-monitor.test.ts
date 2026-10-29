@@ -40,8 +40,8 @@ function timelineQuery(overrides: Partial<TimelineQuery>): TimelineQuery {
   };
 }
 
-async function promptSentFor(query: TimelineQuery): Promise<string> {
-  await triageMonitorQueries([query]);
+async function promptSentFor(...queries: TimelineQuery[]): Promise<string> {
+  await triageMonitorQueries(queries);
   expect(executeQuery).toHaveBeenCalledTimes(1);
   return executeQuery.mock.calls[0][0] as string;
 }
@@ -69,6 +69,16 @@ describe("triageMonitorQueries queue reporting", () => {
       }),
     );
     expect(sql).toContain("Queue: 1.0s avg (25% of exec time)");
+  });
+
+  it("measures queue share over executed runs and counts runs that never executed", async () => {
+    const sql = await promptSentFor(
+      timelineQuery({ id: "q1", durationMs: 3_000, queueWaitMs: 1_000, executionTimeMs: 2_000 }),
+      timelineQuery({ id: "q2", status: "CANCELED", durationMs: 59_000, queueWaitMs: 59_000 }),
+    );
+    expect(sql).toContain(
+      "Queue: 30.0s avg (50% of exec time for executed runs; 1 of 2 runs never executed)",
+    );
   });
 
   it("does not present total duration as execution time for queries that never ran", async () => {
