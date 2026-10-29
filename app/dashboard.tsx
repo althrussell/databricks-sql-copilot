@@ -94,10 +94,14 @@ import type { WarehouseOption } from "@/lib/queries/warehouses";
 import {
   notifyError,
   notifySuccess,
+  notifyWarning,
   isPermissionError,
   extractPermissionDetails,
 } from "@/lib/errors";
 import dynamic from "next/dynamic";
+
+const SESSION_ONLY_NOTICE =
+  "Applied for this session only — Lakebase persistence is disabled, so it won't be saved.";
 
 const CustomRangePicker = dynamic(
   () => import("./components/dashboard/custom-range-picker").then((m) => m.CustomRangePicker),
@@ -738,31 +742,55 @@ export function Dashboard({
   const [showDismissed, setShowDismissed] = useState(false);
 
   const setAction = useCallback(async (fingerprint: string, action: QueryActionType) => {
-    // Optimistic update
-    setQueryActions((prev) => ({
-      ...prev,
-      [fingerprint]: { action, note: null, actedBy: null, actedAt: new Date().toISOString() },
-    }));
+    let previousEntry: QueryActionEntry | undefined;
+    // Optimistic update with rollback capture
+    setQueryActions((prev) => {
+      previousEntry = prev[fingerprint];
+      return {
+        ...prev,
+        [fingerprint]: { action, note: null, actedBy: null, actedAt: new Date().toISOString() },
+      };
+    });
     try {
       const res = await fetch("/api/query-actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fingerprint, action }),
       });
-      if (!res.ok) throw new Error(`Server error (${res.status})`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error ?? `Server error (${res.status})`);
+      }
       const actionLabels: Record<string, string> = {
         dismiss: "Query dismissed",
         watch: "Query marked as watched",
         applied: "Recommendation applied",
       };
-      notifySuccess(actionLabels[action] ?? "Action saved");
+      const label = actionLabels[action] ?? "Action saved";
+      if (body.persisted === false) {
+        notifyWarning(label, SESSION_ONLY_NOTICE);
+      } else {
+        notifySuccess(label);
+      }
     } catch (err) {
+      // Roll back optimistic state on error
+      setQueryActions((prev) => {
+        const next = { ...prev };
+        if (previousEntry) {
+          next[fingerprint] = previousEntry;
+        } else {
+          delete next[fingerprint];
+        }
+        return next;
+      });
       notifyError("Update query action", err);
     }
   }, []);
 
   const clearAction = useCallback(async (fingerprint: string) => {
+    let previousEntry: QueryActionEntry | undefined;
     setQueryActions((prev) => {
+      previousEntry = prev[fingerprint];
       const next = { ...prev };
       delete next[fingerprint];
       return next;
@@ -773,9 +801,32 @@ export function Dashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fingerprint }),
       });
-      if (!res.ok) throw new Error(`Server error (${res.status})`);
-      notifySuccess("Action cleared");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error ?? `Server error (${res.status})`);
+      }
+      if (body.persisted === false) {
+        notifyWarning("Action cleared", SESSION_ONLY_NOTICE);
+      } else if (body.visibleAction) {
+        const { action, note, actedBy, actedAt } = body.visibleAction as QueryActionEntry;
+        setQueryActions((prev) => ({
+          ...prev,
+          [fingerprint]: { action, note, actedBy, actedAt },
+        }));
+        notifyWarning(
+          "Your action was cleared",
+          "A shared workspace action still applies to this query. Clear it again to remove it for everyone.",
+        );
+      } else {
+        notifySuccess("Action cleared");
+      }
     } catch (err) {
+      if (previousEntry) {
+        setQueryActions((prev) => ({
+          ...prev,
+          [fingerprint]: previousEntry!,
+        }));
+      }
       notifyError("Clear query action", err);
     }
   }, []);
@@ -973,6 +1024,33 @@ export function Dashboard({
     () => sorted.slice(page * pageSize, (page + 1) * pageSize),
     [sorted, page, pageSize],
   );
+
+  // ── Observability Freshness SLO Health ──
+  const [obsHealth, setObsHealth] = useState<{
+    status: "healthy" | "degraded";
+    reason?: string;
+    freshnessStatus?: string;
+    breaches?: string[];
+    ageMinutes?: { sql: number | null; spark: number | null; photon: number | null };
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    // Degraded health arrives as 5xx; "not_configured" (views not deployed) hides the badge.
+    fetch("/api/observability-health")
+      .then((res) => res.json())
+      .then((data) => {
+        if (active && (data?.status === "healthy" || data?.status === "degraded")) {
+          setObsHealth(data);
+        }
+      })
+      .catch(() => {
+        /* non-fatal optional unified observability check */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Reset page when filters change
   useEffect(() => {
@@ -1391,6 +1469,30 @@ export function Dashboard({
                     : `All views are shifted back ${BILLING_LAG_HOURS}h to ensure billing & cost data is fully populated across all dimensions (queries, events, costs, audit).`}
                 </TooltipContent>
               </Tooltip>
+              {obsHealth && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] gap-1 cursor-help ${
+                        obsHealth.status === "healthy"
+                          ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                          : "border-amber-500/30 text-amber-600 dark:text-amber-400"
+                      }`}
+                    >
+                      <Activity className="h-2.5 w-2.5" />
+                      SLO: {obsHealth.status}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs text-xs">
+                    {obsHealth.status === "healthy"
+                      ? "Unified observability ingestion (SQL, Spark, Photon) is within freshness SLOs."
+                      : obsHealth.breaches?.length
+                        ? `Freshness SLO breach: ${obsHealth.breaches.join(", ")}`
+                        : `Observability scorecard unavailable${obsHealth.reason ? `: ${obsHealth.reason.slice(0, 200)}` : ""}`}
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </>
           )}
         </div>

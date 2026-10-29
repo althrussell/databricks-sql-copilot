@@ -15,6 +15,8 @@ import type { EndpointMetric, TimelineQuery, WarehouseLiveStats } from "@/lib/do
 /** Default time range: last 1 hour */
 const DEFAULT_RANGE_HOURS = 1;
 
+export const dynamic = "force-dynamic";
+
 interface WarehouseMonitorPageProps {
   params: Promise<{ warehouseId: string }>;
   searchParams: Promise<{ range?: string }>;

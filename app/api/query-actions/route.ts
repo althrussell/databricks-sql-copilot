@@ -6,16 +6,17 @@ import {
   type QueryActionType,
 } from "@/lib/dbx/actions-store";
 
+export const dynamic = "force-dynamic";
+
 const VALID_ACTIONS: QueryActionType[] = ["dismiss", "watch", "applied"];
 
 /**
  * GET /api/query-actions
- * Returns all active query actions as a JSON object { [fingerprint]: action }.
+ * Returns all active query actions for the current user as a JSON object { [fingerprint]: action }.
  */
 export async function GET() {
   try {
     const actions = await getQueryActions();
-    // Convert Map to plain object for JSON serialisation
     const obj: Record<
       string,
       { action: string; note: string | null; actedBy: string | null; actedAt: string }
@@ -38,13 +39,13 @@ export async function GET() {
 
 /**
  * POST /api/query-actions
- * Body: { fingerprint, action, note?, actedBy? }
- * Upserts a query action with 30-day TTL.
+ * Body: { fingerprint, action, note? }
+ * Upserts a query action with 30-day TTL, scoped to the proxy-authenticated user.
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { fingerprint, action, note, actedBy } = body;
+    const { fingerprint, action, note } = body;
 
     if (!fingerprint || typeof fingerprint !== "string") {
       return NextResponse.json({ error: "fingerprint is required" }, { status: 400 });
@@ -56,8 +57,9 @@ export async function POST(request: Request) {
       );
     }
 
-    await setQueryAction(fingerprint, action, actedBy, note);
-    return NextResponse.json({ ok: true });
+    // Without Lakebase the action still applies for the current session; the client warns the user.
+    const result = await setQueryAction(fingerprint, action, note);
+    return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[api/query-actions] POST failed:", err);
     return NextResponse.json({ error: "Failed to save action" }, { status: 500 });
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
 /**
  * DELETE /api/query-actions
  * Body: { fingerprint }
- * Removes a query action.
+ * Removes the query action visible to the current user.
  */
 export async function DELETE(request: Request) {
   try {
@@ -78,8 +80,8 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "fingerprint is required" }, { status: 400 });
     }
 
-    await removeQueryAction(fingerprint);
-    return NextResponse.json({ ok: true });
+    const result = await removeQueryAction(fingerprint);
+    return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[api/query-actions] DELETE failed:", err);
     return NextResponse.json({ error: "Failed to remove action" }, { status: 500 });

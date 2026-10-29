@@ -69,9 +69,42 @@ if [ -x "$PRISMA_BIN" ] && [ -n "$SCHEMA_URL" ]; then
       .catch(err => { console.warn('[startup] Schema rename skipped:', err.message); client.end(); });
   " "$SCHEMA_URL" 2>&1 || true
 
-  echo "[startup] Syncing database schema..."
-  if DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" db push 2>&1; then
-    echo "[startup] Schema sync complete."
+  echo "[startup] Applying Prisma migrations..."
+  MIGRATE_OK=0
+  # Keep the "&& MIGRATE_OK=1" form: set -e ignores failures inside an && list, so a failed
+  # deploy falls through to the baselining and db push fallbacks instead of exiting.
+  MIGRATE_OUTPUT=$(DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" migrate deploy 2>&1) && MIGRATE_OK=1
+  echo "$MIGRATE_OUTPUT"
+
+  # P3005: the schema was created by an earlier `prisma db push` and has no migration
+  # history. The migrations are idempotent (IF NOT EXISTS + in-place upgrades), so run
+  # them directly against the existing schema, record them as applied, and re-deploy.
+  if [ "$MIGRATE_OK" = "0" ] && echo "$MIGRATE_OUTPUT" | grep -q "P3005"; then
+    echo "[startup] Existing schema without migration history — baselining..."
+    for MIGRATION_DIR in prisma/migrations/*/; do
+      MIGRATION_NAME=$(basename "$MIGRATION_DIR")
+      [ -f "${MIGRATION_DIR}migration.sql" ] || continue
+      if node -e "
+        const fs = require('fs');
+        const pg = require('pg');
+        const client = new pg.Client({ connectionString: process.argv[1] });
+        client.connect()
+          .then(() => client.query(fs.readFileSync(process.argv[2], 'utf8')))
+          .then(() => client.end())
+          .catch(err => { console.error('[startup] Baseline SQL failed:', err.message); client.end(); process.exit(1); });
+      " "$SCHEMA_URL" "${MIGRATION_DIR}migration.sql" 2>&1; then
+        DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" migrate resolve --applied "$MIGRATION_NAME" 2>&1 \
+          || echo "[startup] WARNING: could not record $MIGRATION_NAME as applied"
+      fi
+    done
+    MIGRATE_OUTPUT=$(DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" migrate deploy 2>&1) && MIGRATE_OK=1
+    echo "$MIGRATE_OUTPUT"
+  fi
+
+  if [ "$MIGRATE_OK" = "1" ]; then
+    echo "[startup] Prisma migrations applied."
+  elif DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" db push 2>&1; then
+    echo "[startup] Schema sync complete via db push."
   else
     echo "[startup] WARNING: Schema sync failed — tables may already be up to date."
   fi

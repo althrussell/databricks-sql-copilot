@@ -13,6 +13,8 @@ vi.mock("../prisma", () => ({
     fn({ queryAction: mocks.queryAction }),
 }));
 
+vi.mock("../obo", () => ({ getOboUserEmail: async () => null }));
+
 import { migrateLegacyActionKeys } from "../actions-store";
 
 describe("migrateLegacyActionKeys", () => {
@@ -37,7 +39,22 @@ describe("migrateLegacyActionKeys", () => {
 
     expect(migrated).toBe(1);
     expect(mocks.queryAction.update).toHaveBeenCalledTimes(1);
-    expect(mocks.queryAction.update.mock.calls[0][0].data).toEqual({ fingerprint: "new-1" });
+    expect(mocks.queryAction.update.mock.calls[0][0]).toEqual({
+      where: { fingerprint_userId: { fingerprint: "legacy-a", userId: "workspace" } },
+      data: { fingerprint: "new-1" },
+    });
+  });
+
+  it("treats a target as taken only for the same user", async () => {
+    mocks.queryAction.findMany
+      .mockResolvedValueOnce([{ fingerprint: "legacy-a", userId: "workspace" }])
+      .mockResolvedValueOnce([{ fingerprint: "new-1", userId: "alice@example.com" }]);
+
+    const migrated = await migrateLegacyActionKeys([
+      { fingerprint: "new-1", legacyFingerprints: ["legacy-a"] },
+    ]);
+
+    expect(migrated).toBe(1);
   });
 
   it("does nothing when no candidate carries legacy fingerprints", async () => {

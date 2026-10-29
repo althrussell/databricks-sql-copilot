@@ -14,7 +14,7 @@ import { evaluateJobFlags } from "@/lib/domain/job-flags";
 import { triageJobs } from "@/lib/ai/job-triage";
 import { JobsDashboard } from "./jobs-dashboard";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 function JobsSkeleton() {
   return (

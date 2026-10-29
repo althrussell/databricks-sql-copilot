@@ -15,11 +15,10 @@ import type { Candidate, WarehouseCost, WarehouseActivity, QueryRun } from "@/li
 import { isPermissionError, extractPermissionDetails } from "@/lib/errors";
 
 /**
- * Cache the page for 5 minutes. Since the data window is shifted back 6h
- * for billing lag, a few minutes of staleness is negligible — and it means
- * navigating back from a query detail page is instant.
+ * Force per-request dynamic rendering so OBO (on-behalf-of-user) tokens
+ * are never shared across users via Next.js ISR/page cache.
  */
-export const revalidate = 300; // seconds
+export const dynamic = "force-dynamic";
 
 /**
  * Billing lag offset — system.billing.usage data arrives 6-24h behind.

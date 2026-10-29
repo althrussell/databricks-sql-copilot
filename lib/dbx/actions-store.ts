@@ -1,18 +1,26 @@
 /**
- * Query Actions — Prisma persistence for user actions on query patterns.
+ * Query Actions — Prisma persistence for per-user actions on query patterns.
  *
  * Actions: dismiss, watch, applied
  * Each action has a 30-day TTL that refreshes on update.
+ * Scoped per user via the proxy-injected `x-forwarded-email` header (`getOboUserEmail()`),
+ * falling back to a shared `"workspace"` scope when no user identity is available
+ * (local dev). The user identity is never taken from client-supplied request data.
  *
- * Requires ENABLE_LAKEBASE=true. When disabled, all functions are safe no-ops.
+ * Requires ENABLE_LAKEBASE=true. When disabled, write functions return `{ persisted: false }`.
  */
 
 import { withPrisma, isLakebaseEnabled } from "./prisma";
+import { getOboUserEmail } from "./obo";
 
 export type QueryActionType = "dismiss" | "watch" | "applied";
 
+/** Shared scope for legacy (pre per-user) actions and requests without a user identity */
+export const WORKSPACE_SCOPE = "workspace";
+
 export interface QueryAction {
   fingerprint: string;
+  userId?: string;
   action: QueryActionType;
   note: string | null;
   actedBy: string | null;
@@ -20,32 +28,72 @@ export interface QueryAction {
   updatedAt: string;
 }
 
+export interface ActionWriteResult {
+  persisted: boolean;
+  userId: string;
+  reason?: "LAKEBASE_DISABLED";
+}
+
+export interface ActionRemoveResult extends ActionWriteResult {
+  /** Shared workspace action the user sees once their own action is removed */
+  visibleAction?: QueryAction | null;
+}
+
+function toQueryAction(row: {
+  fingerprint: string;
+  userId: string;
+  action: string;
+  note: string | null;
+  actedBy: string | null;
+  actedAt: Date;
+  updatedAt: Date;
+}): QueryAction {
+  return {
+    fingerprint: row.fingerprint,
+    userId: row.userId,
+    action: row.action as QueryActionType,
+    note: row.note,
+    actedBy: row.actedBy,
+    actedAt: row.actedAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+async function resolveCurrentUserId(): Promise<string> {
+  const oboEmail = await getOboUserEmail();
+  const normalized = oboEmail?.trim().toLowerCase();
+  return normalized ? normalized : WORKSPACE_SCOPE;
+}
+
 /**
- * Get all active (non-expired) query actions.
+ * Get all active (non-expired) query actions visible to the current user:
+ * their own actions plus shared workspace-scoped actions (user actions take precedence).
  */
 export async function getQueryActions(): Promise<Map<string, QueryAction>> {
   const map = new Map<string, QueryAction>();
   if (!isLakebaseEnabled()) return map;
+
+  const userId = await resolveCurrentUserId();
 
   try {
     const rows = await withPrisma((p) =>
       p.queryAction.findMany({
         where: {
           expiresAt: { gt: new Date() },
+          userId: { in: [...new Set([userId, WORKSPACE_SCOPE])] },
         },
-        orderBy: { updatedAt: "desc" },
+        orderBy: { updatedAt: "asc" },
       }),
     );
 
-    for (const row of rows) {
-      map.set(row.fingerprint, {
-        fingerprint: row.fingerprint,
-        action: row.action as QueryActionType,
-        note: row.note,
-        actedBy: row.actedBy,
-        actedAt: row.actedAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-      });
+    // Apply workspace rows first so the user's own rows overwrite them
+    const sortedRows = [...rows].sort((a, b) => {
+      if (a.userId === b.userId) return a.updatedAt.getTime() - b.updatedAt.getTime();
+      return a.userId === WORKSPACE_SCOPE ? -1 : 1;
+    });
+
+    for (const row of sortedRows) {
+      map.set(row.fingerprint, toQueryAction(row));
     }
   } catch (err) {
     console.error("[actions-store] Failed to fetch query actions:", err);
@@ -56,29 +104,38 @@ export async function getQueryActions(): Promise<Map<string, QueryAction>> {
 }
 
 /**
- * Set or update an action on a query fingerprint.
+ * Set or update an action on a query fingerprint for the current user.
  * UPSERTs with a fresh 30-day TTL.
  */
 export async function setQueryAction(
   fingerprint: string,
   action: QueryActionType,
-  actedBy?: string,
-  note?: string,
-): Promise<void> {
-  if (!isLakebaseEnabled()) return;
+  note?: string | null,
+): Promise<ActionWriteResult> {
+  const userId = await resolveCurrentUserId();
+  if (!isLakebaseEnabled()) {
+    return { persisted: false, userId, reason: "LAKEBASE_DISABLED" };
+  }
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const actedBy = userId !== WORKSPACE_SCOPE ? userId : null;
 
   try {
     await withPrisma((p) =>
       p.queryAction.upsert({
-        where: { fingerprint },
+        where: {
+          fingerprint_userId: {
+            fingerprint,
+            userId,
+          },
+        },
         create: {
           fingerprint,
+          userId,
           action,
           note: note ?? null,
-          actedBy: actedBy ?? null,
+          actedBy,
           actedAt: now,
           updatedAt: now,
           expiresAt,
@@ -86,12 +143,13 @@ export async function setQueryAction(
         update: {
           action,
           note: note ?? null,
-          actedBy: actedBy ?? null,
+          actedBy,
           updatedAt: now,
           expiresAt,
         },
       }),
     );
+    return { persisted: true, userId };
   } catch (err) {
     console.error("[actions-store] Failed to set query action:", err);
     throw err;
@@ -100,8 +158,8 @@ export async function setQueryAction(
 
 /**
  * Re-key actions saved under pre-SHA-256 fingerprints to their pattern's current
- * fingerprint. Rows whose target already has an action are left to expire (30-day TTL).
- * Returns the number of rows re-keyed.
+ * fingerprint. Rows whose (target, user) already has an action are left to expire
+ * (30-day TTL). Returns the number of rows re-keyed.
  */
 export async function migrateLegacyActionKeys(
   candidates: Array<{ fingerprint: string; legacyFingerprints?: string[] }>,
@@ -129,20 +187,21 @@ export async function migrateLegacyActionKeys(
       (
         await p.queryAction.findMany({
           where: { fingerprint: { in: targets } },
-          select: { fingerprint: true },
+          select: { fingerprint: true, userId: true },
         })
-      ).map((r) => r.fingerprint),
+      ).map((r) => `${r.fingerprint}::${r.userId}`),
     );
 
     let migrated = 0;
     for (const row of legacyRows) {
       const target = legacyToCurrent.get(row.fingerprint)!;
-      if (taken.has(target)) continue;
+      const key = `${target}::${row.userId}`;
+      if (taken.has(key)) continue;
       await p.queryAction.update({
-        where: { fingerprint: row.fingerprint },
+        where: { fingerprint_userId: { fingerprint: row.fingerprint, userId: row.userId } },
         data: { fingerprint: target },
       });
-      taken.add(target);
+      taken.add(key);
       migrated++;
     }
     return migrated;
@@ -150,20 +209,39 @@ export async function migrateLegacyActionKeys(
 }
 
 /**
- * Remove an action from a query fingerprint.
+ * Remove the action the current user sees on a query fingerprint: their own action, or the
+ * shared workspace action when they have none. Clearing a personal action leaves any shared
+ * action in place for other users and returns it, since the user now sees it instead.
  */
-export async function removeQueryAction(fingerprint: string): Promise<void> {
-  if (!isLakebaseEnabled()) return;
+export async function removeQueryAction(fingerprint: string): Promise<ActionRemoveResult> {
+  const userId = await resolveCurrentUserId();
+  if (!isLakebaseEnabled()) {
+    return { persisted: false, userId, reason: "LAKEBASE_DISABLED" };
+  }
 
   try {
-    await withPrisma((p) =>
-      p.queryAction.delete({
-        where: { fingerprint },
+    // One transaction: withPrisma re-runs the callback after rotating credentials, and a
+    // retry following a partial delete must not fall through to deleting the shared row.
+    return await withPrisma((p) =>
+      p.$transaction(async (tx): Promise<ActionRemoveResult> => {
+        const now = new Date();
+        const own = await tx.queryAction.deleteMany({
+          where: { fingerprint, userId, expiresAt: { gt: now } },
+        });
+        if (own.count === 0) {
+          await tx.queryAction.deleteMany({ where: { fingerprint, userId: WORKSPACE_SCOPE } });
+          return { persisted: true, userId, visibleAction: null };
+        }
+        const shared =
+          userId === WORKSPACE_SCOPE
+            ? null
+            : await tx.queryAction.findFirst({
+                where: { fingerprint, userId: WORKSPACE_SCOPE, expiresAt: { gt: now } },
+              });
+        return { persisted: true, userId, visibleAction: shared ? toQueryAction(shared) : null };
       }),
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("Record to delete does not exist")) return;
     console.error("[actions-store] Failed to remove query action:", err);
     throw err;
   }

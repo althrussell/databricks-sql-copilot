@@ -49,6 +49,13 @@ export function notifySuccess(message: string) {
   toast.success(message);
 }
 
+/**
+ * Show a warning toast for actions that succeeded only partially.
+ */
+export function notifyWarning(message: string, description?: string) {
+  toast.warning(message, description ? { description } : undefined);
+}
+
 /* ── Permission error helpers (server + client safe) ── */
 
 const PERMISSION_PATTERNS = [
