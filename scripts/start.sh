@@ -71,6 +71,8 @@ if [ -x "$PRISMA_BIN" ] && [ -n "$SCHEMA_URL" ]; then
 
   echo "[startup] Applying Prisma migrations..."
   MIGRATE_OK=0
+  # Keep the "&& MIGRATE_OK=1" form: set -e ignores failures inside an && list, so a failed
+  # deploy falls through to the baselining and db push fallbacks instead of exiting.
   MIGRATE_OUTPUT=$(DATABASE_URL="$SCHEMA_URL" "$PRISMA_BIN" migrate deploy 2>&1) && MIGRATE_OK=1
   echo "$MIGRATE_OUTPUT"
 
