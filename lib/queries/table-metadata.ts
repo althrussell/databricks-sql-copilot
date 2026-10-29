@@ -458,9 +458,9 @@ async function fetchTableSummaryForTriage(
   if (cached) return cached;
   if (knownViewCache.has(cacheKey)) return null;
 
-  // Views (vw_*, v_*) cannot be described with DESCRIBE DETAIL (SQLSTATE 42809 EXPECT_TABLE_NOT_VIEW)
+  // Views and materialized views (vw_*, v_*, mv_*) cannot be described with DESCRIBE DETAIL (SQLSTATE 42809 EXPECT_TABLE_NOT_VIEW)
   const leafName = cacheKey.split(".").pop() ?? "";
-  if (leafName.startsWith("vw_") || leafName.startsWith("v_")) {
+  if (leafName.startsWith("vw_") || leafName.startsWith("v_") || leafName.startsWith("mv_")) {
     knownViewCache.add(cacheKey);
     return null;
   }

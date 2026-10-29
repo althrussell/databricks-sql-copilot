@@ -128,21 +128,25 @@ async function getActionableQueries(
           ORDER BY total_duration_ms DESC
         ) AS dedup_rn,
         (
-          CASE WHEN total_duration_ms > 60000 THEN 3 ELSE 0 END +
+          CASE WHEN total_duration_ms > 60000 THEN 3
+               WHEN total_duration_ms > 15000 THEN 2
+               ELSE 1 END +
           CASE WHEN COALESCE(spilled_local_bytes, 0) > 1073741824 THEN 2 ELSE 0 END +
-          CASE WHEN read_files > 0 AND pruned_files > 0 AND (1.0 * pruned_files / (read_files + pruned_files)) < 0.5 THEN 2 ELSE 0 END +
-          CASE WHEN COALESCE(waiting_at_capacity_duration_ms, 0) > 30000 THEN 1 ELSE 0 END
+          CASE WHEN COALESCE(read_files, 0) > 0 AND (1.0 * COALESCE(pruned_files, 0) / (COALESCE(read_files, 0) + COALESCE(pruned_files, 0))) < 0.5 THEN 2 ELSE 0 END +
+          CASE WHEN COALESCE(waiting_at_capacity_duration_ms, 0) > 30000 OR COALESCE(waiting_for_compute_duration_ms, 0) > 15000 THEN 1 ELSE 0 END
         ) AS problem_score
       FROM system.query.history
       WHERE start_time >= '${validStart}'
         AND start_time <= '${validEnd}'
         AND execution_status = 'FINISHED'
-        AND statement_type IN ('SELECT', 'INSERT', 'MERGE', 'CREATE_TABLE_AS_SELECT', 'COPY')
-        AND total_duration_ms > 5000
+        AND statement_type IN ('SELECT', 'INSERT', 'MERGE', 'UPDATE', 'DELETE', 'CREATE_TABLE_AS_SELECT', 'COPY')
+        AND statement_text NOT LIKE '%system.%'
+        AND statement_text NOT LIKE '%information_schema.%'
+        AND total_duration_ms > 1000
     )
     SELECT *
     FROM ranked
-    WHERE dedup_rn = 1 AND problem_score > 0
+    WHERE dedup_rn = 1
     ORDER BY problem_score DESC, total_duration_ms DESC
     LIMIT 15
   `);
@@ -285,7 +289,7 @@ async function getTableHotspots(startTime: string, endTime: string): Promise<Tab
     }>(`
       WITH query_tables AS (
         SELECT
-          REGEXP_EXTRACT(statement_text, '(?i)FROM\\s+([a-zA-Z0-9_\\.]+)', 1) AS table_name,
+          REGEXP_EXTRACT(statement_text, '(?i)FROM\\s+([\\x60a-zA-Z0-9_\\.]+)', 1) AS table_name,
           read_bytes,
           read_files,
           pruned_files,
@@ -294,7 +298,9 @@ async function getTableHotspots(startTime: string, endTime: string): Promise<Tab
         WHERE start_time >= '${validStart}'
           AND start_time <= '${validEnd}'
           AND execution_status = 'FINISHED'
-          AND total_duration_ms > 5000
+          AND statement_text NOT LIKE '%system.%'
+          AND statement_text NOT LIKE '%information_schema.%'
+          AND total_duration_ms > 1000
       ),
       top_users AS (
         SELECT table_name, executed_by,
@@ -303,12 +309,12 @@ async function getTableHotspots(startTime: string, endTime: string): Promise<Tab
         GROUP BY table_name, executed_by
       )
       SELECT
-        t.table_name,
+        REPLACE(t.table_name, '\`', '') AS table_name,
         COUNT(*) AS query_count,
         SUM(COALESCE(t.read_bytes, 0)) AS total_read_bytes,
         AVG(
-          CASE WHEN (t.read_files + COALESCE(t.pruned_files, 0)) > 0
-          THEN 1.0 * COALESCE(t.pruned_files, 0) / (t.read_files + COALESCE(t.pruned_files, 0))
+          CASE WHEN (COALESCE(t.read_files, 0) + COALESCE(t.pruned_files, 0)) > 0
+          THEN 1.0 * COALESCE(t.pruned_files, 0) / (COALESCE(t.read_files, 0) + COALESCE(t.pruned_files, 0))
           ELSE 1.0 END
         ) AS avg_pruning_ratio,
         MAX(CASE WHEN u.rn = 1 THEN u.executed_by END) AS top_user
@@ -316,12 +322,12 @@ async function getTableHotspots(startTime: string, endTime: string): Promise<Tab
       LEFT JOIN top_users u ON t.table_name = u.table_name AND u.rn = 1
       WHERE t.table_name IS NOT NULL AND t.table_name != ''
       GROUP BY t.table_name
-      HAVING COUNT(*) >= 3 AND AVG(
-        CASE WHEN (t.read_files + COALESCE(t.pruned_files, 0)) > 0
-        THEN 1.0 * COALESCE(t.pruned_files, 0) / (t.read_files + COALESCE(t.pruned_files, 0))
+      HAVING COUNT(*) >= 1 AND AVG(
+        CASE WHEN (COALESCE(t.read_files, 0) + COALESCE(t.pruned_files, 0)) > 0
+        THEN 1.0 * COALESCE(t.pruned_files, 0) / (COALESCE(t.read_files, 0) + COALESCE(t.pruned_files, 0))
         ELSE 1.0 END
       ) < 0.7
-      ORDER BY SUM(COALESCE(t.read_bytes, 0)) DESC
+      ORDER BY SUM(COALESCE(t.read_bytes, 0)) DESC, COUNT(*) DESC
       LIMIT 10
     `);
 
