@@ -6,21 +6,33 @@
 #   ./scripts/deploy.sh --profile <cli-profile> [options]
 #
 # Options:
-#   --profile, -p    Databricks CLI profile name (required)
-#   --warehouse, -w  SQL warehouse ID (auto-detected if omitted)
-#   --app-name, -n   App name (default: sql-obs-genie)
-#   --auth-mode, -a  Auth mode: obo or sp (default: obo)
-#   --genie-space    Genie Space ID (optional, leave blank to skip)
-#   --create-genie   Auto-provision Genie Space from genie-space-config.json
-#   --create         Create the app if it doesn't exist
-#   --help, -h       Show this help message
+#   --profile, -p         Databricks CLI profile name (required)
+#   --warehouse, -w       SQL warehouse ID (auto-detected if omitted)
+#   --app-name, -n        App name (default: sql-obs-genie)
+#   --auth-mode, -a       Auth mode: obo or sp (default: obo)
+#   --enable-lakebase     Enable Lakebase persistence: true or false (default: true)
+#   --genie-space         Genie Space ID (optional, leave blank to skip)
+#   --create-genie        Auto-provision Genie Space from genie-space-config.json
+#   --init-observability  Create unified observability tables + views (fails the deploy
+#                         on error), then submit the first query-history ingest to run
+#                         on the warehouse in the background
+#   --ai-model TASK=ENDPOINT
+#                         Serve one AI task from a different model endpoint (repeatable).
+#                         Tasks: triage, rewrite, actions, diagnose, job-analysis.
+#                         Defaults: Gemini 4 Argon for triage, GPT 6.1 Sol for rewrite
+#                         and actions, Claude Opus 5.5 for diagnose and job-analysis
+#   --create              Create the app if it doesn't exist
+#   --help, -h            Show this help message
 #
 # Examples:
 #   # First deploy — auto-detects warehouse and creates Genie Space
-#   ./scripts/deploy.sh -p my-workspace --create --create-genie
+#   ./scripts/deploy.sh -p my-workspace --create --create-genie --init-observability
 #
 #   # Deploy with explicit warehouse
 #   ./scripts/deploy.sh -p my-workspace -w abc123def456
+#
+#   # Route SQL rewrites to Claude Opus 5.5
+#   ./scripts/deploy.sh -p my-workspace --ai-model rewrite=databricks-claude-opus-5-5
 #
 #   # Deploy with SP auth and existing Genie Space
 #   ./scripts/deploy.sh -p DEFAULT -a sp --genie-space 01f11d330b1e17349370616c86cb90ba
@@ -31,27 +43,69 @@ PROFILE=""
 WAREHOUSE_ID=""
 APP_NAME="sql-obs-genie"
 AUTH_MODE="obo"
+ENABLE_LAKEBASE="true"
 GENIE_SPACE_ID=""
+# Assigned here (not inherited) so local-dev AI_MODEL_* exports never reach a deployment
+AI_MODEL_TRIAGE="databricks-gemini-4-argon"
+AI_MODEL_REWRITE="databricks-gpt-6-1-sol"
+AI_MODEL_ACTIONS="databricks-gpt-6-1-sol"
+AI_MODEL_DIAGNOSE="databricks-claude-opus-5-5"
+AI_MODEL_JOB_ANALYSIS="databricks-claude-opus-5-5"
 CREATE_APP=false
 CREATE_GENIE=false
+INIT_OBSERVABILITY=false
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+BACKUP="$PROJECT_DIR/app.yaml.bak"
+
+# Always restore app.yaml on exit or interruption so the working tree stays clean
+cleanup() {
+  if [[ -f "$BACKUP" ]]; then
+    mv "$BACKUP" "$PROJECT_DIR/app.yaml"
+  fi
+}
+trap cleanup EXIT
+# Bash resumes after a trapped signal, so stop explicitly; the EXIT trap still runs cleanup
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 usage() {
-  head -29 "$0" | tail -27
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
   exit 0
+}
+
+set_ai_model() {
+  local task="${1%%=*}" endpoint="${1#*=}"
+  if [[ "$1" != *=* || -z "$task" || -z "$endpoint" ]]; then
+    echo "ERROR: --ai-model expects TASK=ENDPOINT (got '$1')"
+    exit 1
+  fi
+  case "$task" in
+    triage)       AI_MODEL_TRIAGE="$endpoint" ;;
+    rewrite)      AI_MODEL_REWRITE="$endpoint" ;;
+    actions)      AI_MODEL_ACTIONS="$endpoint" ;;
+    diagnose)     AI_MODEL_DIAGNOSE="$endpoint" ;;
+    job-analysis) AI_MODEL_JOB_ANALYSIS="$endpoint" ;;
+    *)
+      echo "ERROR: Unknown --ai-model task '$task' (use triage, rewrite, actions, diagnose, or job-analysis)"
+      exit 1
+      ;;
+  esac
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -p|--profile)    PROFILE="$2"; shift 2 ;;
-    -w|--warehouse)  WAREHOUSE_ID="$2"; shift 2 ;;
-    -n|--app-name)   APP_NAME="$2"; shift 2 ;;
-    -a|--auth-mode)  AUTH_MODE="$2"; shift 2 ;;
-    --genie-space)   GENIE_SPACE_ID="$2"; shift 2 ;;
-    --create-genie)  CREATE_GENIE=true; shift ;;
-    --create)        CREATE_APP=true; shift ;;
-    -h|--help)       usage ;;
+    -p|--profile)          PROFILE="$2"; shift 2 ;;
+    -w|--warehouse)        WAREHOUSE_ID="$2"; shift 2 ;;
+    -n|--app-name)         APP_NAME="$2"; shift 2 ;;
+    -a|--auth-mode)        AUTH_MODE="$2"; shift 2 ;;
+    --enable-lakebase)     ENABLE_LAKEBASE="$2"; shift 2 ;;
+    --genie-space)         GENIE_SPACE_ID="$2"; shift 2 ;;
+    --create-genie)        CREATE_GENIE=true; shift ;;
+    --init-observability)  INIT_OBSERVABILITY=true; shift ;;
+    --ai-model)            set_ai_model "${2:-}"; shift 2 ;;
+    --create)              CREATE_APP=true; shift ;;
+    -h|--help)             usage ;;
     *) echo "Unknown option: $1"; usage ;;
   esac
 done
@@ -106,12 +160,44 @@ fi
 
 echo ""
 echo "=== SQL Observability Genie Deployer ==="
-echo "  Profile:      $PROFILE"
-echo "  Warehouse:    $WAREHOUSE_ID"
-echo "  App name:     $APP_NAME"
-echo "  Auth mode:    $AUTH_MODE"
-echo "  Genie space:  ${GENIE_SPACE_ID:-<none>}"
+echo "  Profile:        $PROFILE"
+echo "  Warehouse:      $WAREHOUSE_ID"
+echo "  App name:       $APP_NAME"
+echo "  Auth mode:      $AUTH_MODE"
+echo "  Lakebase:       $ENABLE_LAKEBASE"
+echo "  Genie space:    ${GENIE_SPACE_ID:-<none>}"
+echo "  AI models:      triage=$AI_MODEL_TRIAGE rewrite=$AI_MODEL_REWRITE actions=$AI_MODEL_ACTIONS"
+echo "                  diagnose=$AI_MODEL_DIAGNOSE job-analysis=$AI_MODEL_JOB_ANALYSIS"
 echo ""
+
+# Bootstrap unified observability tables, views, and the first query-history ingest
+if $INIT_OBSERVABILITY; then
+  echo "→ Bootstrapping unified observability on warehouse $WAREHOUSE_ID..."
+  if ! python3 "$SCRIPT_DIR/init-observability.py" \
+      --profile "$PROFILE" \
+      --warehouse "$WAREHOUSE_ID" \
+      --catalog main \
+      "$PROJECT_DIR/observability/sql/create_canonical_tables.sql" \
+      "$PROJECT_DIR/observability/sql/unified_views.sql"; then
+    echo "ERROR: Observability bootstrap failed (see above). Fix it or re-run without --init-observability."
+    exit 1
+  fi
+  echo "  ✓ Unified observability tables and views ready"
+
+  # The 30-day query-history backfill can run for a long time, so it keeps running on the
+  # warehouse in the background instead of blocking the app deploy.
+  if ! python3 "$SCRIPT_DIR/init-observability.py" \
+      --profile "$PROFILE" \
+      --warehouse "$WAREHOUSE_ID" \
+      --catalog main \
+      --no-wait \
+      "$PROJECT_DIR/observability/sql/ingest_query_runs_v1.sql"; then
+    echo "ERROR: Could not submit the query-history backfill (see above)."
+    exit 1
+  fi
+  echo "  ✓ Query-history backfill submitted (check progress in the warehouse's query history)"
+  echo ""
+fi
 
 # Provision Genie Space if requested and no space ID provided
 if $CREATE_GENIE && [[ -z "$GENIE_SPACE_ID" ]]; then
@@ -163,13 +249,10 @@ if echo "$BIND_RESP" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
-    resources = d.get('resources', [])
-    for r in resources:
-        if r.get('name') == 'sql-warehouse':
-            sys.exit(0)
+except ValueError:
     sys.exit(1)
-except:
-    sys.exit(1)
+bound = isinstance(d, dict) and any(r.get('name') == 'sql-warehouse' for r in d.get('resources', []))
+sys.exit(0 if bound else 1)
 " 2>/dev/null; then
   RESOURCE_BOUND=true
   echo "  ✓ SQL warehouse bound as resource (valueFrom: sql-warehouse)"
@@ -181,48 +264,36 @@ fi
 # Generate target-specific app.yaml
 echo ""
 echo "→ Generating app.yaml for this deployment..."
-BACKUP="$PROJECT_DIR/app.yaml.bak"
 cp "$PROJECT_DIR/app.yaml" "$BACKUP"
 
 if $RESOURCE_BOUND; then
-  # Resource binding succeeded — use valueFrom
-  cat > "$PROJECT_DIR/app.yaml" <<YAML
-command:
-  - "sh"
-  - "scripts/start.sh"
-
-env:
-  - name: DATABRICKS_WAREHOUSE_ID
-    valueFrom: sql-warehouse
-  - name: AUTH_MODE
-    value: "$AUTH_MODE"
-  - name: UNIFIED_OBSERVABILITY_CATALOG
-    value: "main"
-  - name: UNIFIED_OBSERVABILITY_SCHEMA
-    value: "unified_observability"
-  - name: SPARK_HOTSPOT_LIMIT
-    value: "25"
-  - name: SQL_FRESHNESS_SLO_MINUTES
-    value: "30"
-  - name: SPARK_FRESHNESS_SLO_MINUTES
-    value: "120"
-  - name: PHOTON_FRESHNESS_SLO_MINUTES
-    value: "1440"
-  - name: GENIE_SPACE_ID
-    value: "$GENIE_SPACE_ID"
-YAML
+  WH_ENV_LINE="    valueFrom: sql-warehouse"
 else
-  # Fallback — hardcode the warehouse ID
-  cat > "$PROJECT_DIR/app.yaml" <<YAML
+  WH_ENV_LINE="    value: \"$WAREHOUSE_ID\""
+fi
+
+cat > "$PROJECT_DIR/app.yaml" <<YAML
 command:
   - "sh"
   - "scripts/start.sh"
 
 env:
   - name: DATABRICKS_WAREHOUSE_ID
-    value: "$WAREHOUSE_ID"
+$WH_ENV_LINE
   - name: AUTH_MODE
     value: "$AUTH_MODE"
+  - name: ENABLE_LAKEBASE
+    value: "$ENABLE_LAKEBASE"
+  - name: AI_MODEL_TRIAGE
+    value: "$AI_MODEL_TRIAGE"
+  - name: AI_MODEL_REWRITE
+    value: "$AI_MODEL_REWRITE"
+  - name: AI_MODEL_ACTIONS
+    value: "$AI_MODEL_ACTIONS"
+  - name: AI_MODEL_DIAGNOSE
+    value: "$AI_MODEL_DIAGNOSE"
+  - name: AI_MODEL_JOB_ANALYSIS
+    value: "$AI_MODEL_JOB_ANALYSIS"
   - name: UNIFIED_OBSERVABILITY_CATALOG
     value: "main"
   - name: UNIFIED_OBSERVABILITY_SCHEMA
@@ -238,7 +309,6 @@ env:
   - name: GENIE_SPACE_ID
     value: "$GENIE_SPACE_ID"
 YAML
-fi
 echo "  ✓ app.yaml generated"
 
 # Sync source code
@@ -270,7 +340,7 @@ if [[ "$AUTH_MODE" == "obo" ]]; then
 fi
 
 # Restore original app.yaml
-mv "$BACKUP" "$PROJECT_DIR/app.yaml"
+cleanup
 
 echo ""
 echo "=== Deployment Summary ==="
@@ -280,7 +350,8 @@ DEPLOYED_SP_ID=$(databricks apps get "$APP_NAME" --profile "$PROFILE" --output j
 echo "  App URL:        $APP_URL"
 echo "  SP ID:          $DEPLOYED_SP_ID"
 echo "  Warehouse:      $WAREHOUSE_ID"
-echo "  Resource bound:  $RESOURCE_BOUND"
+echo "  Resource bound: $RESOURCE_BOUND"
+echo "  Lakebase:       $ENABLE_LAKEBASE"
 echo "  Genie Space:    ${GENIE_SPACE_ID:-<none>}"
 echo ""
 
@@ -300,18 +371,27 @@ fi
 
 echo ""
 echo "Post-deploy checklist:"
+STEP=0
+step() {
+  STEP=$((STEP + 1))
+  echo "  $STEP. $1"
+}
 if ! $RESOURCE_BOUND; then
-  echo "  1. Bind SQL warehouse in the app UI: App → Resources → Add SQL Warehouse → select '$WAREHOUSE_ID' with 'Can use'"
+  step "Bind SQL warehouse in the app UI: App → Resources → Add SQL Warehouse → select '$WAREHOUSE_ID' with 'Can use'"
   echo "     (or grant SP '$DEPLOYED_SP_ID' CAN_USE on warehouse '$WAREHOUSE_ID' manually)"
 fi
 if [[ -n "$GENIE_SPACE_ID" ]]; then
-  echo "  2. Verify SP '$DEPLOYED_SP_ID' has CAN_RUN on Genie space '$GENIE_SPACE_ID'"
+  step "Verify SP '$DEPLOYED_SP_ID' has CAN_RUN on Genie space '$GENIE_SPACE_ID'"
 fi
 if [[ "$AUTH_MODE" == "obo" ]]; then
-  echo "  3. Verify OBO scopes include 'dashboards.genie' in the app settings UI"
+  step "Verify OBO scopes include 'dashboards.genie' in the app settings UI"
 fi
-if $RESOURCE_BOUND; then
-  echo "  ✓ No manual steps needed — warehouse is bound as a resource"
+if $INIT_OBSERVABILITY; then
+  step "Run the notebook $WORKSPACE_PATH/observability/deploy/deploy_uc_functions on a cluster"
+  echo "     with the 'shscreds' secret scope to create the Spark tuning agent UC functions"
+fi
+if [[ $STEP -eq 0 ]]; then
+  echo "  ✓ No manual steps needed"
 fi
 echo ""
 echo "Done!"

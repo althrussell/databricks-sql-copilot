@@ -15,18 +15,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Lockfile uses the public npm registry
+        run: |
+          if grep -n '"resolved": "https://' package-lock.json | grep -v '"resolved": "https://registry.npmjs.org/'; then
+            echo "::error file=package-lock.json::Packages must download from https://registry.npmjs.org/. Replace private registry hosts (such as npm-proxy.cloud.databricks.com) in the resolved URLs."
+            exit 1
+          fi
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Security audit (fails on critical findings)
+        run: npm audit --audit-level=critical
       - name: Check formatting
         run: npm run format:check
       - name: Lint
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
-      - name: Test
-        run: npm run test
+      - name: Test with coverage gate
+        run: npm run test:coverage
       - name: Build
         run: npm run build

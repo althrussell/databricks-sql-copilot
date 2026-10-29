@@ -4,3 +4,15 @@ resources:
       name: "sql-obs-genie-${bundle.target}"
       description: "SQL Observability Genie — query performance advisor powered by system tables"
       source_code_path: ..
+      resources:
+        - name: sql-warehouse
+          description: "SQL Warehouse for querying system tables and invoking ai_query()"
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+      user_api_scopes:
+        - sql
+        - dashboards.genie
+        - catalog.tables:read
+        - catalog.schemas:read
+        - catalog.catalogs:read
