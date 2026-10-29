@@ -1,13 +1,13 @@
 /**
  * AI Triage — fast batch insights for the dashboard.
  *
- * Sends the top N candidates to Claude Sonnet 4.5
- * in a single ai_query() call and returns a one-liner insight per query.
+ * Sends the top N candidates to the triage model (Gemini 4 Argon by default, see
+ * model-config.ts) in a single ai_query() call and returns a one-liner insight per query.
  *
  * Design:
  *   - Single batch call (not N individual calls)
  *   - Compact prompt (~100 tokens per candidate)
- *   - No table metadata fetch (keeps it fast)
+ *   - Lightweight table context only (cached DESCRIBE DETAIL), no full metadata fetch
  *   - Graceful degradation: returns empty map on failure
  *   - PII protection: all SQL text is normalized before sending to AI
  */
@@ -18,7 +18,7 @@ import { normalizeSql } from "@/lib/domain/sql-fingerprint";
 import { fetchTriageTableContext, formatTriageTableContext } from "@/lib/queries/table-metadata";
 import { TriageItemSchema, validateLLMArray } from "@/lib/validation";
 import { aiSemaphore } from "@/lib/ai/semaphore";
-import { renderPrompt } from "@/lib/ai/prompts/registry";
+import { getActiveVersion, renderPrompt } from "@/lib/ai/prompts/registry";
 import { writePromptLog } from "@/lib/ai/prompt-logger";
 import { computeFingerprintHash, getCachedTriage, cacheTriage } from "@/lib/dbx/triage-store";
 import { buildAiQuerySql, getMaxTokensForTask, resolveModelForTask } from "@/lib/ai/model-config";
@@ -100,10 +100,10 @@ export async function triageCandidates(candidates: Candidate[]): Promise<TriageM
   const top = candidates.slice(0, MAX_CANDIDATES);
   const triageModel = resolveModelForTask("triage");
 
-  // Check triage cache before calling the LLM (scoped by model + fingerprints)
+  // Check triage cache before calling the LLM (scoped by model, prompt version, and fingerprints)
   const fpHash = computeFingerprintHash(
     top.map((c) => c.fingerprint),
-    triageModel,
+    `${triageModel}::${getActiveVersion("triage")}`,
   );
   try {
     const cached = await getCachedTriage(fpHash);
