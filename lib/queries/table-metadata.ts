@@ -438,19 +438,40 @@ export interface TableSummaryForTriage {
 
 /** In-memory cache for lightweight triage summaries (per server session) */
 const triageSummaryCache = new Map<string, TableSummaryForTriage>();
+/** Identifiers confirmed by Unity Catalog (or naming convention) to be views rather than physical tables */
+const knownViewCache = new Set<string>();
+
+function normalizeTableCacheKey(tableName: string): string {
+  return tableName.replace(/`/g, "").trim().toLowerCase();
+}
 
 /**
  * Fetch lightweight metadata for a single table (DESCRIBE DETAIL only).
- * Uses an in-memory cache to avoid repeated calls.
+ * Caches physical table summaries and confirmed views (`EXPECT_TABLE_NOT_VIEW`),
+ * while never negative-caching permission or not-found errors across OBO users.
  */
 async function fetchTableSummaryForTriage(
   tableName: string,
 ): Promise<TableSummaryForTriage | null> {
-  const cached = triageSummaryCache.get(tableName);
+  const cacheKey = normalizeTableCacheKey(tableName);
+  const cached = triageSummaryCache.get(cacheKey);
   if (cached) return cached;
+  if (knownViewCache.has(cacheKey)) return null;
+
+  // Views (vw_*, v_*) cannot be described with DESCRIBE DETAIL (SQLSTATE 42809 EXPECT_TABLE_NOT_VIEW)
+  const leafName = cacheKey.split(".").pop() ?? "";
+  if (leafName.startsWith("vw_") || leafName.startsWith("v_")) {
+    knownViewCache.add(cacheKey);
+    return null;
+  }
 
   const { detail, error } = await fetchDescribeDetail(tableName);
-  if (error || !detail) return null;
+  if (error || !detail) {
+    if (error && error.includes("EXPECT_TABLE_NOT_VIEW")) {
+      knownViewCache.add(cacheKey);
+    }
+    return null;
+  }
 
   const hasPredOpt =
     detail.properties["delta.enableOptimizeWrite"] === "true" ||
@@ -480,13 +501,13 @@ async function fetchTableSummaryForTriage(
     numFiles: detail.numFiles,
   };
 
-  triageSummaryCache.set(tableName, summary);
+  triageSummaryCache.set(cacheKey, summary);
   return summary;
 }
 
 /**
  * Batch-fetch lightweight table metadata for triage.
- * Extracts table names from multiple SQL texts, deduplicates,
+ * Extracts table names from multiple SQL texts, deduplicates by normalized identifier,
  * and fetches DESCRIBE DETAIL in parallel (capped at 10 tables).
  *
  * Returns a Map of tableName → TableSummaryForTriage.
@@ -494,18 +515,21 @@ async function fetchTableSummaryForTriage(
 export async function fetchTriageTableContext(
   sqlTexts: string[],
 ): Promise<Map<string, TableSummaryForTriage>> {
-  // Extract and deduplicate table names across all SQL texts
-  const allTables = new Set<string>();
+  // Extract and deduplicate table names across all SQL texts by normalized key
+  const byKey = new Map<string, string>();
   for (const sql of sqlTexts) {
     for (const t of extractTableNames(sql)) {
-      allTables.add(t);
+      const key = normalizeTableCacheKey(t);
+      if (!byKey.has(key)) {
+        byKey.set(key, t);
+      }
     }
   }
 
-  if (allTables.size === 0) return new Map();
+  if (byKey.size === 0) return new Map();
 
   // Cap at 10 tables to keep it fast
-  const capped = [...allTables].slice(0, 10);
+  const capped = [...byKey.values()].slice(0, 10);
 
   console.log(
     `[triage-metadata] Fetching lightweight metadata for ${capped.length} tables: ${capped.join(", ")}`,

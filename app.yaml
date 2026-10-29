@@ -25,7 +25,7 @@ env:
   - name: ENABLE_LAKEBASE
     value: "true"
   - name: AI_MODEL_TRIAGE
-    value: "databricks-gemini-4-argon"
+    value: "databricks-gpt-6-1-sol"
   - name: AI_MODEL_REWRITE
     value: "databricks-gpt-6-1-sol"
   - name: AI_MODEL_ACTIONS

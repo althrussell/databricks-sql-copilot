@@ -2,11 +2,11 @@
  * Centralized LLM Model Configuration & SQL Query Builder.
  *
  * Tiered Model Routing Architecture:
- *   1. Fast / High-Throughput Batch Triage Tier: Gemini 4 Argon (`databricks-gemini-4-argon`)
- *      - Used for SQL dashboard triage, warehouse monitor triage, and jobs dashboard triage.
- *   2. SQL Rewrite & Cross-Platform Action Synthesis Tier: GPT 6.1 Sol (`databricks-gpt-6-1-sol`)
- *      - Used for SQL query rewrites and operator top-10 action summaries.
- *   3. Deep Diagnostic & Agentic Reasoning Tier: Claude Opus 5.5 (`databricks-claude-opus-5-5`)
+ *   1. Fast / High-Throughput Batch Triage & SQL Rewrite Tier: GPT 6.1 Sol (`databricks-gpt-6-1-sol`)
+ *      - Used for SQL dashboard triage, warehouse monitor triage, jobs dashboard triage,
+ *        SQL query rewrites, and operator top-10 action summaries.
+ *      - Supports both real-time serving and SQL batch `ai_query()`.
+ *   2. Deep Diagnostic & Agentic Reasoning Tier: Claude Opus 5.5 (`databricks-claude-opus-5-5`)
  *      - Used for deep SQL diagnosis, job root-cause analysis, and Spark Tuning Agent.
  *
  * Legacy `temperature` parameters are intentionally omitted across all model calls
@@ -50,18 +50,12 @@ export const SUPPORTED_MODEL_OPTIONS: ModelOption[] = [
     tier: "deep-reasoning",
     defaultMaxTokens: 8192,
   },
-  {
-    id: AI_MODELS.GEMINI_4_ARGON,
-    label: "Gemini 4 Argon",
-    tier: "fast-triage",
-    defaultMaxTokens: 4096,
-  },
 ];
 
 const DEFAULT_TASK_MODELS: Record<AiTaskKey, AiModelSlug> = {
-  triage: AI_MODELS.GEMINI_4_ARGON,
-  "triage-monitor": AI_MODELS.GEMINI_4_ARGON,
-  "job-triage": AI_MODELS.GEMINI_4_ARGON,
+  triage: AI_MODELS.GPT_6_1_SOL,
+  "triage-monitor": AI_MODELS.GPT_6_1_SOL,
+  "job-triage": AI_MODELS.GPT_6_1_SOL,
   rewrite: AI_MODELS.GPT_6_1_SOL,
   "actions-summary": AI_MODELS.GPT_6_1_SOL,
   diagnose: AI_MODELS.CLAUDE_OPUS_5_5,

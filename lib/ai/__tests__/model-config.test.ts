@@ -25,10 +25,10 @@ describe("model-config", () => {
   });
 
   describe("tiered default routing", () => {
-    it("routes batch triage tasks to Gemini 4 Argon", () => {
-      expect(resolveModelForTask("triage")).toBe(AI_MODELS.GEMINI_4_ARGON);
-      expect(resolveModelForTask("triage-monitor")).toBe(AI_MODELS.GEMINI_4_ARGON);
-      expect(resolveModelForTask("job-triage")).toBe(AI_MODELS.GEMINI_4_ARGON);
+    it("routes batch triage tasks to GPT 6.1 Sol (SQL batch ai_query compatible)", () => {
+      expect(resolveModelForTask("triage")).toBe(AI_MODELS.GPT_6_1_SOL);
+      expect(resolveModelForTask("triage-monitor")).toBe(AI_MODELS.GPT_6_1_SOL);
+      expect(resolveModelForTask("job-triage")).toBe(AI_MODELS.GPT_6_1_SOL);
     });
 
     it("routes SQL rewrite and operator actions to GPT 6.1 Sol", () => {
@@ -46,17 +46,17 @@ describe("model-config", () => {
     it("respects task-specific environment variables", () => {
       process.env.AI_MODEL_REWRITE = "databricks-claude-opus-5-5";
       expect(resolveModelForTask("rewrite")).toBe("databricks-claude-opus-5-5");
-      expect(resolveModelForTask("triage")).toBe(AI_MODELS.GEMINI_4_ARGON);
+      expect(resolveModelForTask("triage")).toBe(AI_MODELS.GPT_6_1_SOL);
     });
 
     it("respects global AI_MODEL_OVERRIDE when task-specific var is unset", () => {
-      process.env.AI_MODEL_OVERRIDE = "databricks-gpt-6-1-sol";
-      expect(resolveModelForTask("triage")).toBe("databricks-gpt-6-1-sol");
-      expect(resolveModelForTask("diagnose")).toBe("databricks-gpt-6-1-sol");
+      process.env.AI_MODEL_OVERRIDE = "databricks-claude-opus-5-5";
+      expect(resolveModelForTask("triage")).toBe("databricks-claude-opus-5-5");
+      expect(resolveModelForTask("diagnose")).toBe("databricks-claude-opus-5-5");
     });
 
     it("prefers explicit runtime override over env vars", () => {
-      process.env.AI_MODEL_REWRITE = "databricks-gemini-4-argon";
+      process.env.AI_MODEL_REWRITE = "databricks-gpt-6-1-sol";
       expect(resolveModelForTask("rewrite", "databricks-claude-opus-5-5")).toBe(
         "databricks-claude-opus-5-5",
       );
@@ -110,7 +110,6 @@ describe("model-config", () => {
       expect(SUPPORTED_MODEL_OPTIONS.map((m) => m.id)).toEqual([
         AI_MODELS.GPT_6_1_SOL,
         AI_MODELS.CLAUDE_OPUS_5_5,
-        AI_MODELS.GEMINI_4_ARGON,
       ]);
     });
   });

@@ -3,17 +3,13 @@
 ## Tiered Model Routing (`lib/ai/model-config.ts`)
 All LLM calls use Databricks Foundation Model APIs (`ai_query()` in SQL or Model Serving OpenAI client in Python) with **no legacy `temperature` parameters**:
 
-1) **Fast / High-Throughput Batch Triage (`databricks-gemini-4-argon` — Gemini 4 Argon)**
-   - Overridable via `AI_MODEL_TRIAGE` or `AI_MODEL_OVERRIDE`
-   - Used for: Dashboard SQL triage (`lib/ai/triage.ts`), Warehouse Monitor pattern triage (`lib/ai/triage-monitor.ts`), and Lakeflow Jobs batch triage (`lib/ai/job-triage.ts`)
-   - Output budget: `max_tokens: 4096`
+1) **Fast / High-Throughput Batch Triage & SQL Rewrite (`databricks-gpt-6-1-sol` — GPT 6.1 Sol)**
+   - Overridable via `AI_MODEL_TRIAGE`, `AI_MODEL_REWRITE`, `AI_MODEL_ACTIONS`, `AI_MODEL_OVERRIDE`, or UI model selector
+   - Used for: Dashboard SQL triage (`lib/ai/triage.ts`), Warehouse Monitor pattern triage (`lib/ai/triage-monitor.ts`), Lakeflow Jobs batch triage (`lib/ai/job-triage.ts`), Semantic-equivalent SQL rewrites (`lib/ai/aiClient.ts` mode `rewrite` + EXPLAIN validation), and Top-10 cross-platform Operator Actions (`lib/ai/actions-summary.ts`)
+   - Output budget: `max_tokens: 4096` (triage) / `8192` (rewrite & actions)
+   - Note: `databricks-gpt-6-1-sol` is used as the default for SQL `ai_query()` triage because `databricks-gemini-4-argon` does not support SQL batch inference (`ai_query`) on pay-per-token endpoints.
 
-2) **SQL Rewrite & Operator Actions Synthesis (`databricks-gpt-6-1-sol` — GPT 6.1 Sol)**
-   - Overridable via `AI_MODEL_REWRITE`, `AI_MODEL_ACTIONS`, or UI model selector
-   - Used for: Semantic-equivalent SQL rewrites (`lib/ai/aiClient.ts` mode `rewrite` + EXPLAIN validation) and Top-10 cross-platform Operator Actions (`lib/ai/actions-summary.ts`)
-   - Output budget: `max_tokens: 8192`
-
-3) **Deep Diagnostic & Agentic Reasoning (`databricks-claude-opus-5-5` — Claude Opus 5.5)**
+2) **Deep Diagnostic & Agentic Reasoning (`databricks-claude-opus-5-5` — Claude Opus 5.5)**
    - Overridable via `AI_MODEL_DIAGNOSE`, `AI_MODEL_JOB_ANALYSIS`, `LLM_ENDPOINT`, or UI model selector
    - Used for: Deep SQL query diagnosis (`lib/ai/aiClient.ts` mode `diagnose`), Lakeflow Job root-cause analysis (`lib/ai/job-analysis.ts`), and the interactive Spark Tuning Agent (`observability/agent/spark_tuning_agent.py`)
    - Output budget: `max_tokens: 8192` (SQL) / `125000` (Spark Agent, `LLM_MAX_TOKENS`)

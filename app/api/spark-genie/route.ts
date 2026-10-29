@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getConfig } from "@/lib/config";
 import {
   startGenieConversation,
   continueGenieConversation,
@@ -10,7 +11,22 @@ import { SparkGenieBodySchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-const GENIE_SPACE_ID = process.env.GENIE_SPACE_ID ?? "";
+export async function GET() {
+  const sid = process.env.GENIE_SPACE_ID?.trim() ?? "";
+  if (!sid) {
+    return NextResponse.json({ configured: false, spaceId: null, spaceUrl: null });
+  }
+  try {
+    const config = getConfig();
+    return NextResponse.json({
+      configured: true,
+      spaceId: sid,
+      spaceUrl: `https://${config.serverHostname}/genie/rooms/${sid}`,
+    });
+  } catch {
+    return NextResponse.json({ configured: true, spaceId: sid, spaceUrl: null });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
     const { action, question, conversationId, messageId } = parsed.data;
 
-    const sid = GENIE_SPACE_ID;
+    const sid = process.env.GENIE_SPACE_ID?.trim() ?? "";
     if (!sid) {
       return NextResponse.json(
         {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Provision a Genie Space from genie-space-config.json via the Databricks REST API.
+# Provision or update a Genie Space from genie-space-config.json via the Databricks REST API.
 #
 # Usage:
 #   ./scripts/provision-genie-space.sh --profile <cli-profile> --warehouse <id>
@@ -11,7 +11,7 @@
 #   --sp-id          Service Principal ID to grant CAN_RUN (optional)
 #   --help, -h       Show this help
 #
-# Outputs the created Genie Space ID as the last line on success.
+# Outputs the Genie Space ID as the last line on success.
 
 set -euo pipefail
 
@@ -65,7 +65,7 @@ with open('$CONFIG_FILE') as f:
 
 tables_sorted = sorted(config['table_identifiers'])
 space = {
-    'version': 1,
+    'version': 2,
     'data_sources': {
         'tables': [{'identifier': t} for t in tables_sorted]
     },
@@ -87,6 +87,7 @@ payload = {
     'title': config['title'],
     'description': config.get('description', ''),
     'warehouse_id': '$WAREHOUSE_ID',
+    'parent_path': '/Workspace/Shared',
     'serialized_space': json.dumps(space)
 }
 
@@ -96,19 +97,61 @@ with open('$TMPFILE', 'w') as out:
 
 echo "  ✓ Payload built ($(wc -c < "$TMPFILE") bytes)" >&2
 
-RESPONSE=$(databricks api post /api/2.0/genie/spaces \
-  --profile "$PROFILE" \
-  --json "@${TMPFILE}" 2>&1)
+# Reuse an existing Genie Space with the same title if one already exists
+EXISTING_ID=$(databricks api get /api/2.0/genie/spaces --profile "$PROFILE" 2>/dev/null | python3 -c "
+import sys, json
+with open('$CONFIG_FILE') as f:
+    target_title = json.load(f)['title']
+try:
+    d = json.load(sys.stdin)
+    for s in d.get('spaces', []):
+        if s.get('title') == target_title:
+            print(s.get('space_id', ''))
+            break
+except Exception:
+    pass
+" 2>/dev/null || echo "")
 
-SPACE_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('space_id',''))" 2>/dev/null || echo "")
+if [[ -n "$EXISTING_ID" ]]; then
+  echo "  ℹ Found existing Genie Space '$EXISTING_ID', updating..." >&2
+  UPDATE_TMP=$(mktemp /tmp/genie-update.XXXXXX.json)
+  python3 -c "
+import json
+with open('$TMPFILE') as f:
+    p = json.load(f)
+p.pop('parent_path', None)
+with open('$UPDATE_TMP', 'w') as out:
+    json.dump(p, out)
+"
+  UPDATE_RESP=$(databricks api patch "/api/2.0/genie/spaces/$EXISTING_ID" --profile "$PROFILE" --json "@${UPDATE_TMP}" 2>&1) || true
+  rm -f "$UPDATE_TMP"
+  SPACE_ID=$(echo "$UPDATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('space_id',''))" 2>/dev/null || echo "")
+  if [[ -z "$SPACE_ID" ]]; then
+    echo "ERROR: Failed to update existing Genie Space '$EXISTING_ID'." >&2
+    echo "Response: $UPDATE_RESP" >&2
+    exit 1
+  fi
+  echo "  ✓ Genie Space updated: $SPACE_ID" >&2
+else
+  RESPONSE=$(databricks api post /api/2.0/genie/spaces \
+    --profile "$PROFILE" \
+    --json "@${TMPFILE}" 2>&1)
 
-if [[ -z "$SPACE_ID" ]]; then
-  echo "ERROR: Failed to create Genie Space." >&2
-  echo "Response: $RESPONSE" >&2
-  exit 1
+  SPACE_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('space_id',''))" 2>/dev/null || echo "")
+
+  if [[ -z "$SPACE_ID" ]]; then
+    echo "ERROR: Failed to create Genie Space." >&2
+    echo "Response: $RESPONSE" >&2
+    exit 1
+  fi
+
+  echo "  ✓ Genie Space created: $SPACE_ID" >&2
 fi
 
-echo "  ✓ Genie Space created: $SPACE_ID" >&2
+# Grant CAN_RUN to workspace users group so all OBO users can run it
+databricks api patch "/api/2.0/permissions/genie/$SPACE_ID" \
+  --profile "$PROFILE" \
+  --json '{"access_control_list":[{"group_name":"users","permission_level":"CAN_RUN"}]}' >/dev/null 2>&1 || true
 
 # Grant CAN_RUN to Service Principal if provided
 if [[ -n "$SP_ID" ]]; then

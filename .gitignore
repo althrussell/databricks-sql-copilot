@@ -10,6 +10,8 @@ out/
 # production
 build/
 dist/
+.build-package/
+app.yaml.bak
 
 # env files (local secrets)
 .env
