@@ -34,6 +34,31 @@ export interface ActionWriteResult {
   reason?: "LAKEBASE_DISABLED";
 }
 
+export interface ActionRemoveResult extends ActionWriteResult {
+  /** Shared workspace action the user sees once their own action is removed */
+  visibleAction?: QueryAction | null;
+}
+
+function toQueryAction(row: {
+  fingerprint: string;
+  userId: string;
+  action: string;
+  note: string | null;
+  actedBy: string | null;
+  actedAt: Date;
+  updatedAt: Date;
+}): QueryAction {
+  return {
+    fingerprint: row.fingerprint,
+    userId: row.userId,
+    action: row.action as QueryActionType,
+    note: row.note,
+    actedBy: row.actedBy,
+    actedAt: row.actedAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 async function resolveCurrentUserId(): Promise<string> {
   const oboEmail = await getOboUserEmail();
   const normalized = oboEmail?.trim().toLowerCase();
@@ -68,15 +93,7 @@ export async function getQueryActions(): Promise<Map<string, QueryAction>> {
     });
 
     for (const row of sortedRows) {
-      map.set(row.fingerprint, {
-        fingerprint: row.fingerprint,
-        userId: row.userId,
-        action: row.action as QueryActionType,
-        note: row.note,
-        actedBy: row.actedBy,
-        actedAt: row.actedAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-      });
+      map.set(row.fingerprint, toQueryAction(row));
     }
   } catch (err) {
     console.error("[actions-store] Failed to fetch query actions:", err);
@@ -192,26 +209,38 @@ export async function migrateLegacyActionKeys(
 }
 
 /**
- * Remove the action visible to the current user on a query fingerprint.
- * Deletes the user's own row and any shared workspace-scoped row (legacy global
- * actions), so a cleared action does not reappear from the workspace fallback.
+ * Remove the action the current user sees on a query fingerprint: their own action, or the
+ * shared workspace action when they have none. Clearing a personal action leaves any shared
+ * action in place for other users and returns it, since the user now sees it instead.
  */
-export async function removeQueryAction(fingerprint: string): Promise<ActionWriteResult> {
+export async function removeQueryAction(fingerprint: string): Promise<ActionRemoveResult> {
   const userId = await resolveCurrentUserId();
   if (!isLakebaseEnabled()) {
     return { persisted: false, userId, reason: "LAKEBASE_DISABLED" };
   }
 
   try {
-    await withPrisma((p) =>
-      p.queryAction.deleteMany({
-        where: {
-          fingerprint,
-          userId: { in: [...new Set([userId, WORKSPACE_SCOPE])] },
-        },
+    // One transaction: withPrisma re-runs the callback after rotating credentials, and a
+    // retry following a partial delete must not fall through to deleting the shared row.
+    return await withPrisma((p) =>
+      p.$transaction(async (tx): Promise<ActionRemoveResult> => {
+        const now = new Date();
+        const own = await tx.queryAction.deleteMany({
+          where: { fingerprint, userId, expiresAt: { gt: now } },
+        });
+        if (own.count === 0) {
+          await tx.queryAction.deleteMany({ where: { fingerprint, userId: WORKSPACE_SCOPE } });
+          return { persisted: true, userId, visibleAction: null };
+        }
+        const shared =
+          userId === WORKSPACE_SCOPE
+            ? null
+            : await tx.queryAction.findFirst({
+                where: { fingerprint, userId: WORKSPACE_SCOPE, expiresAt: { gt: now } },
+              });
+        return { persisted: true, userId, visibleAction: shared ? toQueryAction(shared) : null };
       }),
     );
-    return { persisted: true, userId };
   } catch (err) {
     console.error("[actions-store] Failed to remove query action:", err);
     throw err;
