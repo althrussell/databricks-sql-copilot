@@ -97,10 +97,14 @@ def run_statement(args: argparse.Namespace, statement: str) -> str | None:
         },
     )
     statement_id = resp.get("statement_id")
+    if not statement_id:
+        raise RuntimeError(f"no statement_id in Statement Execution API response: {resp}")
     if args.no_wait:
-        state = resp.get("status", {}).get("state")
-        if state in ("FAILED", "CANCELED", "CLOSED"):
-            raise RuntimeError(resp["status"].get("error", {}).get("message") or state)
+        status = resp.get("status", {})
+        if status.get("state") not in ("PENDING", "RUNNING", "SUCCEEDED"):
+            raise RuntimeError(
+                status.get("error", {}).get("message") or f"unexpected state {status.get('state')!r}"
+            )
         return statement_id
     deadline = time.time() + args.timeout
     while resp.get("status", {}).get("state") not in TERMINAL_STATES:
