@@ -64,7 +64,10 @@ cleanup() {
     mv "$BACKUP" "$PROJECT_DIR/app.yaml"
   fi
 }
-trap cleanup EXIT ERR INT TERM
+trap cleanup EXIT
+# Bash resumes after a trapped signal, so stop explicitly; the EXIT trap still runs cleanup
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 usage() {
   awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
