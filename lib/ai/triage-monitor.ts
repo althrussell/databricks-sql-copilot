@@ -31,7 +31,9 @@ interface PatternSummary {
   runCount: number;
   totalDurationMs: number;
   avgDurationMs: number;
-  avgExecutionMs: number;
+  /** Queue wait as a share of execution time over runs that executed; null when none did */
+  queueShareOfExec: number | null;
+  neverExecutedRuns: number;
   maxDurationMs: number;
   totalBytesScanned: number;
   totalRowsProduced: number;
@@ -120,7 +122,16 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
   for (const g of groups.values()) {
     const totalDurationMs = g.durations.reduce((a, b) => a + b, 0);
     const avgDurationMs = totalDurationMs / g.durations.length;
-    const avgExecutionMs = g.executionTimes.reduce((a, b) => a + b, 0) / g.executionTimes.length;
+    let executedRuns = 0;
+    let executedQueueMs = 0;
+    let executedExecMs = 0;
+    g.executionTimes.forEach((execMs, i) => {
+      if (execMs > 0) {
+        executedRuns++;
+        executedQueueMs += g.queueWaits[i];
+        executedExecMs += execMs;
+      }
+    });
     const maxDurationMs = Math.max(...g.durations);
     const totalBytesScanned = g.bytesScanned.reduce((a, b) => a + b, 0);
     const totalRowsProduced = g.rowsProduced.reduce((a, b) => a + b, 0);
@@ -135,7 +146,8 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
       runCount: g.durations.length,
       totalDurationMs,
       avgDurationMs,
-      avgExecutionMs,
+      queueShareOfExec: executedExecMs > 0 ? executedQueueMs / executedExecMs : null,
+      neverExecutedRuns: g.durations.length - executedRuns,
       maxDurationMs,
       totalBytesScanned,
       totalRowsProduced,
@@ -153,11 +165,16 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
   return result;
 }
 
+function queueShareLabel(p: PatternSummary): string {
+  if (p.queueShareOfExec === null) return "no execution recorded";
+  const share = `${Math.round(p.queueShareOfExec * 100)}% of exec time`;
+  return p.neverExecutedRuns > 0
+    ? `${share} for executed runs; ${p.neverExecutedRuns} of ${p.runCount} runs never executed`
+    : share;
+}
+
 function patternSummaryLine(p: PatternSummary): string {
-  const queueShare =
-    p.avgExecutionMs > 0
-      ? `${Math.round((p.avgQueueWaitMs / p.avgExecutionMs) * 100)}% of exec time`
-      : "no execution recorded";
+  const queueShare = queueShareLabel(p);
 
   return [
     `ID: ${p.fingerprint}`,

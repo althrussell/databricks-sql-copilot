@@ -15,13 +15,13 @@ import { createHash } from "crypto";
 const TRIAGE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
- * Compute a stable hash from a sorted list of fingerprints and the active model.
- * The same set of fingerprints and model (regardless of order) always produces the same hash.
+ * Compute a stable hash from a sorted list of fingerprints and a cache scope (the model and
+ * prompt version that produced the insights). Fingerprint order does not change the hash.
  */
-export function computeFingerprintHash(fingerprints: string[], model = ""): string {
+export function computeFingerprintHash(fingerprints: string[], scope = ""): string {
   const sorted = [...fingerprints].sort();
   return createHash("sha256")
-    .update(`${model}::${sorted.join("|")}`)
+    .update(`${scope}::${sorted.join("|")}`)
     .digest("hex")
     .slice(0, 40);
 }
