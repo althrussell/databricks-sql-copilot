@@ -138,12 +138,24 @@ if $INIT_OBSERVABILITY; then
       --warehouse "$WAREHOUSE_ID" \
       --catalog main \
       "$PROJECT_DIR/observability/sql/create_canonical_tables.sql" \
-      "$PROJECT_DIR/observability/sql/unified_views.sql" \
-      "$PROJECT_DIR/observability/sql/ingest_query_runs_v1.sql"; then
+      "$PROJECT_DIR/observability/sql/unified_views.sql"; then
     echo "ERROR: Observability bootstrap failed (see above). Fix it or re-run without --init-observability."
     exit 1
   fi
   echo "  ✓ Unified observability tables and views ready"
+
+  # The 30-day query-history backfill can run for a long time, so it keeps running on the
+  # warehouse in the background instead of blocking the app deploy.
+  if ! python3 "$SCRIPT_DIR/init-observability.py" \
+      --profile "$PROFILE" \
+      --warehouse "$WAREHOUSE_ID" \
+      --catalog main \
+      --no-wait \
+      "$PROJECT_DIR/observability/sql/ingest_query_runs_v1.sql"; then
+    echo "ERROR: Could not submit the query-history backfill (see above)."
+    exit 1
+  fi
+  echo "  ✓ Query-history backfill submitted (check progress in the warehouse's query history)"
   echo ""
 fi
 

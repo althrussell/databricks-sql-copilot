@@ -81,7 +81,8 @@ def api(profile: str, method: str, path: str, payload: dict | None = None) -> di
     return json.loads(proc.stdout or "{}")
 
 
-def run_statement(args: argparse.Namespace, statement: str) -> None:
+def run_statement(args: argparse.Namespace, statement: str) -> str | None:
+    """Run a statement to completion, or only submit it with --no-wait. Returns its ID."""
     resp = api(
         args.profile,
         "post",
@@ -90,11 +91,17 @@ def run_statement(args: argparse.Namespace, statement: str) -> None:
             "warehouse_id": args.warehouse,
             "catalog": args.catalog,
             "statement": statement,
-            "wait_timeout": "30s",
+            # 0s returns immediately; CONTINUE keeps the statement running server-side
+            "wait_timeout": "0s" if args.no_wait else "30s",
             "on_wait_timeout": "CONTINUE",
         },
     )
     statement_id = resp.get("statement_id")
+    if args.no_wait:
+        state = resp.get("status", {}).get("state")
+        if state in ("FAILED", "CANCELED", "CLOSED"):
+            raise RuntimeError(resp["status"].get("error", {}).get("message") or state)
+        return statement_id
     deadline = time.time() + args.timeout
     while resp.get("status", {}).get("state") not in TERMINAL_STATES:
         if time.time() > deadline:
@@ -105,6 +112,7 @@ def run_statement(args: argparse.Namespace, statement: str) -> None:
     status = resp["status"]
     if status["state"] != "SUCCEEDED":
         raise RuntimeError(status.get("error", {}).get("message") or status["state"])
+    return statement_id
 
 
 def main() -> int:
@@ -114,6 +122,11 @@ def main() -> int:
     parser.add_argument("--catalog", default="main", help="default catalog for two-part names")
     parser.add_argument("--timeout", type=int, default=900, help="per-statement timeout (s)")
     parser.add_argument("--dry-run", action="store_true", help="list statements without running")
+    parser.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="submit statements and return without waiting for them to finish",
+    )
     parser.add_argument("files", nargs="+")
     args = parser.parse_args()
 
@@ -126,11 +139,14 @@ def main() -> int:
                 print(f"  · {label}")
                 continue
             try:
-                run_statement(args, statement)
+                statement_id = run_statement(args, statement)
             except Exception as err:  # noqa: BLE001 — surface any CLI/API/SQL failure
                 print(f"  ✗ {label}\n    {err}", file=sys.stderr)
                 return 1
-            print(f"  ✓ {label}")
+            if args.no_wait:
+                print(f"  → {label}\n    submitted as statement {statement_id}")
+            else:
+                print(f"  ✓ {label}")
     return 0
 
 

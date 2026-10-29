@@ -538,12 +538,14 @@ databricks-sql-genie/
 
 ### Targets
 
-The bundle ships with two pre-configured targets in `databricks.yml`:
+The bundle ships with two targets in `databricks.yml`, both using the `DEFAULT` CLI profile:
 
-| Target | Profile | Warehouse | Auth |
-|--------|---------|-----------|------|
-| `dev` (default) | `DEFAULT` | `75fd8278393d07eb` | SP |
-| `alinta-prod` | `alinta_prod_user` | `bfe02b96b14128c0` | OBO |
+| Target | Mode |
+|--------|------|
+| `dev` (default) | development |
+| `prod` | production (deployed under `/Workspace/Shared/.bundle/...`) |
+
+The `warehouse_id` variable is required. Pass it with `--var warehouse_id=<id>` or set `BUNDLE_VAR_warehouse_id`. Runtime settings (`AUTH_MODE`, `ENABLE_LAKEBASE`, `AI_MODEL_*`, `GENIE_SPACE_ID`) come from `app.yaml`.
 
 ### Adding a new target
 
@@ -558,24 +560,22 @@ targets:
       profile: customer-workspace
     variables:
       warehouse_id: "their-warehouse-id"
-      auth_mode: "obo"
-      genie_space_id: ""
 ```
 
 ### Commands
 
 ```bash
 # Validate
-databricks bundle validate -t dev
+databricks bundle validate -t dev --var warehouse_id=<id>
 
 # Deploy
-databricks bundle deploy -t alinta-prod
+databricks bundle deploy -t prod --var warehouse_id=<id>
 
 # Start the app after first deploy
-databricks bundle run sql_observability_genie -t alinta-prod
+databricks bundle run sql_observability_genie -t prod --var warehouse_id=<id>
 
 # Tear down
-databricks bundle destroy -t dev
+databricks bundle destroy -t dev --var warehouse_id=<id>
 ```
 
 > **Note**: The DAB approach names the app `sql-obs-genie-<target>` (e.g., `sql-obs-genie-dev`). The deploy script approach uses a flat name you specify with `--app-name`. Both work; choose one per workspace.
