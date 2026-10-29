@@ -188,6 +188,7 @@ describe("computeFlags", () => {
 
   it("enriches LowPruning with table context when provided", () => {
     const c = makeCandidate({
+      sampleQueryText: "SELECT * FROM catalog.schema.orders WHERE id = 1",
       windowStats: {
         ...makeCandidate().windowStats,
         avgPruningEfficiency: 0.1,
@@ -219,6 +220,7 @@ describe("computeFlags", () => {
 
   it("enriches ColdQuery with Predictive Optimization recommendation", () => {
     const c = makeCandidate({
+      sampleQueryText: "SELECT * FROM catalog.schema.orders WHERE id = 1",
       windowStats: {
         ...makeCandidate().windowStats,
         count: 5,
@@ -321,8 +323,89 @@ describe("computeFlags", () => {
     expect(flags.some((f) => f.flag === "MissingDeletionVectors")).toBe(false);
   });
 
+  it("does not use shared table context when the SQL references no qualified tables", () => {
+    const c = makeCandidate({
+      sampleQueryText: "SELECT * FROM orders WHERE id = 1",
+      windowStats: { ...makeCandidate().windowStats, totalReadBytes: 200 * 1024 * 1024 },
+    });
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            format: "delta",
+            sizeInBytes: 5e9,
+            numFiles: 200,
+          },
+        ],
+      ]),
+    };
+    const flags = computeFlags(c, DEFAULT_THRESHOLDS, tableContext);
+    expect(flags.some((f) => f.flag === "ClusterByAutoCandidate")).toBe(false);
+  });
+
+  it("skips Delta-only advice for non-Delta tables and unknown deletion-vector status", () => {
+    const tableContext = {
+      tables: new Map([
+        [
+          "catalog.schema.orders",
+          {
+            tableName: "catalog.schema.orders",
+            clusteringColumns: [],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: false,
+            format: "parquet",
+            sizeInBytes: 5e9,
+            numFiles: 200,
+          },
+        ],
+        [
+          "catalog.schema.items",
+          {
+            tableName: "catalog.schema.items",
+            clusteringColumns: ["sku"],
+            partitionColumns: [],
+            isManaged: true,
+            predictiveOptEnabled: true,
+            deletionVectorsEnabled: undefined,
+            format: "delta",
+            sizeInBytes: 1e9,
+            numFiles: 50,
+          },
+        ],
+      ]),
+    };
+    const scan = computeFlags(
+      makeCandidate({
+        sampleQueryText: "SELECT * FROM catalog.schema.orders",
+        windowStats: { ...makeCandidate().windowStats, totalReadBytes: 200 * 1024 * 1024 },
+      }),
+      DEFAULT_THRESHOLDS,
+      tableContext,
+    );
+    expect(scan.some((f) => f.flag === "ClusterByAutoCandidate")).toBe(false);
+
+    const merge = computeFlags(
+      makeCandidate({
+        statementType: "MERGE",
+        sampleQueryText:
+          "MERGE INTO catalog.schema.items t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET *",
+      }),
+      DEFAULT_THRESHOLDS,
+      tableContext,
+    );
+    expect(merge.some((f) => f.flag === "MissingDeletionVectors")).toBe(false);
+  });
+
   it("flags ClusterByAutoCandidate on unclustered managed tables with high scan bytes", () => {
     const c = makeCandidate({
+      sampleQueryText: "SELECT * FROM catalog.schema.orders WHERE id = 1",
       windowStats: {
         ...makeCandidate().windowStats,
         totalReadBytes: 200 * 1024 * 1024,

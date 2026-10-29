@@ -84,6 +84,24 @@ describe("buildCandidates", () => {
     expect(c.dbtMeta.nodeId).toBe("model.sales.orders");
     expect(c.performanceFlags.length).toBeGreaterThan(0);
   });
+
+  it("records the legacy fingerprints of every run so persisted rows can be re-keyed", () => {
+    const runs = [
+      makeRun({
+        statementId: "s1",
+        queryText: '/* {"invocation": "nightly"} */ SELECT a FROM main.x.t',
+      }),
+      makeRun({
+        statementId: "s2",
+        queryText: '/* {"invocation": "adhoc"} */ SELECT a FROM main.x.t',
+      }),
+    ];
+    const [c] = buildCandidates(runs);
+    // Comment stripping now groups both runs; the old algorithm hashed them separately
+    expect(c.windowStats.count).toBe(2);
+    expect(c.legacyFingerprints).toHaveLength(2);
+    expect(c.legacyFingerprints).not.toContain(c.fingerprint);
+  });
 });
 
 describe("dbt-parser", () => {

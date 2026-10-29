@@ -65,3 +65,27 @@ export function fingerprint(sql: string): string {
   const normalized = normalizeSql(sql);
   return createHash("sha256").update(normalized, "utf8").digest("hex").slice(0, 16);
 }
+
+/**
+ * Fingerprint produced before the SHA-256 unification (no comment or pipe
+ * normalization, djb2 hash). Used only to re-key Lakebase rows saved under it.
+ */
+export function legacyFingerprint(sql: string): string {
+  let s = sql;
+  s = s.replace(/'(?:[^'\\]|\\.)*'/g, "'?'");
+  s = s.replace(/(?<![a-zA-Z_])\b\d+(\.\d+)?\b/g, "?");
+  s = s.replace(/\bIN\s*\(\s*\?\s*(?:,\s*\?\s*)*\)/gi, "IN (?)");
+  s = s.replace(/\bIN\s*\(\s*'\?'\s*(?:,\s*'\?'\s*)*\)/gi, "IN (?)");
+  s = s.toLowerCase();
+  s = s.replace(/;\s*$/, "");
+  s = s.replace(/\s+/g, " ").trim();
+
+  let h1 = 5381;
+  let h2 = 52711;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i);
+    h1 = ((h1 << 5) + h1 + ch) | 0;
+    h2 = ((h2 << 5) + h2 + ch) | 0;
+  }
+  return (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
+}
