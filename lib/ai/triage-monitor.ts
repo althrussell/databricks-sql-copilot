@@ -85,14 +85,10 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
 
     const fp = computeFingerprint(q.queryText);
     const existing = groups.get(fp);
-    const execMs =
-      q.executionTimeMs > 0
-        ? q.executionTimeMs
-        : Math.max(0, q.durationMs - q.queueWaitMs - q.compilationTimeMs - q.fetchTimeMs);
 
     if (existing) {
       existing.durations.push(q.durationMs);
-      existing.executionTimes.push(execMs);
+      existing.executionTimes.push(q.executionTimeMs);
       existing.bytesScanned.push(q.bytesScanned);
       existing.rowsProduced.push(q.rowsProduced);
       existing.spillBytes.push(q.spillBytes);
@@ -106,7 +102,7 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
         sqlSnippet: normalizeSql(q.queryText).replace(/\s+/g, " ").trim().slice(0, 150),
         statementType: q.statementType,
         durations: [q.durationMs],
-        executionTimes: [execMs],
+        executionTimes: [q.executionTimeMs],
         bytesScanned: [q.bytesScanned],
         rowsProduced: [q.rowsProduced],
         spillBytes: [q.spillBytes],
@@ -166,10 +162,10 @@ function groupByFingerprint(queries: TimelineQuery[]): PatternSummary[] {
 }
 
 function queueShareLabel(p: PatternSummary): string {
-  if (p.queueShareOfExec === null) return "no execution recorded";
+  if (p.queueShareOfExec === null) return "no execution time recorded";
   const share = `${Math.round(p.queueShareOfExec * 100)}% of exec time`;
   return p.neverExecutedRuns > 0
-    ? `${share} for executed runs; ${p.neverExecutedRuns} of ${p.runCount} runs never executed`
+    ? `${share} for executed runs; ${p.neverExecutedRuns} of ${p.runCount} runs recorded no execution time`
     : share;
 }
 
