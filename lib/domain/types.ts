@@ -76,13 +76,7 @@ export interface QuerySource {
 
 /** Derived human-friendly source label */
 export type QueryOrigin =
-  | "dashboard"
-  | "notebook"
-  | "job"
-  | "alert"
-  | "sql-editor"
-  | "genie"
-  | "unknown";
+  "dashboard" | "notebook" | "job" | "alert" | "sql-editor" | "genie" | "unknown";
 
 /** A single query execution from system.query.history */
 export interface QueryRun {
