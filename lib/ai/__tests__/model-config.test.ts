@@ -65,6 +65,17 @@ describe("model-config", () => {
     it("ignores invalid characters in runtime override", () => {
       expect(resolveModelForTask("rewrite", "bad'; DROP TABLE--")).toBe(AI_MODELS.GPT_6_1_SOL);
     });
+
+    it("ignores runtime overrides that are not supported or deployment-configured", () => {
+      expect(resolveModelForTask("rewrite", "some-other-serving-endpoint")).toBe(
+        AI_MODELS.GPT_6_1_SOL,
+      );
+    });
+
+    it("accepts deployment-configured AI_MODEL_* endpoints as runtime overrides", () => {
+      process.env.AI_MODEL_DIAGNOSE = "my-gateway-opus";
+      expect(resolveModelForTask("rewrite", "my-gateway-opus")).toBe("my-gateway-opus");
+    });
   });
 
   describe("buildAiQuerySql (legacy temperature removal)", () => {

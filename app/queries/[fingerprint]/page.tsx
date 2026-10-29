@@ -10,7 +10,7 @@ import { Loader2 } from "lucide-react";
 import type { WarehouseCost, QueryRun } from "@/lib/domain/types";
 import { QueryDetailClient } from "./query-detail-client";
 
-export const revalidate = 300; // cache for 5 minutes
+export const dynamic = "force-dynamic";
 
 interface QueryDetailPageProps {
   params: Promise<{ fingerprint: string }>;
@@ -226,8 +226,7 @@ export default async function QueryDetailPage(props: QueryDetailPageProps) {
 
   const autoAnalyse = searchParams.action === "analyse";
   const rawWarehouse = searchParams.warehouse;
-  const warehouseId =
-    rawWarehouse && /^[0-9a-f]{16}$/i.test(rawWarehouse) ? rawWarehouse : undefined;
+  const warehouseId = rawWarehouse && /^[a-f0-9-]+$/i.test(rawWarehouse) ? rawWarehouse : undefined;
 
   return (
     <div className="px-6 py-8 space-y-6">

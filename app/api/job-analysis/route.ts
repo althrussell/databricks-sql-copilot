@@ -7,24 +7,23 @@ import {
 } from "@/lib/queries/jobs";
 import { evaluateJobFlags } from "@/lib/domain/job-flags";
 import { analyseJob } from "@/lib/ai/job-analysis";
+import { JobAnalysisBodySchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { jobId, startTime, endTime } = body as {
-      jobId?: string;
-      startTime?: string;
-      endTime?: string;
-    };
+    const rawBody = await req.json();
+    const parsed = JobAnalysisBodySchema.safeParse(rawBody);
 
-    if (!jobId || !startTime || !endTime) {
+    if (!parsed.success) {
       return NextResponse.json(
         { error: "jobId, startTime, endTime are required" },
         { status: 400 },
       );
     }
+
+    const { jobId, startTime, endTime, model } = parsed.data;
 
     // Fetch all data in parallel
     const [stats, runs, tasks] = await Promise.all([
@@ -51,7 +50,7 @@ export async function POST(req: NextRequest) {
       avgExecSeconds: phase.avgExecSeconds,
     });
 
-    const analysisResult = await analyseJob(stats, runs, flags, tasks, phase);
+    const analysisResult = await analyseJob(stats, runs, flags, tasks, phase, model);
 
     if (analysisResult.status === "error") {
       return NextResponse.json({ error: analysisResult.message }, { status: 422 });

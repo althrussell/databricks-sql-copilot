@@ -1,14 +1,8 @@
 import { NextResponse } from "next/server";
-import {
-  getQueryActions,
-  setQueryAction,
-  removeQueryAction,
-  type QueryActionType,
-} from "@/lib/dbx/actions-store";
+import { getQueryActions, setQueryAction, removeQueryAction } from "@/lib/dbx/actions-store";
+import { QueryActionDeleteSchema, QueryActionPostSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
-
-const VALID_ACTIONS: QueryActionType[] = ["dismiss", "watch", "applied"];
 
 /**
  * GET /api/query-actions
@@ -44,18 +38,14 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { fingerprint, action, note } = body;
-
-    if (!fingerprint || typeof fingerprint !== "string") {
-      return NextResponse.json({ error: "fingerprint is required" }, { status: 400 });
-    }
-    if (!action || !VALID_ACTIONS.includes(action)) {
+    const parsed = QueryActionPostSchema.safeParse(await request.json());
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: `action must be one of: ${VALID_ACTIONS.join(", ")}` },
+        { error: "fingerprint and action (dismiss | watch | applied) are required" },
         { status: 400 },
       );
     }
+    const { fingerprint, action, note } = parsed.data;
 
     // Without Lakebase the action still applies for the current session; the client warns the user.
     const result = await setQueryAction(fingerprint, action, note);
@@ -73,14 +63,12 @@ export async function POST(request: Request) {
  */
 export async function DELETE(request: Request) {
   try {
-    const body = await request.json();
-    const { fingerprint } = body;
-
-    if (!fingerprint || typeof fingerprint !== "string") {
+    const parsed = QueryActionDeleteSchema.safeParse(await request.json());
+    if (!parsed.success) {
       return NextResponse.json({ error: "fingerprint is required" }, { status: 400 });
     }
 
-    const result = await removeQueryAction(fingerprint);
+    const result = await removeQueryAction(parsed.data.fingerprint);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error("[api/query-actions] DELETE failed:", err);

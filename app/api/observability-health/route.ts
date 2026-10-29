@@ -6,6 +6,8 @@ import {
   getPhotonFreshnessSloMinutes,
 } from "@/lib/config";
 
+export const dynamic = "force-dynamic";
+
 /** The unified observability views are optional (scripts/deploy.sh --init-observability) */
 const NOT_DEPLOYED_ERRORS = ["TABLE_OR_VIEW_NOT_FOUND", "SCHEMA_NOT_FOUND", "CATALOG_NOT_FOUND"];
 

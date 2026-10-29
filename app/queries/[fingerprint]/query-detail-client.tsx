@@ -50,7 +50,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { explainScore } from "@/lib/domain/scoring";
-import { rewriteQuery, type AiResultWithCache } from "@/lib/ai/actions";
+import { diagnoseQuery, rewriteQuery, type AiResultWithCache } from "@/lib/ai/actions";
+import { AUTO_MODEL, ModelSelect } from "@/components/model-select";
 import type { Candidate, QueryOrigin } from "@/lib/domain/types";
 import type { DiagnoseResponse, RewriteResponse } from "@/lib/ai/promptBuilder";
 // AiResult imported via aiClient for AiResultsPanel type compat
@@ -407,6 +408,7 @@ export function QueryDetailClient({
   const [analysing, startAnalyse] = useTransition();
   const [aiResult, setAiResult] = useState<AiResultWithCache | null>(null);
   const [activeAiTab, setActiveAiTab] = useState("summary");
+  const [selectedModel, setSelectedModel] = useState<string>(AUTO_MODEL);
   const autoTriggered = useRef(false);
   const ws = candidate.windowStats;
   const reasons = explainScore(candidate.scoreBreakdown);
@@ -462,10 +464,13 @@ export function QueryDetailClient({
         : null;
 
   /** Run a full AI analysis (rewrite mode gives diagnosis + rewrite in one shot) */
-  function runAnalysis(forceRefresh = false) {
+  function runAnalysis(forceRefresh = false, mode: "rewrite" | "diagnose" = "rewrite") {
     startAnalyse(async () => {
       try {
-        const result = await rewriteQuery(candidate, forceRefresh);
+        const result =
+          mode === "diagnose"
+            ? await diagnoseQuery(candidate, selectedModel || undefined)
+            : await rewriteQuery(candidate, forceRefresh, selectedModel || undefined);
         setAiResult(result);
         setActiveAiTab("summary");
       } catch (err) {
@@ -527,26 +532,49 @@ export function QueryDetailClient({
                 </div>
               </div>
 
-              {/* Right: CTA */}
-              <div className="flex items-center gap-2 shrink-0">
+              {/* Right: Model Selector + CTA */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <ModelSelect
+                  value={selectedModel}
+                  onChange={setSelectedModel}
+                  disabled={analysing}
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 text-xs"
+                      disabled={analysing}
+                      onClick={() => runAnalysis(true, "diagnose")}
+                    >
+                      <Bot className="h-3.5 w-3.5" />
+                      Quick Diagnose
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Fast masked root-cause diagnosis &amp; recommendations (no raw SQL rewrite)
+                  </TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       size="sm"
                       className="gap-1.5"
                       disabled={analysing}
-                      onClick={() => runAnalysis(!!aiResult?.cached)}
+                      onClick={() => runAnalysis(!!aiResult?.cached, "rewrite")}
                     >
                       {analysing ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <Sparkles className="h-3.5 w-3.5" />
                       )}
-                      {analysing ? "Analysing\u2026" : aiResult ? "Re-analyse" : "AI Analyse"}
+                      {analysing ? "Analysing\u2026" : aiResult ? "Re-write SQL" : "AI Rewrite"}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    AI diagnoses root causes and generates an optimised rewrite
+                    AI diagnoses root causes, generates an optimised SQL rewrite, and validates via
+                    EXPLAIN
                   </TooltipContent>
                 </Tooltip>
                 {queryProfileLink && (
@@ -992,6 +1020,11 @@ function AiResultsPanel({
           <CardTitle className="text-sm flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" />
             AI Analysis
+            {result.modelUsed && (
+              <Badge variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
+                {result.modelUsed}
+              </Badge>
+            )}
             {cached && (
               <Badge
                 variant="outline"

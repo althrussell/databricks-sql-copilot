@@ -45,6 +45,7 @@ import type {
 import type { JobFlag } from "@/lib/domain/job-flags";
 import { FLAG_SEVERITY_ORDER } from "@/lib/domain/job-flags";
 import type { JobAnalysisResult } from "@/lib/ai/job-analysis";
+import { AUTO_MODEL, ModelSelect } from "@/components/model-select";
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 
@@ -700,6 +701,7 @@ function AiAnalysisPanel({
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [result, setResult] = useState<JobAnalysisResult | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [selectedModel, setSelectedModel] = useState<string>(AUTO_MODEL);
 
   async function runAnalysis() {
     setState("loading");
@@ -708,7 +710,12 @@ function AiAnalysisPanel({
       const res = await fetch("/api/job-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId: stats.jobId, startTime, endTime }),
+        body: JSON.stringify({
+          jobId: stats.jobId,
+          startTime,
+          endTime,
+          model: selectedModel || undefined,
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -735,10 +742,13 @@ function AiAnalysisPanel({
               generate specific recommendations.
             </p>
           </div>
-          <Button onClick={runAnalysis} size="sm" className="gap-2">
-            <Sparkles className="h-3.5 w-3.5" />
-            Analyse Job
-          </Button>
+          <div className="flex items-center gap-2">
+            <ModelSelect value={selectedModel} onChange={setSelectedModel} />
+            <Button onClick={runAnalysis} size="sm" className="gap-2">
+              <Sparkles className="h-3.5 w-3.5" />
+              Analyse Job
+            </Button>
+          </div>
         </CardContent>
       </Card>
     );
@@ -760,7 +770,7 @@ function AiAnalysisPanel({
   }
   if (state === "error") {
     return (
-      <Card className="border-l-4 border-l-red-500 bg-red-500/5">
+      <Card className="border border-red-500/30 bg-red-500/5">
         <CardContent className="py-4 flex items-start gap-3">
           <XCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
           <div className="flex-1">
@@ -783,7 +793,7 @@ function AiAnalysisPanel({
 
   return (
     <div className="space-y-4">
-      <Card className="border-l-4 border-l-primary bg-primary/5">
+      <Card className="border border-primary/30 bg-primary/5">
         <CardContent className="py-4 flex items-start gap-3">
           <Bot className="h-5 w-5 text-primary shrink-0 mt-0.5" />
           <div>
@@ -1070,7 +1080,7 @@ export function JobDetailClient({
               {sortedFlags.map((flag) => (
                 <div
                   key={flag.code}
-                  className={`border-l-4 ${flag.severity === "critical" ? "border-l-red-500" : flag.severity === "warning" ? "border-l-orange-500" : "border-l-yellow-500"} pl-3 py-1`}
+                  className="rounded-md border border-border bg-muted/20 px-3 py-2"
                 >
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium">{flag.label}</p>
