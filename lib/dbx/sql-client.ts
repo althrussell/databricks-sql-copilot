@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { DBSQLClient } from "@databricks/sql";
 import type IDBSQLSession from "@databricks/sql/dist/contracts/IDBSQLSession";
 import type IOperation from "@databricks/sql/dist/contracts/IOperation";
@@ -34,6 +35,21 @@ let _clientCreatedAt = 0;
 const CLIENT_MAX_AGE_MS = 45 * 60 * 1000;
 
 const DEFAULT_MAX_ROWS = 10_000;
+
+/**
+ * Check once at startup whether the platform-specific `lz4-napi` native addon is available.
+ * If a standalone bundle was built without the current OS/arch native binary, disabling
+ * CloudFetch and LZ4 compression per statement prevents the warehouse from returning
+ * LZ4-compressed CloudFetch links that would fail without `lz4-napi`.
+ */
+const HAS_LZ4_SUPPORT = (() => {
+  try {
+    createRequire(import.meta.url)("lz4-napi");
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 function getClient(forceNew = false): DBSQLClient {
   const now = Date.now();
@@ -204,6 +220,7 @@ async function executeQueryInner<T>(
     operation = await session!.executeStatement(sql, {
       runAsync: true,
       maxRows,
+      ...(HAS_LZ4_SUPPORT ? {} : { useCloudFetch: false, useLZ4Compression: false }),
     });
 
     const result = await operation.fetchAll();

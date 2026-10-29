@@ -440,14 +440,23 @@ export interface TableSummaryForTriage {
 const triageSummaryCache = new Map<string, TableSummaryForTriage | null>();
 const triageInFlight = new Map<string, Promise<TableSummaryForTriage | null>>();
 
+/** Permanent DESCRIBE DETAIL error codes (views or missing objects) that are safe to negative-cache */
+const PERMANENT_DESCRIBE_ERRORS = [
+  "EXPECT_TABLE_NOT_VIEW",
+  "TABLE_OR_VIEW_NOT_FOUND",
+  "SCHEMA_NOT_FOUND",
+  "CATALOG_NOT_FOUND",
+  "PARSE_SYNTAX_ERROR",
+];
+
 function normalizeTableCacheKey(tableName: string): string {
   return tableName.replace(/`/g, "").trim().toLowerCase();
 }
 
 /**
  * Fetch lightweight metadata for a single table (DESCRIBE DETAIL only).
- * Uses an in-memory cache (including negative results for views) and in-flight
- * deduplication to avoid repeated or concurrent calls for the same table.
+ * Uses an in-memory cache (caching null only for permanent non-table errors such as views)
+ * and in-flight deduplication to avoid repeated or concurrent calls for the same table.
  */
 async function fetchTableSummaryForTriage(
   tableName: string,
@@ -470,7 +479,9 @@ async function fetchTableSummaryForTriage(
   const promise = (async (): Promise<TableSummaryForTriage | null> => {
     const { detail, error } = await fetchDescribeDetail(tableName);
     if (error || !detail) {
-      triageSummaryCache.set(cacheKey, null);
+      if (error && PERMANENT_DESCRIBE_ERRORS.some((code) => error.includes(code))) {
+        triageSummaryCache.set(cacheKey, null);
+      }
       return null;
     }
 

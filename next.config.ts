@@ -12,7 +12,6 @@ const nextConfig: NextConfig = {
       "node_modules/@img/**",
       "node_modules/sharp/**",
       "node_modules/@databricks/databricks-sql-kernel*/**",
-      "node_modules/@antoniomuso/lz4-napi-*/**",
       "public/1.png",
       "public/2.png",
       "public/3.png",

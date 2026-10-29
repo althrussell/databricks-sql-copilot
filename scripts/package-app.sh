@@ -63,11 +63,27 @@ if [[ -f "public/databricks-icon.svg" ]]; then
   cp public/databricks-icon.svg "$STAGE_DIR/public/"
 fi
 
-# Strip optional host-specific native binaries and sharp if present
+# Strip optional host-specific native binaries (Darwin/Windows) and sharp if present,
+# while preserving Linux lz4-napi bindings for the Databricks Apps Linux runtime.
 rm -rf "$STAGE_DIR/node_modules/@img" \
        "$STAGE_DIR/node_modules/sharp" \
        "$STAGE_DIR/node_modules/@databricks"/databricks-sql-kernel* \
-       "$STAGE_DIR/node_modules/@antoniomuso"/lz4-napi-*
+       "$STAGE_DIR/node_modules/@antoniomuso"/lz4-napi-darwin-* \
+       "$STAGE_DIR/node_modules/@antoniomuso"/lz4-napi-win32-*
+
+# When packaging on macOS/Windows, fetch the Linux x64 GNU lz4-napi prebuild if reachable
+# so CloudFetch LZ4 decompression runs natively on the Databricks Apps Linux container.
+if [[ ! -d "$STAGE_DIR/node_modules/@antoniomuso/lz4-napi-linux-x64-gnu" ]] && [[ -f "node_modules/lz4-napi/package.json" ]]; then
+  LZ4_VER=$(node -p "require('./node_modules/lz4-napi/package.json').optionalDependencies?.['@antoniomuso/lz4-napi-linux-x64-gnu'] || ''" 2>/dev/null || echo "")
+  if [[ -n "$LZ4_VER" ]]; then
+    LZ4_TMP="$(mktemp -d)"
+    if (cd "$LZ4_TMP" && npm pack "@antoniomuso/lz4-napi-linux-x64-gnu@$LZ4_VER" --silent >/dev/null 2>&1); then
+      mkdir -p "$STAGE_DIR/node_modules/@antoniomuso/lz4-napi-linux-x64-gnu"
+      tar -xzf "$LZ4_TMP"/*.tgz -C "$STAGE_DIR/node_modules/@antoniomuso/lz4-napi-linux-x64-gnu" --strip-components=1
+    fi
+    rm -rf "$LZ4_TMP"
+  fi
+fi
 
 # Pack runtime node_modules separately from the compiled app
 COPYFILE_DISABLE=1 tar -czf "$OUT_DIR/bundle/node_modules.tar.gz" -C "$STAGE_DIR" node_modules
